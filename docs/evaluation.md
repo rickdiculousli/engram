@@ -1,6 +1,6 @@
 # Evaluation
 
-How retrieval is measured. The sets are an alarm run by script, never a target: the owner's real sessions are the measure ([decisions](../.engram/README.md#decisions)).
+How retrieval is measured. The sets are an alarm run by script, never a target: the owner's real sessions are the measure (an owner's decision, in the private `.engram/README.md`).
 
 ## Question sets
 

@@ -1,6 +1,6 @@
 # The engram shape
 
-The canon: the shape every record takes in engram, and the lessons learned getting real records there. Rewiring fits it to a repo ([below](#rewiring-a-repo)): each repo names its own kinds, threads and ways in, and departs from a rule only with a reason. Each bold lead phrase is an anchor a repo's departures and kinds of ask name. The owner's calls behind these are in [decisions](../.engram/README.md#decisions); the machinery is in [technical](technical.md).
+The canon: the shape every record takes in engram, and the lessons learned getting real records there. Rewiring fits it to a repo ([below](#rewiring-a-repo)): each repo names its own kinds, threads and ways in, and departs from a rule only with a reason. Each bold lead phrase is an anchor a repo's departures and kinds of ask name. The owner's calls behind these are under Decisions in the private `.engram/README.md`; the machinery is in [technical](technical.md).
 
 ## What a record is made of
 

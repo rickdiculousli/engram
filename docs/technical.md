@@ -1,6 +1,6 @@
 # Technical decisions
 
-The machinery calls, made without the owner (they read outcomes, not machinery), each with its why. The owner's own calls are in [decisions](../.engram/README.md#decisions); this doc implements them. Before changing any of this, read the entry, and add each new machinery decision here with its why. How search and the timeline work is in [search](search.md); summaries in [summaries](summaries.md).
+The machinery calls, made without the owner (they read outcomes, not machinery), each with its why. The owner's own calls are under Decisions in the private `.engram/README.md`; this doc implements them. Before changing any of this, read the entry, and add each new machinery decision here with its why. How search and the timeline work is in [search](search.md); summaries in [summaries](summaries.md).
 
 ## How work is measured
 
@@ -109,7 +109,7 @@ An area's words and a few small functions live in its own record repo, under `.e
 
 ## The value review
 
-`review.py`, for the owner's call that engram reviews its own value ([decisions](../.engram/README.md#decisions)).
+`review.py`, for the owner's call that engram reviews its own value (in the private `.engram/README.md`).
 
 - **When:** in the hourly job, for a session idle an hour, in a repo whose `engram.toml` sets `[review] on = true`; on demand, `engram review <session>`. Off by default.
 - **What it reads:** one Opus call at high effort with no tools. For each of the owner's asks: their words, each engram call the advisor made with what it returned, the answer, and engram's own first call on their words as of the session's day.

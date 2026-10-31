@@ -8,7 +8,7 @@ This box's instance (whose record it is, how they're worked with, where things l
 
 ## Working rules
 
-- **Machinery is yours to decide;** the owner reads outcomes ([decisions](.engram/README.md#decisions), "How the owner works with it").
+- **Machinery is yours to decide;** the owner reads outcomes (Decisions in `.engram/README.md`, "How the owner works with it").
 - **The owner's real sessions are the measure.** Question sets are an alarm run by script, never a target, and never reported to the owner as progress. Never reword a question to pass; frozen sets stay frozen.
 - **Every change removes at least as much as it adds,** or says why not.
 - **No personal data in this repo; it's public.** Indexes, logs, question sets and spike outputs live in the data folder (`~/.local/share/engram/`); docs give counts, never record content, and test fixtures are made up. The owner is never named, and areas appear only generically (a medical record, an investments record), with no repo path or box name.

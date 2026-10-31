@@ -3,10 +3,15 @@
 name = "notes"
 events_dir = "events"
 commit = "per-write"
+[index]
+events = true          # each entry is indexed as itself
+exclude = ["events/"]  # so not again as a file
 [about]
 prefixes = ["story", "series"]
 [links.timeline]
 rels = ["led-to"]
+[links.evidence]
+rels = ["revises"]
 [links.theory]
 rels = ["feeds", "amplifier"]
 

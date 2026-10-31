@@ -1,0 +1,38 @@
+# A small made-up area: one person's notes on their garden. Engram's tests and its quickstart use it.
+[domain]
+name = "notes"
+events_dir = "events"
+commit = "per-write"
+[about]
+prefixes = ["story", "series"]
+[links.timeline]
+rels = ["led-to"]
+[links.theory]
+rels = ["feeds", "amplifier"]
+
+# Its rewiring (docs/shape.md, "Rewiring a repo"): the jobs it answers (the id of the Jobs section's names and quotes), the
+# kinds of ask and each kind of update's one home
+[rewire]
+at = "ffac0adb823f919cd2642e1e5d2eaf1bbae1a2ec"
+homes = {"garden/" = "where each bed stands, one file per bed", "events/" = "what happened, one entry each"}
+
+[[rewire.asks]]
+kind = "harvest so far"
+axis = "aggregate"
+piece = "Current"
+jobs = ["Keep the harvest log"]
+turns = ["how much did I pick in August? roughly", "picked about 3 kg of Sungold this week", "Mostly I want to know what I picked and when"]
+
+[[rewire.asks]]
+kind = "where things grow"
+axis = "entity"
+piece = "Way in"
+jobs = ["Plan the beds"]
+turns = ["what's growing where right now?", "which bed gets the tomatoes next year?", "The north bed has had tomatoes since April 12"]
+
+[[rewire.asks]]
+kind = "what happened"
+axis = "time"
+piece = "Entry"
+jobs = ["Tell it and have it kept", "Keep the harvest log"]
+turns = ["what happened with the north bed this season, start to finish?", "First frost last night, the tomato leaves on the north bed went black. Note it.", "I just want to tell you what happened and have it kept"]

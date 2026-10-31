@@ -1,0 +1,13 @@
+#!/bin/sh
+# engram's own pre-push: nothing built on the private history (its root, below) goes to a public remote.
+# The remote named `history` keeps that history and is the one exception.
+OLD=a3b5c2342c9e47704572a44967e54b409462d430
+[ "$1" = history ] && exit 0
+while read -r _ sha _ _; do
+  case "$sha" in *[!0]*) ;; *) continue ;; esac  # a deleted ref
+  if git merge-base --is-ancestor "$OLD" "$sha" 2>/dev/null; then
+    echo "pre-push: $sha is built on engram's private history; move the work onto the public main first" >&2
+    exit 1
+  fi
+done
+exit 0

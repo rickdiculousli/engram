@@ -1,0 +1,744 @@
+import json
+import os
+import plistlib
+import re
+import subprocess
+from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
+
+import pytest
+
+from conftest import PAGE_MD, REWIRE, git, make_repo
+from engram import capture, config, pack, rewire, setup, store
+
+TOML = """[domain]
+name = "medical"
+events_dir = "events"
+[about]
+prefixes = ["series", "story"]
+""" + REWIRE
+
+
+def turn(kind, content, ts="2026-10-18T20:00:00Z", meta=False):
+    e = {"type": kind, "timestamp": ts, "cwd": "/x", "message": {"role": kind, "content": content}}
+    if meta:
+        e["isMeta"] = True
+    return json.dumps(e)
+
+
+def said(text, ts="2026-10-18T20:00:00Z"):
+    return turn("user", text, ts)
+
+
+def reply(text, ts="2026-10-18T20:00:00Z"):
+    return turn("assistant", [{"type": "text", "text": text}], ts)
+
+
+@pytest.fixture
+def world(env, monkeypatch):
+    tmp = env["tmp"]
+    repo = make_repo(tmp / "repos/medical_history", {".engram/engram.toml": TOML, ".engram/README.md": PAGE_MD, ".claude/settings.json": '{\n    "hooks": {}\n}\n'})
+    env["set_repo"]("medical", repo)
+    st = store.Store(repo)
+    with st.transaction() as tx:
+        tx.add({"title": "old", "date": "2026-01-01", "kind": "observation", "about": ["series/_observations", "story/ankle"]}, "- old\n")
+    root = tmp / "projects"
+    monkeypatch.setattr("engram.sources.sessions.ROOT", root)
+    path = root / "-Users-x-repos-medical-history" / "s1.jsonl"
+    path.parent.mkdir(parents=True)
+    path.write_text("\n".join([
+        said("how is my knee?"),
+        reply("Did you take 10mg of the tablets yesterday?"),
+        said("yes"),
+        turn("user", "<task-notification>done</task-notification>"),
+        turn("user", "Base directory for this skill: ...", meta=True),
+        reply("Noted."),
+        said("I started Orvexa, 1 tablet 40 mg, on 2026-10-15 and the ache is better"),
+        reply("Good."),
+    ]) + "\n")
+    setup.setup(repo, tmp / "LaunchAgents", load=False)
+    return {"repo": repo, "path": path, "tmp": tmp, "payload": {"cwd": str(repo), "session_id": "s1"}}
+
+
+LATER = datetime(2026, 10, 18, 22, 0, tzinfo=timezone.utc)  # two hours after the session's last message
+
+
+def fake(facts, calls, verified=None, judge=None):
+    def ask(prompt):
+        if prompt.startswith(config.voice(pack.load("medical").prompts["verify"])[:40]):  # the repeat check: kept apart, so call counts stay the extractions
+            if verified is not None:
+                verified.append(prompt)
+            return json.dumps({"repeats": judge(prompt) if judge else []}), 0.01
+        calls.append(prompt)
+        return json.dumps({"facts": facts}), 0.02
+    return ask
+
+
+def run(calls, facts=(), now=LATER, **kw):
+    return capture.run(ask=fake(list(facts), calls), summaries=False, now=now, **kw)
+
+
+def test_sams_messages_include_short_replies_and_skip_injected_text(world):
+    got = capture.owners(capture._parse(world["path"]))
+    assert list(got.values()) == ["how is my knee?", "yes", "I started Orvexa, 1 tablet 40 mg, on 2026-10-15 and the ache is better"]
+
+
+def test_files_checked_facts_from_the_whole_session(world):
+    calls = []
+    facts = [
+        {"line": 7, "text": "Sam started Orvexa, 1 tablet 40 mg, on 2026-10-15.", "quote": "I started Orvexa, 1 tablet 40 mg, on 2026-10-15",
+         "date": "2026-10-15", "kind": "observation", "about": ["story/ankle"]},
+        {"line": 3, "text": "Sam took 10mg of the tablets.", "quote": "yes", "answering": "Did you take 10mg of the tablets yesterday?",
+         "date": "2026-10-17", "kind": "observation", "about": ["series/_observations"]},
+        {"line": 3, "text": "Sam took 20mg.", "quote": "yes", "answering": "Did you take 20mg?", "date": "not-sure"},
+        {"line": 7, "text": "Sam's ache is gone.", "quote": "the ache is gone", "date": "not-sure"},
+        {"line": 7, "text": "Sam took 30 mg.", "quote": "I started Orvexa", "date": "not-sure"},
+        {"line": 2, "text": "Sam asked about his knee.", "quote": "Did you take", "date": "not-sure"},
+    ]
+    out = run(calls, facts)
+    assert len(calls) == 1 and out["filed"] == 2
+    assert "Did you take 10mg" in calls[0] and "<task-notification>" not in calls[0]  # Claude's words go too, injected text doesn't
+    assert sorted(d["why"] for d in out["dropped"]) == ["not one of Sam's new messages", "number 30 not in the record",
+                                                       "question not in Claude's words", "quote not in Sam's words"]
+    new = [e for e in store.Store(world["repo"]).events() if e.fm.get("author") == "engram-capture"]
+    assert {e.fm["by"] for e in new} == {"sam"} and all(e.about[0].startswith("series/") for e in new)
+    assert "Sam, answering “Did you take 10mg of the tablets yesterday?”: “yes”" in next(e for e in new if "10mg" in e.body).body
+    assert git(world["repo"], "status", "--porcelain", "--", "events", "logs").strip() == ""  # committed
+    assert run(calls)["sessions"] == 0 and len(calls) == 1  # filed and unchanged: not read again
+    assert any("1 sessions filed" in l or "sessions filed: 1" in l for l in setup.status(world["repo"]))
+
+
+def test_an_active_session_is_skipped_and_read_once_idle(world):
+    calls = []
+    assert run(calls, now=LATER - timedelta(minutes=110))["sessions"] == 0 and not calls  # last message 10 minutes ago
+    assert run(calls)["sessions"] == 1
+
+
+def test_a_returning_session_files_only_past_its_mark(world):
+    calls = []
+    run(calls)
+    with world["path"].open("a") as f:
+        f.write(reply("Anything else?") + "\n" + said("the tablets make me sleepy today", ts="2026-10-19T09:00:00Z") + "\n")
+    assert run(calls)["sessions"] == 0  # the new message is from the future: still going
+    old = {"line": 7, "text": "Sam started Orvexa.", "quote": "I started Orvexa", "date": "2026-10-15"}
+    new = {"line": 10, "text": "The tablets make me sleepy.", "quote": "the tablets make me sleepy today", "date": "2026-10-19"}
+    out = run(calls, [old, new], now=LATER + timedelta(days=1))
+    assert len(calls) == 2 and "after line 7" in calls[1] and "Good." in calls[1]  # whole session, read past line 7
+    assert out["filed"] == 1 and out["dropped"][0]["why"] == "not one of Sam's new messages"
+
+
+def test_dry_run_files_nothing_and_keeps_the_mark(world):
+    facts = [{"line": 7, "text": "Sam's ache is better.", "quote": "the ache is better", "date": "not-sure"}]
+    out = run([], facts, dry_run=True)
+    assert len(out["would_file"]) == 1
+    assert not [e for e in store.Store(world["repo"]).events() if e.fm.get("author") == "engram-capture"]
+    assert run([], facts)["filed"] == 1
+
+
+def test_setup_teardown_round_trip_and_self_repair(world, monkeypatch):
+    repo, agents = world["repo"], world["tmp"] / "LaunchAgents"
+    ticks = iter(range(60))  # a clock that moves on every read: one run's repairs still show together
+    monkeypatch.setattr(setup, "_now", lambda: f"2026-10-29T04:00:{next(ticks):02d}-07:00")
+    before = b'{\n    "hooks": {}\n}\n'
+    setup.setup(repo, agents, load=False)  # again: idempotent
+    conf = json.loads((repo / ".claude/settings.json").read_text())
+    assert list(conf["hooks"]) == ["SessionStart"] and len(conf["hooks"]["SessionStart"]) == 1
+    assert setup.ALLOW in conf["permissions"]["allow"]
+    assert git(repo, "config", "core.hooksPath").strip() == ".engram/hooks"
+    assert "lint --staged" in (repo / ".engram/hooks/pre-commit").read_text()
+    plist = agents / f"{setup.LABEL}.plist"
+    assert plistlib.loads(plist.read_bytes())["ProgramArguments"][-2:] == ["capture", "run"]
+    assert setup.missing(repo, json.loads(capture.db().execute("SELECT setup FROM repo").fetchone()[0])) == {}
+
+    plist.unlink()
+    conf["hooks"].pop("SessionStart")
+    (repo / ".claude/settings.json").write_text(json.dumps(conf))
+    git(repo, "config", "--unset", "core.hooksPath")
+    assert capture.session_start(world["payload"]) == ""  # repaired, so nothing to say
+    assert plist.exists() and "SessionStart" in json.loads((repo / ".claude/settings.json").read_text())["hooks"]
+    assert git(repo, "config", "core.hooksPath").strip() == ".engram/hooks"
+    assert sum("— fixed" in l for l in setup.status(repo)) == 3
+
+    setup.teardown(repo)
+    assert (repo / ".claude/settings.json").read_bytes() == before
+    assert not plist.exists() and not (repo / ".engram/hooks").exists()
+    assert setup._git(repo, "config", "--get", "core.hooksPath").stdout.strip() == ""
+
+
+def test_setup_refuses_a_repo_with_no_current_rewiring(world):
+    repo = world["repo"]
+    setup.teardown(repo)
+    toml = repo / ".engram/engram.toml"
+    toml.write_text(toml.read_text().replace(REWIRE, ""))
+    git(repo, "commit", "-qam", "unrewired")
+    with pytest.raises(SystemExit, match=r"no current rewiring, so it isn't set up: \.engram/engram\.toml has no \[rewire\]"):
+        setup.setup(repo, world["tmp"] / "LaunchAgents", load=False)
+    assert not (repo / ".engram/hooks/pre-commit").exists()
+
+
+def test_the_pre_commit_refuses_drift_and_repair_rewrites_a_hook_without_the_check(world):
+    repo = world["repo"]
+    hook = repo / ".engram/hooks/pre-commit"
+    assert re.search(r"(?m)^exec .+ rewire check --drift \"\$\(git rev-parse --show-toplevel\)\"$", hook.read_text())
+    page = repo / ".engram/README.md"
+    page.write_text(PAGE_MD + '2. **Remind me.** "remind me"\n')
+    git(repo, "add", ".engram/README.md")
+    r = subprocess.run(["git", "-C", str(repo), "commit", "-qm", "jobs changed"], capture_output=True, text=True)
+    assert r.returncode and "engram rewire: .engram/README.md's Jobs section changed since the last rewire" in r.stderr
+    git(repo, "checkout", "-q", "HEAD", "--", ".engram/README.md")
+    page.write_text(PAGE_MD + "\n## Decisions\n- **Keep it short.**\n")  # the rest of the page isn't the jobs
+    git(repo, "add", ".engram/README.md")
+    git(repo, "commit", "-qm", "a decision")
+    man = json.loads(capture.db().execute("SELECT setup FROM repo").fetchone()[0])
+    hook.write_text("\n".join(l for l in hook.read_text().splitlines() if "--drift" not in l) + "\n")  # an older engram's
+    assert setup.missing(repo, man) == {"git": "the pre-commit hook is missing, lacks one of its checks or runs an old engram"}
+    assert [d["what"] for d in setup.repair("medical") if d["ok"]] == [
+        "git: the pre-commit hook is missing, lacks one of its checks or runs an old engram"]
+    assert "rewire check --drift" in hook.read_text() and setup.missing(repo, man) == {}
+
+
+def test_the_pre_commit_refuses_only_drift_the_commit_brings(world):
+    repo = world["repo"]
+    commit = lambda *a: subprocess.run(["git", "-C", str(repo), "commit", "-qm", "x", *a], capture_output=True, text=True)
+    (repo / ".engram/README.md").write_text(PAGE_MD + '2. **Remind me.** "remind me"\n')
+    git(repo, "add", ".engram/README.md")
+    assert commit("--no-verify").returncode == 0  # drift that reached HEAD past the hook, as a pull brings it
+    (repo / "notes.md").write_text("# Notes\nunrelated\n")
+    git(repo, "add", "notes.md")
+    assert commit().returncode == 0
+    with store.Store(repo).transaction() as tx:  # the filer's `git commit --only`
+        tx.add({"title": "new", "date": "2026-10-20", "kind": "observation", "about": ["story/ankle"]}, "- new\n")
+    assert [f for f in git(repo, "show", "--name-only", "--format=", "HEAD").split() if f.startswith("events/")]
+    for rel in ("log", "frost", "beds"):  # one update written in three files, outside every home
+        (repo / f"notes/{rel}.md").parent.mkdir(exist_ok=True)
+        (repo / f"notes/{rel}.md").write_text("# x\n- 2026-10-12: the Brandywine split\n")
+    for rel in ("peppers", "herbs", "compost"):
+        (repo / f"notes/{rel}.md").write_text(f"# {rel}\nnothing named here\n")
+    git(repo, "add", "notes")
+    r = commit()
+    assert r.returncode and r.stderr.strip() == ("engram rewire: 1 copies have no home in [rewire.homes]: Brandywine 10-12 in "
+                                                 "notes/beds.md, notes/frost.md, notes/log.md")
+    assert [d.split(":")[0] for d in rewire.drift(repo)] == [".engram/README.md's Jobs section changed since the last rewire",
+                                                            "1 copies have no home in [rewire.homes]"]  # health shows both
+
+
+def test_teardown_waits_for_a_filing_run_in_progress(world):
+    import threading
+    done = []
+    with capture.lock() as got:  # a run is filing
+        assert got and capture.run()["skipped"]  # a second run skips
+        t = threading.Thread(target=lambda: done.append(setup.teardown(world["repo"])))
+        t.start()
+        t.join(0.3)
+        assert not done and capture.db().execute("SELECT count(*) FROM repo").fetchone()[0] == 1
+    t.join(5)
+    assert done[0][0] == "waited for the filing run in progress" and "torn down" in done[0][1]
+    assert capture.db().execute("SELECT count(*) FROM repo").fetchone()[0] == 0
+
+
+def test_a_repos_own_pre_commit_keeps_running(world):
+    repo = world["repo"]
+    setup.teardown(repo)
+    (repo / ".engram/hooks").mkdir(parents=True)
+    (repo / ".engram/hooks/pre-commit").write_text("#!/bin/sh\necho mine\n")
+    setup.setup(repo, world["tmp"] / "LA", load=False)
+    assert "pre-commit.before-engram" in (repo / ".engram/hooks/pre-commit").read_text()
+    setup.teardown(repo)
+    assert (repo / ".engram/hooks/pre-commit").read_text() == "#!/bin/sh\necho mine\n"
+
+
+def test_dates_from_the_day_he_said_it_and_numbers_from_the_message_he_answered():
+    later = {5: "stopped Zentrafen, started Quillmar around then", 7: "my knee felt sore last night", 9: "took it 3 days ago",
+             11: "it was the same as she said"}
+    fact = lambda line, text, quote: {"line": line, "text": text, "quote": quote}
+    # the day of the message, and what "last night" or "3 days ago" count back from it
+    assert capture.check(fact(5, "Sam stopped Zentrafen and started Quillmar on 2026-09-22.", "stopped Zentrafen, started Quillmar"),
+                         later, "", "2026-09-22") is None
+    assert capture.check(fact(7, "Sam's knee felt sore on 2026-09-21.", "my knee felt sore last night"), later, "", "2026-09-22") is None
+    assert capture.check(fact(9, "Sam took it on 09-19.", "took it 3 days ago"), later, "", "2026-09-22") is None
+    assert capture.check(fact(7, "Sam's knee felt sore on 2026-09-15.", "my knee felt sore last night"), later, "", "2026-09-22") \
+        == "number 2026-09-15 not in the record"
+    # a date or value in Claude's message just before his: the context he was answering
+    asked = "At the 09-17 visit she measured swelling 4 mm."
+    assert capture.check(fact(11, "Sam says the 09-17 swelling of 4 mm matched what she said.", "it was the same as she said"),
+                         later, "", "2026-09-22", before=asked) is None
+    # any other value still has to be in his words
+    assert capture.check(fact(11, "Sam's swelling was 6 mm.", "it was the same as she said"), later, "", "2026-09-22",
+                         before=asked) == "number 6 not in the record"
+    # a number counts only whole, never as a piece of a longer one; a fraction's parts count
+    said = {13: "ok, go with that", 15: "pain was 7/10 today"}
+    dense = "Revenue was 135B, spreads near 1,600bp."
+    assert capture.check(fact(13, "Sam puts it at 35.", "ok, go with that"), said, "", "2026-09-22", before=dense) \
+        == "number 35 not in the record"
+    assert capture.check(fact(13, "Sam says spreads near 60.", "ok, go with that"), said, "", "2026-09-22", before=dense) \
+        == "number 60 not in the record"
+    assert capture.check(fact(15, "Sam's pain was 7 out of 10 on 2026-09-22.", "pain was 7/10 today"), said, "",
+                         "2026-09-22") is None
+
+
+THEORY_TOML = TOML + """[links.theory]
+rels = ["feeds", "shared-cause", "amplifier"]
+"""
+
+
+def node(id_, kind, short):
+    return f"---\nid: {id_}\nkind: {kind}\nshort: {short}\n---\n# {short}\n\nAbout {short}.\n"
+
+
+@pytest.fixture
+def graph(env, monkeypatch):
+    """A record with a theory graph, and a session where Claude proposes things and Sam agrees to some."""
+    tmp = env["tmp"]
+    repo = make_repo(tmp / "repos/med", {".engram/engram.toml": THEORY_TOML, ".engram/README.md": PAGE_MD, "theory/node-A.md": node("node/A", "node", "stiffness"),
+                                         "theory/node-B.md": node("node/B", "node", "knee"),
+                                         "theory/loop-1.md": node("loop/1", "loop", "Loop 1"),
+                                         "evidence/staging/P-01.md": "# P-01 Cold and the knee\n"})
+    env["set_repo"]("medical", repo)
+    st = store.Store(repo)
+    with st.transaction() as tx:
+        tx.add({"title": "old", "date": "2026-01-01", "kind": "observation", "about": ["series/_observations"]}, "- old\n")
+        tx.add({"title": "P-01: proposed", "date": "2026-02-01", "kind": "status", "about": ["pattern/P-01"], "status": "proposed",
+                "recorded": "2026-02-01T10:00:00-07:00"}, "")
+    root = tmp / "projects"
+    monkeypatch.setattr("engram.sources.sessions.ROOT", root)
+    path = root / "-Users-x-repos-med" / "s2.jsonl"
+    path.parent.mkdir(parents=True)
+    path.write_text("\n".join([
+        said("the cold days line up with the achy knee again"),
+        reply("Should we mark P-01 as provisional now?"),
+        said("yes, mark it provisional"),
+        reply("I think the knee tension amplifies the stiffness."),
+        said("ok"),
+        reply("Maybe the cold pattern is confirmed, too."),
+        said("I feel pretty hopeless about all of this, nothing ever gets better"),
+        reply("That sounds hard."),
+        said("I'm discouraged but my knee is stiff today"),
+        reply("Noted."),
+    ]) + "\n")
+    setup.setup(repo, tmp / "LaunchAgents", load=False)
+    return {"repo": repo}
+
+
+def captured(repo, kind=None):
+    return [e for e in store.Store(repo).events(kind=kind) if e.fm.get("author") == "engram-capture"]
+
+
+def ask_theory(theory, facts=(), calls=None):
+    def ask(prompt):
+        if calls is not None:
+            calls.append(prompt)
+        return json.dumps({"facts": list(facts), "theory": theory}), 0.0
+    return ask
+
+
+def test_a_status_sam_agrees_to_is_filed_and_one_only_claude_proposed_is_not(graph):
+    calls = []
+    agreed = {"line": 3, "quote": "yes, mark it provisional", "answering": "Should we mark P-01 as provisional now?",
+              "status": {"id": "pattern/P-01", "to": "provisional"}}
+    claudes = {"line": 5, "quote": "Maybe the cold pattern is confirmed", "status": {"id": "pattern/P-01", "to": "confirmed"}}
+    unknown = {"line": 3, "quote": "yes", "answering": "Should we mark P-01 as provisional now?",
+               "status": {"id": "pattern/P-99", "to": "provisional"}}
+    odd = {"line": 3, "quote": "yes", "status": {"id": "pattern/P-01", "to": "probably"}}
+    out = capture.run(ask=ask_theory([agreed, claudes, unknown, odd], calls=calls), summaries=False, now=LATER)
+    assert "pattern/P-01\tpattern\tproposed" in calls[0] and "loop/1" in calls[0]  # real ids and statuses go to the model
+    assert out["filed"] == 1
+    assert sorted(d["why"] for d in out["dropped"]) == ["quote not in Sam's words", "unknown status probably",
+                                                       "unknown theory id pattern/P-99"]
+    [st] = captured(graph["repo"], "status")
+    assert st.about == ["pattern/P-01"] and st.fm["status"] == "provisional" and st.fm["by"] == "sam"
+    assert "agreeing to “Should we mark P-01 as provisional now?”" in st.body
+    from engram import theory
+    assert theory.load(graph["repo"]).status["pattern/P-01"][0] == "provisional"  # the latest status event wins
+
+
+def test_a_link_sam_agrees_to_is_a_theory_link_in_links_jsonl(graph):
+    link = {"from": "node/B", "to": "node/A", "rel": "amplifier", "mechanism": "knee tension raises the urge to rest",
+            "strength": "medium"}
+    ok = {"line": 5, "quote": "ok", "answering": "I think the knee tension amplifies the stiffness.", "link": link}
+    bad_rel = {**ok, "link": {**link, "rel": "causes"}}
+    bad_id = {**ok, "link": {**link, "to": "node/Z"}}
+    out = capture.run(ask=ask_theory([ok, bad_rel, bad_id]), summaries=False, now=LATER)
+    assert out["filed"] == 1 and sorted(d["why"] for d in out["dropped"]) == ["unknown rel causes", "unknown theory id node/Z"]
+    [e] = captured(graph["repo"], "link")
+    assert e.path.startswith("events/links.jsonl:")
+    assert git(graph["repo"], "status", "--porcelain", "--", "events").strip() == ""  # appended and committed through the store
+    assert (e.fm["family"], e.fm["rel"], e.fm["from"], e.fm["to"], e.fm["strength"], e.fm["by"]) == \
+        ("theory", "amplifier", "node/B", "node/A", "medium", "sam")
+    from engram import theory
+    [edge] = theory.load(graph["repo"]).joins()
+    assert edge.note.startswith("knee tension raises the urge to rest") and edge.since == "2026-10-18"
+
+
+def add_session(world, name, lines, ts):
+    path = world["path"].parent / f"{name}.jsonl"
+    path.write_text("\n".join(said(t, ts) if i % 2 == 0 else reply(t, ts) for i, t in enumerate(lines)) + "\n")
+    return path
+
+
+@pytest.fixture
+def knee(world):
+    """The record already holds a week of knee-tablet entries; a later session repeats them in other words."""
+    st = store.Store(world["repo"])
+    with st.transaction() as tx:
+        tx.add({"title": "Quillmar started; Zentrafen stopped", "date": "2026-09-21", "kind": "observation",
+                "about": ["series/_observations"]}, "- switched tablets\n")
+        tx.add({"title": "Knee a bit stiffer over first 2 days of Quillmar; stair climbing induced soreness",
+                "date": "2026-09-23", "kind": "observation", "about": ["series/_observations"]}, "- noticed both\n")
+        tx.add({"title": "Long ago", "date": "2026-06-01", "kind": "observation", "about": ["series/_observations"]}, "- far\n")
+        tx.add({"title": "Torvanex stopped", "date": "2026-09-01", "kind": "med-change", "about": ["series/_observations"],
+                "entity": "Torvanex (torvanexide)", "status": "stopped", "aliases": ["TVX tablets"]}, "- stopped\n")
+        tx.add({"title": "Brevonal prescribed, never started", "date": "2026-08-01", "kind": "med-change",
+                "about": ["series/_observations"], "entity": "Brevonal", "status": "prescribed-not-started"}, "- never\n")
+    world["path"].unlink()  # only the new session is due
+    path = add_session(world, "s3", ["my knee is a bit stiffer in the 2 days since Quillmar, and the stairs made it sore",
+                                     "Noted.", "torvanex quietly stopped, and I never used brevonal", "Ok.",
+                                     "I started it about 2 days ago", "Ok.", "back in August the swelling began", "Ok."],
+                       "2026-09-23T20:00:00Z")
+    return path
+
+
+def test_a_relative_day_is_counted_from_when_he_said_it_and_a_bare_month_stays(knee):
+    facts = [{"line": 5, "text": "Sam started Quillmar", "quote": "I started it about 2 days ago", "date": "2026-09",
+              "kind": "observation"},
+             {"line": 7, "text": "\"Swelling began\"", "quote": "back in August the swelling began", "date": "2026-08",
+              "kind": "observation"}]
+    out = run([], facts, now=datetime(2026, 9, 23, 23, 0, tzinfo=timezone.utc), dry_run=True)
+    started, swelling = out["would_file"]
+    assert (started["title"], started["date"], started["date_note"], started["approx"]) == ("Started Quillmar", "2026-09-21", "approx", "true")
+    assert (swelling["title"], swelling["date"]) == ("Swelling began", "2026-08") and "approx" not in swelling
+    assert "“I started it about 2 days ago”" in started["body"]  # the verbatim quote stays in the body
+
+
+def test_relative_phrases():
+    days = lambda w: capture.relative_days(w, "2026-09-23")  # a Wednesday
+    assert days("about 2 days ago") == [("2026-09-21", True)]
+    assert days("3 days ago") == [("2026-09-20", False)]
+    assert days("last night") == [("2026-09-22", False)]
+    assert days("since Monday") == [("2026-09-21", False)]
+    assert days("since Wednesday") == [("2026-09-16", False)]
+    assert days("this week") == [("2026-09-21", True)]
+    assert days("a few days ago") == [("2026-09-20", True)]
+
+
+def test_a_date_he_never_gave_is_not_sure_and_a_named_month_is_kept():
+    said = "2026-10-24"  # a Saturday
+    last_time = {"date": "2026-10-07", "quote": "Last time I was going to sleep"}
+    assert capture.full_date(last_time, said, "Last time I was going to sleep and my back got tweaked") == ("never-said", False)
+    assert capture.full_date({"date": "2026-10-07"}, said, "it was sometime in October") == ("2026-10", False)
+    for day, words in [("2026-10-24", "my back is tight"), ("2026-10-23", "yesterday it hurt"), ("2026-10-07", "on Oct 7th"),
+                       ("2026-10-07", "on 10/7"), ("2026-10-07", "7 October"), ("2026-10-20", "on Tuesday it flared"),
+                       ("2026-10-18", "last weekend"), ("2026-10-10", "a couple of weeks ago")]:
+        assert capture.said_date(day, words, said), (day, words)
+    assert not capture.said_date("2026-05", "I may have", said) and capture.said_date("2026-05", "since may", said)
+    assert capture.said_date("2026-09", "last month", said) and not capture.said_date("2026-08", "last month", said)
+    fm, _ = capture.entry({"text": "Prior back cramp came lying flat", "quote": "Last time I was going to sleep", **last_time},
+                          said, "s1", ["observation"], [], "", "Last time I was going to sleep")
+    assert (fm["date"], fm["date_note"], fm["reported"]) == ("not-sure", "reported; when it happened wasn't said", said)
+
+
+def test_a_past_episode_dated_the_day_he_said_it_is_not_sure_and_a_month_is_the_latest_one():
+    said, words = "2026-10-24", "Last time I was going to sleep and my back got tweaked"
+    assert capture.full_date({"date": said, "quote": words}, said, words) == ("never-said", False)
+    assert capture.full_date({"date": said, "quote": "it hurts again today"}, said, "it hurts again today") == (said, False)
+    assert capture.said_date("2026-10", "in October", said) and capture.said_date("2025-11", "in November", said)
+    assert not capture.said_date("2025-10", "in October", said) and not capture.said_date("2026-11", "in November", said)
+
+
+def test_the_job_files_a_date_never_said_as_not_sure_and_an_undated_repeat_stays_dropped(world):
+    with world["path"].open("a") as f:
+        f.write(said("last time my back got tweaked going to sleep, and the bicycle knee is sore again", ts="2026-10-18T20:05:00Z") + "\n")
+    back = {"line": 9, "text": "The earlier back cramp came going to sleep.", "quote": "last time my back got tweaked going to sleep",
+            "date": "2026-10-07", "kind": "observation"}
+    knee = {"line": 9, "text": "Bicycle knee is sore.", "quote": "the bicycle knee is sore again", "date": "2026-10-01",
+            "kind": "observation"}
+    from engram import cli
+    from engram.sources import sections
+    doc = world["repo"] / "reference/knee.md"
+    doc.parent.mkdir(parents=True)
+    doc.write_text("# Knee\n\nThe bicycle knee gets sore again now and then.\n")
+    git(world["repo"], "add", "-A")
+    git(world["repo"], "commit", "-qm", "doc")
+    cli._ingest("medical", sections)
+    calls, verified = [], []
+    out = capture.run(ask=fake([back, knee], calls, verified, stating("bicycle")), summaries=False,
+                      now=LATER + timedelta(minutes=5), dry_run=True)
+    filed = out["would_file"]
+    assert [(f["title"], f["date"], f["date_note"]) for f in filed] == \
+        [("The earlier back cramp came going to sleep.", "not-sure", "reported; when it happened wasn't said")]
+    assert [d["text"] for d in out["dropped"] if d["why"].startswith("already in")] == ["Bicycle knee is sore."]
+
+
+def test_a_long_title_is_cut_at_a_word():
+    text = "Left mid-trap cramp (centre line to scapula) plus a little left lat; came on at rest, sitting at the computer after waking up"
+    assert capture.cut_title(text) == "Left mid-trap cramp (centre line to scapula) plus a little left lat; came on at rest, sitting at the computer after…"
+    assert capture.cut_title("Short") == "Short"
+    assert capture.cut_title("a" * 119 + " b", 120) == "a" * 119 + "…" and capture.cut_title("abc def", 3) == "abc…"
+
+
+def test_refile_clears_the_mark_and_keeps_the_entries(world):
+    calls = []
+    fact = {"line": 7, "text": "Ache is better", "quote": "the ache is better", "date": "2026-10-18"}
+    assert run(calls, [fact])["filed"] == 1 and run(calls)["sessions"] == 0
+    assert capture.refile(["nomatch"]) == {"nomatch": []}
+    assert capture.refile(["s"]) == {"s": ["s1"]}
+    with capture.db() as c:
+        upto, entries = c.execute("SELECT upto, entries FROM filed").fetchone()
+    assert upto == 0 and len(json.loads(entries)) == 1  # the entries filed from it are kept
+    run(calls, [])
+    assert len(calls) == 2 and "after line 0" in calls[1] and "Ache is better" in calls[1]  # read again, its entries shown
+    assert len(captured(world["repo"])) == 1  # nothing deleted
+
+
+def stating(phrase):
+    """A stand-in for the repeat check's judgment: a candidate holding the phrase repeats the first record shown under
+    it that holds it too."""
+    def judge(prompt):
+        out = []
+        for block in re.split(r"\n(?=Candidate \d+ )", prompt)[1:]:
+            m = re.match(r"Candidate (\d+) ", block)
+            head, recs = block.split("Records:")
+            for ref, text in re.findall(r"  - \[ref (.+?)\] (.*)", recs):
+                if phrase in head.lower() and phrase in text.lower():
+                    out.append({"n": int(m.group(1)), "ref": ref, "why": "same"})
+                    break
+        return out
+    return judge
+
+
+@pytest.fixture
+def ankle(world):
+    from engram import cli
+    from engram.sources import sections
+    doc = world["repo"] / "reference/treatments/ankle.md"
+    doc.parent.mkdir(parents=True)
+    doc.write_text("# Ankle brace\n\nThe ankle injury dates from a bicycle fall on 2019-06-02, landing on the right side.\n")
+    git(world["repo"], "add", "-A")
+    git(world["repo"], "commit", "-qm", "doc")
+    cli._ingest("medical", sections)
+    with world["path"].open("a") as f:
+        f.write(said("my ankle started when I slid off my bicycle, and ice helped tonight", ts="2026-10-18T20:05:00Z") + "\n")
+    return world
+
+
+SLID = {"line": 9, "text": "The ankle injury began when Sam slid off his bicycle.", "quote": "my ankle started when I slid off my bicycle",
+        "date": "2019-06-02", "kind": "observation"}
+ICE = {"line": 9, "text": "Ice helped the ankle tonight.", "quote": "ice helped tonight", "date": "2026-10-18", "kind": "observation"}
+
+
+def test_a_fact_already_in_a_document_is_dropped_and_a_new_detail_kept(ankle):
+    calls, verified = [], []
+    out = capture.run(ask=fake([SLID, ICE], calls, verified, stating("bicycle")), summaries=False, now=LATER + timedelta(minutes=5))
+    assert out["filed"] == 1 and [e.fm["title"] for e in captured(ankle["repo"])] == ["Ice helped the ankle tonight."]
+    drop = [d for d in out["dropped"] if d["why"].startswith("already in")]
+    assert drop == [{"session": "s1", "line": 9, "why": "already in reference/treatments/ankle.md#Ankle brace",
+                     "text": "The ankle injury began when Sam slid off his bicycle."}]
+    assert len(calls) == 1 and len(verified) == 1  # one repeat check per session, beside the one extraction
+
+
+def test_the_repeat_check_is_shown_the_search_hits_on_the_candidates_own_text(ankle):
+    calls, verified = [], []
+    capture.run(ask=fake([SLID], calls, verified), summaries=False, now=LATER + timedelta(minutes=5))
+    prompt = verified[0]
+    assert "Candidate 1 [" in prompt and "slid off his bicycle" in prompt
+    hits = prompt.split("Records:")[1]
+    assert "[ref reference/treatments/ankle.md#Ankle brace] " in hits and "dates from a bicycle fall on 2019-06-02" in hits
+
+
+def test_a_repeat_naming_a_record_not_shown_is_kept(ankle):
+    calls = []
+    made_up = lambda prompt: [{"n": 1, "ref": "reference/elsewhere.md#X", "why": "same"}]
+    out = capture.run(ask=fake([ICE], calls, judge=made_up), summaries=False, now=LATER + timedelta(minutes=5))
+    assert out["filed"] == 1
+
+
+def naming(where):
+    """A model that calls every candidate a repeat of the first record shown under it whose ref holds `where`."""
+    def judge(prompt):
+        out = []
+        for block in re.split(r"\n(?=Candidate \d+ )", prompt)[1:]:
+            n = int(re.match(r"Candidate (\d+) ", block).group(1))
+            refs = [ref for ref in re.findall(r"  - \[ref (.+?)\] ", block.split("Records:")[1]) if where in ref]
+            if refs:
+                out.append({"n": n, "ref": refs[0], "why": "same"})
+        return out
+    return judge
+
+
+@pytest.fixture
+def tension(world):
+    """Knee stiffness is in the record on 2026-10-13, as an entry and on its complaint page; a session on
+    2026-11-05 says it's back."""
+    from engram import cli
+    from engram.sources import sections
+    st = store.Store(world["repo"])
+    with st.transaction() as tx:
+        tx.add({"title": "Knee stiffness behind the kneecap", "date": "2026-10-13", "kind": "symptom",
+                "about": ["series/_observations"]}, "- knee stiffness, eased with heat\n")
+        tx.add({"title": "Knee stiffness comes from desk posture", "date": "2026-10-13", "kind": "interpretation",
+                "about": ["series/_observations"]}, "- knee stiffness blamed on posture\n")
+    doc = world["repo"] / "complaints/knee-stiffness.md"
+    doc.parent.mkdir(parents=True)
+    doc.write_text("# Knee stiffness\n\nPast occurrences of knee stiffness:\n- 2026-10-13: knee stiffness, eased with heat\n")
+    git(world["repo"], "add", "-A")
+    git(world["repo"], "commit", "-qm", "tension")
+    cli._ingest("medical", sections)
+    world["path"].unlink()
+    add_session(world, "s4", ["knee stiffness is back, and it comes from my desk posture", "Noted."], "2026-11-05T20:00:00Z")
+    return world
+
+
+NOV5 = datetime(2026, 11, 5, 23, 0, tzinfo=timezone.utc)
+
+
+def back(date, kind="symptom", approx=False):
+    f = {"line": 1, "text": "Knee stiffness is back", "quote": "knee stiffness is back", "date": date, "kind": kind}
+    return {**f, "approx": True} if approx else f
+
+
+def test_the_same_occurrence_is_still_a_repeat(tension):
+    cases = [(back("2026-10-13"), "symptom"),  # a same-day restatement
+             (back("2026-10-16", approx=True), "symptom"),  # an approximate date within 4 days
+             (back("2026-10-14"), "complaints/"),  # the complaint page lists the candidate's own occurrence
+             ({**back("2026-11-05", kind="interpretation"), "text": "Knee stiffness comes from desk posture",
+               "quote": "it comes from my desk posture"}, "interpretation")]  # an interpretation, on any day
+    for fact, where in cases:
+        out = capture.run(ask=fake([fact], [], None, naming(where)), summaries=False, now=NOV5, dry_run=True)
+        assert out["would_file"] == [] and not out["kept"], (fact, where)
+        assert [d["why"].startswith("already in") and where in d["why"] for d in out["dropped"]] == [True], (fact, where)
+
+
+def test_same_occurrence_dates():
+    same = capture.same_occurrence
+    assert same({"date": "2026-11-05"}, [("2026-11-03", False)]) and not same({"date": "2026-11-05"}, [("2026-11-02", False)])
+    assert same({"date": "2026-11-05", "approx": "true"}, [("2026-11-01", False)])
+    assert same({"date": "2026-11-05"}, [("2026-11-01", True)]) and not same({"date": "2026-11-05"}, [("2026-10-31", True)])
+    assert same({"date": "2026-11"}, [("2026-11-20", False)]) and not same({"date": "2026-11"}, [("2026-10-31", False)])
+    assert same({"date": "2026-11-05"}, [("2026-11", False)]) and not same({"date": "2026-11-05"}, [])
+
+
+ACHE = [{"line": 7, "text": "The ache is better.", "quote": "the ache is better", "date": "not-sure"}]
+
+
+def test_status_reports_filed_ids_missing_from_the_repo_and_prune_clears_them(world):
+    repo = world["repo"]
+    run([], ACHE)
+    eid = json.loads(capture.db().execute("SELECT entries FROM filed").fetchone()[0])[0]
+    assert any("matches what capture filed" in l for l in setup.status(repo))
+    git(repo, "rm", "-q", store.event_path(eid))  # removed by hand as a repeat
+    git(repo, "commit", "-q", "--no-verify", "-m", "drop a repeat")  # past the append-only check, as Sam did
+    assert any("1 filed entry ids aren't in the repo" in l and eid in l for l in setup.status(repo))
+    assert capture.prune() == {"s1": [eid]}
+    with capture.db() as c:
+        assert c.execute("SELECT upto, entries FROM filed").fetchone() == (7, "[]")  # the mark stays
+    assert any("matches what capture filed" in l for l in setup.status(repo))
+
+
+def test_a_reply_without_json_is_an_error_and_the_mark_stays(world):
+    out = capture.run(ask=lambda p: ("I looked and there is nothing to file.", 0.01), summaries=False, now=LATER)
+    assert out["sessions"] == 0 and "held no JSON" in out["error"]
+    with capture.db() as c:
+        assert c.execute("SELECT count(*) FROM filed").fetchone() == (0,)
+        assert c.execute("SELECT ok, error FROM run ORDER BY rowid DESC LIMIT 1").fetchone()[0] == 0
+    assert any("held no JSON" in l for l in setup.status(world["repo"]))
+    assert run([], ACHE)["filed"] == 1  # the next run reads it again
+
+
+def test_a_failed_commit_takes_back_its_entry_files(world):
+    repo = world["repo"]
+    links = repo / "events" / store.LINKS
+    (repo / ".engram/hooks/pre-commit").write_text("#!/bin/sh\nexit 1\n")  # a pre-commit that refuses
+    st = store.Store(repo)
+    before = len(st.events())
+    with pytest.raises(RuntimeError, match="commit failed"):
+        with st.transaction() as tx:
+            tx.add({"title": "x", "date": "2026-10-18", "kind": "observation", "about": ["series/_observations"]}, "- x\n")
+            tx.add({"title": "l", "date": "2026-10-18", "kind": "link", "from": "a", "to": "b", "family": "timeline", "rel": "led-to"}, "")
+    assert git(repo, "status", "--porcelain", "--untracked-files=all", "--", "events").strip() == ""
+    assert not links.exists() and len(store.Store(repo).events()) == before
+    with pytest.raises(Exception):
+        capture.file_session("medical", repo, world["path"], ask=fake(ACHE, []))
+    assert git(repo, "status", "--porcelain", "--untracked-files=all", "--", "events").strip() == ""
+    with capture.db() as c:
+        assert c.execute("SELECT count(*) FROM filed").fetchone() == (0,)  # the mark stays: the next run files it once
+    (repo / "events/2026").mkdir(parents=True, exist_ok=True)
+    (repo / "events/2026/stray.md").write_text("---\nid: stray\n---\n")
+    assert any("1 entry files aren't committed: events/2026/stray.md" in l for l in setup.status(repo))
+
+
+def test_a_failed_push_is_recorded_shown_and_retried(world):
+    repo, bare = world["repo"], world["tmp"] / "hub.git"
+    (repo / ".engram/engram.toml").write_text(TOML.replace('events_dir = "events"', 'events_dir = "events"\npush = true'))
+    git(repo, "commit", "-qam", "push")
+    git(repo, "remote", "add", "origin", str(bare))
+    git(repo, "config", "branch.main.remote", "origin")
+    git(repo, "config", "branch.main.merge", "refs/heads/main")
+    run([], ACHE)  # the hub isn't there: the push fails
+    assert store.push_failure(repo)
+    assert any("last push failed" in l for l in capture.problems("medical"))
+    assert "last push failed" in capture.session_start(world["payload"])
+    assert any("last push failed" in l for l in setup.status(repo))
+    git(bare.parent, "init", "-q", "--bare", str(bare))
+    out = capture.run(ask=fake([], []), summaries=False, now=LATER)  # the next hourly run retries
+    assert store.push_failure(repo) is None and out["error"] is None
+    assert capture.unpushed(repo)[0] == 0 and capture.session_start(world["payload"]) == ""
+
+
+def test_a_launcher_at_another_path_running_the_same_code_is_not_old(world):
+    repo, tmp = world["repo"], world["tmp"]
+    other = tmp / "bin/engram"  # another install of the same checkout, as ~/.local/bin/engram is
+    other.parent.mkdir()
+    other.write_text(Path(setup.engram_cmd()[0]).read_text())
+    other.chmod(0o755)
+    here = setup.engram_cmd()[0]
+    sp = repo / ".claude/settings.json"
+    sp.write_text(sp.read_text().replace(here, str(other)))
+    hook = repo / ".engram/hooks/pre-commit"
+    hook.write_text(hook.read_text().replace(here, str(other)))
+    plist = tmp / "LaunchAgents" / f"{setup.LABEL}.plist"
+    conf = plistlib.loads(plist.read_bytes())
+    conf["ProgramArguments"][0] = str(other)
+    plist.write_bytes(plistlib.dumps(conf))
+    git(repo, "add", "-A")
+    git(repo, "commit", "-qm", "installed from elsewhere")
+    man = json.loads(capture.db().execute("SELECT setup FROM repo").fetchone()[0])
+    assert setup.missing(repo, man) == {}
+    assert capture.session_start(world["payload"]) == ""
+    assert git(repo, "status", "--porcelain").strip() == ""  # nothing rewritten
+    stale = tmp / "gone/engram"
+    sp.write_text(sp.read_text().replace(str(other), str(stale)))
+    assert setup.missing(repo, man) == {"settings": "the SessionStart hook runs an old engram"}
+
+
+@pytest.fixture
+def flare(world):
+    """Knee stiffness is a recurring symptom with its own page; the record holds a long drive on 2026-11-04."""
+    from engram import cli
+    from engram.sources import sections
+    repo = world["repo"]
+    (repo / ".engram/engram.toml").write_text(TOML + '[index]\nevents = true\n[links.timeline]\nrels = ["led-to", "occurrence"]\n')
+    (repo / "complaints").mkdir()
+    (repo / "complaints/knee-stiffness.md").write_text(
+        "# Knee stiffness\n\nSam's words: “tight behind my kneecap”\n\nStories: knee, leg\n\n## Occurrences\n\n"
+        "| Date | How it felt |\n|---|---|\n| 2026-10-13 | tight behind my kneecap |\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-qm", "a complaint page")
+    st = store.Store(repo)
+    with st.transaction() as tx:
+        drive = tx.add({"title": "Four-hour drive to Tahoe", "date": "2026-11-04", "kind": "observation",
+                        "about": ["series/_observations", "story/knee"]}, "- long drive\n").id
+    cli._ingest("medical", sections)
+    world["path"].unlink()
+    add_session(world, "s6", ["knee stiffness is back today, it started after the long drive yesterday", "Noted."],
+                "2026-11-05T20:00:00Z")
+    return {**world, "drive": drive}
+
+
+def test_placement_with_unknown_ids_files_the_fact_unplaced(flare):
+    fact = {"line": 1, "text": "Knee stiffness is back", "quote": "knee stiffness is back today", "date": "2026-11-05",
+            "kind": "symptom", "stories": ["nonsense"], "occurrence_of": "no-such-symptom", "led_from": "20990101-000000-x-0000"}
+    assert capture.run(ask=fake([fact], []), summaries=False, now=NOV5)["filed"] == 1
+    st = store.Store(flare["repo"])
+    assert not [l for l in st.events(kind="link") if l.fm.get("author") == "engram-capture"]
+    interp = {**fact, "kind": "interpretation", "occurrence_of": "knee-stiffness"}  # not an occurrence kind
+    assert capture.place(interp, {"kind": "interpretation"}, st, ["knee"], {"knee-stiffness": ("x", ["knee"])},
+                         ["occurrence"])["occurrence"] is None

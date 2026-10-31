@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 336" width="960" height="336" class="dark" role="img" aria-label="On disk, a record is plain files: an entry file per fact (its date, the thread it's about, who said it, and the fact, never edited), one line of events/links.jsonl per link (B revises A), and documents rewritten whole. From them engram builds a graph: entries in time on their threads, with typed links such as revises and led to.">
+<title>engram: what a record is made of</title>
+<defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="aho" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker></defs>
+<style>
+svg{--fg:#e6edf3;--mu:#8b949e;--pf:#161b22;--ps:#30363d;--ed:#4a5260;--or:#ff8a2a;--or2:#ffb35a;--ort:rgba(255,138,42,.13);--ok:#3fb950;--rd:#f85149;--am:#d29922}
+svg.light{--fg:#1f2328;--mu:#59636e;--pf:#f6f8fa;--ps:#d0d7de;--ed:#afb8c1;--or:#c2410c;--or2:#e8590c;--ort:rgba(232,89,12,.09);--ok:#1a7f37;--rd:#cf222e;--am:#9a6700}
+text{fill:var(--fg);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans',Helvetica,Arial,sans-serif;font-size:14px}
+.m{font-family:ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;font-size:13px}.s{font-size:13px}.t{font-size:17px;font-weight:600}.b{font-weight:600}
+.mu{fill:var(--mu)}.or{fill:var(--or)}.ok{fill:var(--ok)}.rd{fill:var(--rd)}.am{fill:var(--am)}
+.pn{fill:var(--pf);stroke:var(--ps);stroke-width:1.5}.po{fill:var(--ort);stroke:var(--or);stroke-width:1.5}
+.ln{fill:none;stroke:var(--ed);stroke-width:1.5}.lo{fill:none;stroke:var(--or);stroke-width:1.5}.dash{stroke-dasharray:4 5}
+.ar{marker-end:url(#ah)}.aro{marker-end:url(#aho)}#ah path{fill:var(--ed)}#aho path{fill:var(--or)}
+.chip{fill:var(--pf);stroke:var(--or);stroke-width:1.2}.hl{fill:var(--ort)}
+.mv{opacity:0}.mv .c{fill:var(--or)}.mv .g{fill:var(--or);opacity:.3}
+.nd{fill:var(--or)}.nl{fill:var(--fg)}.nb{fill:var(--ed);stroke:var(--mu);stroke-width:1.5}.strike{stroke:var(--rd);stroke-width:1.5}
+@supports not (offset-path:path('M0 0')){.mv{display:none}}
+@media (prefers-reduced-motion: reduce){*{animation:none!important}}
+</style>
+<text x="16" y="34" class="s b">on disk: plain files</text>
+<text x="520" y="34" class="s b">what engram builds from them</text>
+<rect x="16" y="48" width="456" height="132" rx="8" class="pn"/>
+<text x="30" y="70" class="m mu">events/2026/06/[id].md</text>
+<path d="M16 80 H472" class="ln"/>
+<text x="30" y="104" class="m">date: 2026-06</text>
+<text x="456" y="104" class="s mu" text-anchor="end">when it happened</text>
+<text x="30" y="125" class="m">about: [thread]</text>
+<text x="456" y="125" class="s mu" text-anchor="end">the story it's on</text>
+<text x="30" y="146" class="m">by: me</text>
+<text x="456" y="146" class="s mu" text-anchor="end">who said it</text>
+<text x="30" y="167" class="m">[the fact]</text>
+<text x="456" y="167" class="s mu" text-anchor="end">one fact, never edited</text>
+<rect x="16" y="192" width="456" height="58" rx="8" class="pn"/>
+<text x="30" y="214" class="m mu">events/links.jsonl</text>
+<path d="M16 224 H472" class="ln"/>
+<text x="30" y="240" class="m">{"from": B, "to": A, "rel": "revises"}</text>
+<text x="456" y="240" class="s mu" text-anchor="end">one line each</text>
+<rect x="16" y="262" width="456" height="58" rx="8" class="pn"/>
+<text x="30" y="284" class="m mu">[page].md</text>
+<path d="M16 294 H472" class="ln"/>
+<text x="30" y="310" class="m"># [where things stand]</text>
+<text x="456" y="310" class="s mu" text-anchor="end">rewritten whole</text>
+<path d="M480 186 H514" class="ln ar"/>
+<rect x="520" y="48" width="424" height="272" rx="10" class="pn"/>
+<text x="536" y="96" class="m mu">[thread]</text>
+<line x1="544.8" y1="110.0" x2="593.2" y2="110.0" class="ln"/>
+<line x1="606.8" y1="110.0" x2="733.2" y2="110.0" class="ln"/>
+<line x1="746.8" y1="110.0" x2="833.2" y2="110.0" class="ln"/>
+<line x1="846.8" y1="110.0" x2="927.2" y2="110.0" class="ln"/>
+<text x="536" y="166" class="m mu">[thread]</text>
+<line x1="544.8" y1="180.0" x2="673.2" y2="180.0" class="ln"/>
+<line x1="686.8" y1="180.0" x2="773.2" y2="180.0" class="ln"/>
+<line x1="786.8" y1="180.0" x2="927.2" y2="180.0" class="ln"/>
+<text x="536" y="236" class="m mu">[thread]</text>
+<line x1="544.8" y1="250.0" x2="873.2" y2="250.0" class="ln"/>
+<line x1="886.8" y1="250.0" x2="927.2" y2="250.0" class="ln"/>
+<path d="M771 173 C750 150 712 150 689 173" class="lo aro"/>
+<text x="730" y="146" class="m or" text-anchor="middle">revises</text>
+<path d="M846 116 C880 150 880 200 878 242" class="lo aro"/>
+<text x="862" y="216" class="m or" text-anchor="end">led to</text>
+<circle cx="600" cy="110" r="6" class="nb"/>
+<circle cx="880" cy="250" r="6" class="nb"/>
+<circle cx="840" cy="110" r="6" class="nb"/>
+<circle cx="780" cy="180" r="6" class="nb"/>
+<circle cx="680" cy="180" r="6" class="nb"/>
+<circle cx="740" cy="110" r="6" class="nb"/>
+<text x="680" y="206" class="m mu" text-anchor="middle">A</text>
+<text x="780" y="206" class="m mu" text-anchor="middle">B</text>
+<text x="536" y="306" class="s mu">entries in time, on their threads, with typed links</text>
+</svg>

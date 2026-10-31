@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 340" width="960" height="340" class="dark" role="img" aria-label="The loop. Keep: you tell Claude something in a session; the hourly filer checks it is knowledge, three checks, then writes it as the latest entry and commits and pushes it. The index, your records linked as a graph, takes it in. Find: you ask a question; one call lights its match in the graph and what links to it, returns them in time order, and Claude answers from them.">
+<title>engram: keep and find</title>
+<defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="aho" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker></defs>
+<style>
+svg{--fg:#e6edf3;--mu:#8b949e;--pf:#161b22;--ps:#30363d;--ed:#4a5260;--or:#ff8a2a;--or2:#ffb35a;--ort:rgba(255,138,42,.13);--ok:#3fb950;--rd:#f85149;--am:#d29922}
+svg.light{--fg:#1f2328;--mu:#59636e;--pf:#f6f8fa;--ps:#d0d7de;--ed:#afb8c1;--or:#c2410c;--or2:#e8590c;--ort:rgba(232,89,12,.09);--ok:#1a7f37;--rd:#cf222e;--am:#9a6700}
+text{fill:var(--fg);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans',Helvetica,Arial,sans-serif;font-size:14px}
+.m{font-family:ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;font-size:13px}.s{font-size:13px}.t{font-size:17px;font-weight:600}.b{font-weight:600}
+.mu{fill:var(--mu)}.or{fill:var(--or)}.ok{fill:var(--ok)}.rd{fill:var(--rd)}.am{fill:var(--am)}
+.pn{fill:var(--pf);stroke:var(--ps);stroke-width:1.5}.po{fill:var(--ort);stroke:var(--or);stroke-width:1.5}
+.ln{fill:none;stroke:var(--ed);stroke-width:1.5}.lo{fill:none;stroke:var(--or);stroke-width:1.5}.dash{stroke-dasharray:4 5}
+.ar{marker-end:url(#ah)}.aro{marker-end:url(#aho)}#ah path{fill:var(--ed)}#aho path{fill:var(--or)}
+.chip{fill:var(--pf);stroke:var(--or);stroke-width:1.2}.hl{fill:var(--ort)}
+.mv{opacity:0}.mv .c{fill:var(--or)}.mv .g{fill:var(--or);opacity:.3}
+.nd{fill:var(--or)}.nl{fill:var(--fg)}.nb{fill:var(--ed);stroke:var(--mu);stroke-width:1.5}.strike{stroke:var(--rd);stroke-width:1.5}
+@supports not (offset-path:path('M0 0')){.mv{display:none}}
+@media (prefers-reduced-motion: reduce){*{animation:none!important}}
+.k1{animation:k1 14s linear infinite}@keyframes k1{0%,2.14%{opacity:0}4.64%,96.43%{opacity:1}100%{opacity:0}}.k2{animation:k2 14s linear infinite}@keyframes k2{0%,44.29%{opacity:0}46.79%,96.43%{opacity:1}100%{opacity:0}}.k3{animation:k3 14s linear infinite}@keyframes k3{0%,78.57%{opacity:0}81.07%,96.43%{opacity:1}100%{opacity:0}}.k4{animation:k4 14s linear infinite}@keyframes k4{0%,15.00%{opacity:0}17.50%,96.43%{opacity:1}100%{opacity:0}}.k5{animation:k5 14s linear infinite}@keyframes k5{0%,17.86%{opacity:0}20.36%,96.43%{opacity:1}100%{opacity:0}}.k6{animation:k6 14s linear infinite}@keyframes k6{0%,20.71%{opacity:0}23.21%,96.43%{opacity:1}100%{opacity:0}}.k7{animation:k7 14s linear infinite}@keyframes k7{0%,24.29%{opacity:0}26.79%,96.43%{opacity:1}100%{opacity:0}}.k8{animation:k8 14s linear infinite}@keyframes k8{0%,36.43%{opacity:0}38.93%,96.43%{opacity:1}100%{opacity:0}}.k9{opacity:0;animation:k9 14s linear infinite}@keyframes k9{0%,36.43%{opacity:0}37.86%,38.57%{opacity:1}40.36%,100%{opacity:0}}.k10{animation:k10 14s linear infinite}@keyframes k10{0%,60.00%{opacity:0}62.50%,96.43%{opacity:1}100%{opacity:0}}.k11{animation:k11 14s linear infinite}@keyframes k11{0%,62.86%{opacity:0}65.36%,96.43%{opacity:1}100%{opacity:0}}.k12{animation:k12 14s linear infinite}@keyframes k12{0%,68.57%{opacity:0}71.07%,96.43%{opacity:1}100%{opacity:0}}.k13{offset-path:path('M278 85 H346');offset-rotate:0deg;animation:k13 14s ease-in-out infinite}@keyframes k13{0%,7.14%{offset-distance:0%;opacity:0}7.71%{opacity:1}12.86%{offset-distance:100%;opacity:1}14.64%,100%{offset-distance:100%;opacity:0}}.k14{offset-path:path('M813 150 V186');offset-rotate:0deg;animation:k14 14s ease-in-out infinite}@keyframes k14{0%,30.71%{offset-distance:0%;opacity:0}31.29%{opacity:1}35.00%{offset-distance:100%;opacity:1}36.79%,100%{offset-distance:100%;opacity:0}}.k15{offset-path:path('M278 246 H346');offset-rotate:0deg;animation:k15 14s ease-in-out infinite}@keyframes k15{0%,48.57%{offset-distance:0%;opacity:0}49.14%{opacity:1}54.29%{offset-distance:100%;opacity:1}56.07%,100%{offset-distance:100%;opacity:0}}.k16{offset-path:path('M616 255 H682');offset-rotate:0deg;animation:k16 14s ease-in-out infinite}@keyframes k16{0%,55.71%{offset-distance:0%;opacity:0}56.29%{opacity:1}60.00%{offset-distance:100%;opacity:1}61.79%,100%{offset-distance:100%;opacity:0}}.k17{offset-path:path('M682 255 H616');offset-rotate:0deg;animation:k17 14s ease-in-out infinite}@keyframes k17{0%,64.29%{offset-distance:0%;opacity:0}64.86%{opacity:1}68.57%{offset-distance:100%;opacity:1}70.36%,100%{offset-distance:100%;opacity:0}}.k18{offset-path:path('M350 289 H282');offset-rotate:0deg;animation:k18 14s ease-in-out infinite}@keyframes k18{0%,72.86%{offset-distance:0%;opacity:0}73.43%{opacity:1}77.86%{offset-distance:100%;opacity:1}79.64%,100%{offset-distance:100%;opacity:0}}</style>
+<rect x="16" y="20" width="262" height="300" rx="10" class="pn"/>
+<text x="32" y="46" class="t">a session</text>
+<g class="k1"><rect x="32" y="68" width="230" height="34" rx="10" class="po"/><text x="44" y="90" class="s"><tspan class="mu">me:</tspan> [knowledge]</text></g>
+<text x="147" y="170" class="s mu" text-anchor="middle">· · ·  later  · · ·</text>
+<g class="k2"><rect x="32" y="229" width="230" height="34" rx="10" class="po"/><text x="44" y="251" class="s"><tspan class="mu">me:</tspan> [question]</text></g>
+<g class="k3"><rect x="32" y="272" width="230" height="34" rx="10" class="pn"/><text x="44" y="294" class="s"><tspan class="mu">claude:</tspan> [answer]</text></g>
+<rect x="350" y="20" width="594" height="130" rx="10" class="pn"/>
+<text x="366" y="46" class="t">hourly filer</text>
+<text x="366" y="94" class="s">is knowledge</text>
+<rect x="462" y="80" width="18" height="18" rx="4" class="pn"/>
+<text x="471" y="94" class="ok b k4" text-anchor="middle">✓</text>
+<rect x="486" y="80" width="18" height="18" rx="4" class="pn"/>
+<text x="495" y="94" class="ok b k5" text-anchor="middle">✓</text>
+<rect x="510" y="80" width="18" height="18" rx="4" class="pn"/>
+<text x="519" y="94" class="ok b k6" text-anchor="middle">✓</text>
+<path d="M538 89 H580" class="ln ar"/>
+<rect x="586" y="74" width="130" height="30" rx="6" class="pn"/><g class="k7"><rect x="586" y="74" width="130" height="30" rx="6" class="po"/></g><text x="651" y="94" class="m" text-anchor="middle">/[latest].md</text>
+<path d="M722 89 H764" class="ln ar"/>
+<text x="772" y="94" class="s">git commit + push</text>
+<text x="366" y="128" class="s mu">most sessions file nothing</text>
+<rect x="682" y="190" width="262" height="130" rx="10" class="pn"/>
+<text x="698" y="216" class="t">index</text>
+<text x="698" y="236" class="s mu">your records, linked as a graph</text>
+<line x1="722.6" y1="264.6" x2="755.4" y2="257.4" class="ln"/>
+<line x1="768.0" y1="259.1" x2="806.0" y2="278.9" class="ln"/>
+<line x1="720.9" y1="270.6" x2="751.1" y2="299.4" class="ln"/>
+<line x1="762.3" y1="301.5" x2="805.7" y2="284.5" class="ln"/>
+<line x1="818.2" y1="279.3" x2="855.8" y2="262.7" class="ln"/>
+<line x1="867.6" y1="263.7" x2="904.4" y2="288.3" class="ln"/>
+<g class="k8"><line x1="818.2" y1="284.7" x2="859.8" y2="303.3" class="ln"/></g>
+<circle cx="716" cy="266" r="6" class="pn"/>
+<circle cx="762" cy="256" r="6" class="pn"/>
+<circle cx="812" cy="282" r="6" class="pn"/>
+<circle cx="756" cy="304" r="6" class="pn"/>
+<circle cx="862" cy="260" r="6" class="pn"/>
+<circle cx="910" cy="292" r="6" class="pn"/>
+<circle cx="866" cy="306" r="6" class="pn k8"/>
+<g class="k9"><line x1="818.2" y1="284.7" x2="859.8" y2="303.3" class="lo"/><circle cx="866" cy="306" r="6" class="po"/></g>
+<circle cx="812" cy="282" r="6" class="nd k10"/>
+<g class="k11"><circle cx="762" cy="256" r="4" class="nl"/><circle cx="756" cy="304" r="4" class="nl"/><circle cx="862" cy="260" r="4" class="nl"/><circle cx="866" cy="306" r="4" class="nl"/></g>
+<rect x="350" y="190" width="262" height="130" rx="10" class="pn"/>
+<text x="366" y="216" class="t">one call</text>
+<text x="366" y="236" class="s mu">the match + what links to it</text>
+<g class="k12"><text x="366" y="257" class="m mu">04</text><text x="394" y="257" class="m">[linked]</text><text x="366" y="274" class="m mu">06</text><text x="394" y="274" class="m or b">[match]</text><text x="366" y="291" class="m mu">09</text><text x="394" y="291" class="m">[linked]</text><text x="366" y="308" class="m mu">10</text><text x="394" y="308" class="m">[latest]</text><text x="596" y="285" class="s mu" text-anchor="end">time order ↓</text></g>
+<path d="M278 85 H346" class="ln ar"/>
+<path d="M813 150 V186" class="ln ar"/>
+<path d="M682 255 H616" class="ln ar"/>
+<path d="M278 246 H346" class="ln ar"/>
+<path d="M350 289 H282" class="ln ar"/>
+<text x="823" y="173" class="m mu">ingest</text>
+<rect x="287.2" y="50" width="54" height="24" rx="12" class="chip"/><text x="314" y="67" class="m or b" text-anchor="middle">keep</text>
+<rect x="287.2" y="304" width="54" height="24" rx="12" class="chip"/><text x="314" y="321" class="m or b" text-anchor="middle">find</text>
+<g class="mv k13"><circle r="9" class="g"/><circle r="4.5" class="c"/></g>
+<g class="mv k14"><circle r="9" class="g"/><circle r="4.5" class="c"/></g>
+<g class="mv k15"><circle r="9" class="g"/><circle r="4.5" class="c"/></g>
+<g class="mv k16"><circle r="9" class="g"/><circle r="4.5" class="c"/></g>
+<g class="mv k17"><circle r="9" class="g"/><circle r="4.5" class="c"/></g>
+<g class="mv k18"><circle r="9" class="g"/><circle r="4.5" class="c"/></g>
+</svg>

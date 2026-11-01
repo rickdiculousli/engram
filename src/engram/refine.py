@@ -2,7 +2,7 @@
 per repo engram serves, its own repo first and then each configured domain's, under the week's cap. The pass follows
 skills/engram-refine/SKILL.md in engram's own repo; each change it lands carries a `Refinement:` trailer, its one line
 for the owner, and each idea it can't land is a spec in the repo's .engram/specs/. `surface` shows both at a session
-start, and `install` writes the launchd job that runs the week's passes."""
+start, and `install` writes the timed job that runs the week's passes."""
 import contextlib
 import fcntl
 import json
@@ -25,7 +25,7 @@ SKILL = "skills/engram-refine/SKILL.md"  # in engram's own repo, so an edit ther
 TRAILER = "Refinement"
 REVERTS = "This reverts commit "  # git revert's line
 LABEL = "engram.refine"
-# Saturday 04:00, with catch-ups on Sunday and Monday for a Mac asleep then; a repo whose pass this week landed, is
+# Saturday 04:00, with catch-ups on Sunday and Monday for a box asleep then; a repo whose pass this week landed, is
 # running, or cost something is skipped, and one whose pass failed for nothing is tried again
 SCHEDULE = [{"Weekday": 6, "Hour": 4, "Minute": 0}, {"Weekday": 0, "Hour": 9, "Minute": 30},
             {"Weekday": 1, "Hour": 19, "Minute": 30}]
@@ -163,7 +163,8 @@ def start(name: str) -> str:
     if settings()["weekly_cap"] - spent(ledger(), week()) < 1:
         sys.exit(f"engram refine: this week's ${settings()['weekly_cap']:.0f} is spent; nothing started")
     log = _dir() / "launchd.log"
-    subprocess.Popen(["/usr/bin/caffeinate", "-i", sys.executable, "-m", "engram.cli", "refine", "run", "--repo", name, "--attached"],
+    from engram import jobs
+    subprocess.Popen(jobs.awake([sys.executable, "-m", "engram.cli", "refine", "run", "--repo", name, "--attached"]),
                      pass_fds=(fh.fileno(),),
                      stdout=log.open("a"), stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, start_new_session=True)
     return f"engram refine: the pass on {name} started on its own; its result shows in `engram health`"
@@ -371,11 +372,9 @@ def surface(here: Path) -> str:
     return "\n".join(out + [REMINDER] + ([""] + agent if agent else []))
 
 
-def install(agents: Path = Path.home() / "Library/LaunchAgents", load: bool = True) -> Path:
-    """The launchd job that runs the week's passes, kept awake until they end; a time missed asleep fires on wake.
+def install(agents: Path | None = None, load: bool = True) -> Path:
+    """The timed job that runs the week's passes, kept awake until they end; a time missed asleep fires on wake.
     Running it again rewrites and reloads the same job."""
-    from engram import setup
-    plist = agents / f"{LABEL}.plist"
-    setup.launch_job(plist, LABEL, ["/usr/bin/caffeinate", "-i", *setup.engram_cmd(), "refine", "run"],
-                     _dir() / "launchd.log", load, StartCalendarInterval=SCHEDULE)
-    return plist
+    from engram import jobs, setup
+    return jobs.install(agents or jobs.default_dir(), LABEL, jobs.awake([*setup.engram_cmd(), "refine", "run"]),
+                        _dir() / "launchd.log", load, at=SCHEDULE)

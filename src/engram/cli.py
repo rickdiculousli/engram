@@ -726,7 +726,7 @@ def cmd_refine(a):
             sys.exit(f"engram refine conversations: {a.repo} is neither a folder nor one of {', '.join(refine.repos())}")
         print(refine.conversations(repo, a.days, a.session))
     else:
-        print(f"launchd job: {refine.install()}")
+        print(f"timed job: {refine.install()}")
 
 
 def cmd_callers(a):
@@ -964,8 +964,9 @@ def main(argv=None):
 
     s = sub.add_parser("setup", help="set a repo up for capture: the session-start check, git pre-commit, the hourly job")
     s.add_argument("repo")
-    s.add_argument("--launch-agents-dir", help="where the sweep job's plist goes (default ~/Library/LaunchAgents)")
-    s.add_argument("--no-load", action="store_true", help="write the plist without loading it")
+    s.add_argument("--launch-agents-dir", help="where the hourly job's files go (default ~/Library/LaunchAgents on macOS, "
+                   "~/.config/systemd/user on Linux)")
+    s.add_argument("--no-load", action="store_true", help="write the job without loading it")
     s.set_defaults(fn=cmd_setup)
 
     s = sub.add_parser("teardown", help="remove exactly what setup added; records are never touched")
@@ -1008,7 +1009,7 @@ def main(argv=None):
     s.set_defaults(fn=cmd_rewire)
 
     s = sub.add_parser("refine", help="the weekly refinement: run (one pass per repo engram serves, under the week's "
-                       "cap), surface (its changes and open specs, at a session start), install (its launchd job), "
+                       "cap), surface (its changes and open specs, at a session start), install (its timed job), "
                        "conversations (a repo's week of the owner's messages, for the pass)")
     s.add_argument("action", choices=["run", "surface", "install", "conversations"])
     s.add_argument("repo", nargs="?", help="surface: the repo's folder; conversations: its folder or its name")

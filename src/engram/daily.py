@@ -83,11 +83,9 @@ def status() -> str | None:
             + ("ok" if s.get("ok") else f"FAILED at {s.get('failed_step')}"))
 
 
-def install(agents: Path = Path.home() / "Library/LaunchAgents", load: bool = True) -> Path:
-    """The launchd job that runs the copy at 04:00, or on wake if the box slept through it."""
-    from engram import setup
-    plist = agents / f"{LABEL}.plist"
+def install(agents: Path | None = None, load: bool = True) -> Path:
+    """The timed job that runs the copy at 04:00, or on wake if the box slept through it."""
+    from engram import jobs, setup
     data_path("logs").mkdir(exist_ok=True)
-    setup.launch_job(plist, LABEL, [*setup.engram_cmd(), "daily", "run"], data_path("logs") / "daily.log", load,
-                     StartCalendarInterval={"Hour": 4, "Minute": 0})
-    return plist
+    return jobs.install(agents or jobs.default_dir(), LABEL, [*setup.engram_cmd(), "daily", "run"],
+                        data_path("logs") / "daily.log", load, at=[{"Hour": 4, "Minute": 0}])

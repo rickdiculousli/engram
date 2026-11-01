@@ -16,10 +16,12 @@
 | Job | Runs |
 |---|---|
 | re-read the record files and sessions | inside `engram search`, whenever the last read is over 15 minutes old |
-| the hourly filer, `engram capture run` (launchd), plus each set-up repo's session-start check and pre-commit lint and drift check | every hour, at session start, at each commit, all through `~/.local/bin/engram` |
-| the weekly refinement, `engram refine run` (launchd, `engram refine install`): one pass per repo engram serves, under `[refine] weekly_cap` | Saturday 04:00, or on wake; Sunday and Monday catch-ups skip a repo whose pass this week landed, is running or cost something, and retry one that failed for nothing; `engram refine run --repo NAME` starts one pass on its own and returns |
+| the hourly filer, `engram capture run` (a timed job), plus each set-up repo's session-start check and pre-commit lint and drift check | every hour, at session start, at each commit, all through `~/.local/bin/engram` |
+| the weekly refinement, `engram refine run` (a timed job, `engram refine install`): one pass per repo engram serves, under `[refine] weekly_cap` | Saturday 04:00, or on wake; Sunday and Monday catch-ups skip a repo whose pass this week landed, is running or cost something, and retry one that failed for nothing; `engram refine run --repo NAME` starts one pass on its own and returns |
 | rebuild drill: copy the index files first, rebuild from the session mirror, compare counts and scores | after any schema change (changes are additive, so rarely) |
-| the daily copy to a second box, `engram daily run` (launchd, `engram daily install`): what can't be fetched again goes to `[daily] box`, which archives it at this box's release; the archive's backups come back, the newest 7 kept | 04:00, or on wake; never deletes on the second box |
+| the daily copy to a second box, `engram daily run` (a timed job, `engram daily install`): what can't be fetched again goes to `[daily] box`, which archives it at this box's release; the archive's backups come back, the newest 7 kept | 04:00, or on wake; never deletes on the second box |
+
+A timed job is a launchd job on macOS and a systemd user timer on Linux, WSL2 included once systemd is on there (`engram.jobs`); a time missed asleep runs on wake. Linux runs user timers only while the user's manager runs, so `loginctl enable-linger` keeps them going logged out.
 
 `[daily]` in the config sets `box` (an ssh host), `engram` (that box's checkout, `~/repos/engram` by default) and `copy`, pairs of a local folder an area can't fetch again and where it lands under the box's data folder; the session files, usage logs, summaries and engram's `local/` notes are copied without being listed. Summaries of sessions Claude Code has since cleaned up read the box's session mirror.
 

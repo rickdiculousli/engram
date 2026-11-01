@@ -82,6 +82,24 @@ Every change must pass it before it lands, since the hourly job runs what's rele
   - the tree id of the pack it ran with (`.engram/` without the page, specs, settings and hooks, which change while the pack doesn't); `check-pin <out.json>` says whether the box's pin is that tree
 - **Re-freezing** (a new record commit, new sessions) is a new baseline: it starts from an empty gate folder, reports the recording's model cost, and passes twice before it's trusted. So does a new measure, or a fix to what the gate pins: the baseline is made again on unchanged code, twice.
 
+## Against grep
+
+One run of `answer` and `grep` on a medical record's tuning set: 74 questions, 54 of them needing a whole history and 20 single facts, at engram `ae9f335`. Tokens are Claude's own count of everything each answer processed, on both sides.
+
+| | engram | grep |
+|---|---|---|
+| questions with every record they need | 65 | 42 |
+| records the questions need, found (of 331) | 318 | 281 |
+| histories with every record (of 54) | 45 | 22 |
+| single facts found (of 20) | 20 | 20 |
+| tokens per question, median | 215,000 | 397,000 |
+| largest context, median | 37,000 | 50,000 |
+
+- **The same records for fewer tokens:** on the 44 questions where both found the same records, engram's median was 185,000 tokens to grep's 326,000.
+- **More of the history:** engram found more on 28 questions, grep on 2; engram cost less on 67 of the 74.
+- **The owner's own questions are few:** 8 of the 74 come from their sessions, the rest are written in their style. On those 8 the two are level on records (engram 22 of 25, grep 24) at about half grep's tokens.
+- **Grep is counted generously:** a record counts as reached when its file was read or grepped at all; engram's only when it's in a top 5 or a timeline Claude fetched.
+
 ## Embeddings: the rule
 
 A **vocabulary miss** is a question whose expected ref shares no stemmed word with any query Claude wrote for it.

@@ -20,7 +20,7 @@
 
 <br>
 
-**engram** files what you tell Claude Code into plain git, and hands Claude the whole story when you ask. On real records it finds what grep finds in fewer tokens, or more of the story for about the same.
+**engram** files what you tell Claude Code into plain git, and hands Claude the whole story when you ask. On a real record it finds what grep finds for just over half the tokens, and more of the story ([measured](docs/evaluation.md#against-grep)).
 
 **For** one person using [Claude Code](https://claude.com/claude-code) on their own computer: macOS, Linux, or Windows through WSL2\* ([see Quickstart](#quickstart)). Not the Claude app or claude.ai.
 
@@ -222,7 +222,7 @@ uv run engram search "when did the basil bolt" --domain notes
 
 **Why, and how it's measured:**
 - [technical](docs/technical.md): the decision log, each call with its why
-- [evaluation](docs/evaluation.md): how retrieval is measured against grep, and the frozen gate
+- [evaluation](docs/evaluation.md): how retrieval is measured, the results against grep, and the frozen gate
 
 The README's art is generated: [docs/assets/gen](docs/assets/gen/README.md).
 

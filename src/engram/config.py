@@ -51,7 +51,7 @@ def owner() -> str:
 
 
 def owner_id() -> str:
-    """The owner as a record's `by` and a summary's speaker name him: the name in lower case."""
+    """The owner as a record's `by` and a summary's speaker name them: the name in lower case."""
     return owner().lower().replace(" ", "-")
 
 

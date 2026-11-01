@@ -1,6 +1,6 @@
 # Writing
 
-engram is a Python package (3.14, stdlib `sqlite3`, PyYAML), installed as a tool. A record repo uses the command line; its own tools may import the library.
+engram is a Python package (3.12 or later, stdlib `sqlite3`, PyYAML), installed as a tool. A record repo uses the command line; its own tools may import the library.
 
 ```python
 from engram.store import Store

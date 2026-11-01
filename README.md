@@ -20,41 +20,42 @@
 
 <br>
 
-**engram** gets Claude everything your record holds on a question, related records included, in fewer tokens than grep.
+**engram** files what you tell Claude Code into plain git, and hands Claude the whole story when you ask. On real records it finds what grep finds in fewer tokens, or more of the story for about the same.
 
-- **Thorough:** one call fetches every related record, not just the ones that share your words
-- **Relational:** follows the knowledge graph (threads, `led-to`, `revises`) out to the tangents grep never reaches
-- **Lean:** headlines first, in time order, so Claude reads less to know more
-- **Filed to be found:** what you say lands as dated entries on threads, with typed links, the shape that retrieval runs on
+**For** one person using [Claude Code](https://claude.com/claude-code) on their own computer; hourly filing runs on a Mac. Not the Claude app or claude.ai.
+
+- **Only what you said:** a fact gets in only in your words and numbers; a day you never gave → the month you did
+- **Corrections kept:** fix a fact → both versions come back as one result, the newest in full
+- **Whole stories:** one call → the match and what it links to, in time order, headlines first
 - **Plain git:** one repo per area of your life, readable without engram
 
 It does four jobs:
 
-- **[Keep](#keep):** you talk, engram files what matters. No forms, no upkeep.
-- **[Find](#find):** ask a question, get the part of the record it touches.
-- **[Rewire](#rewire):** fit each repo to the way you actually use it.
-- **[Evolve](#evolve):** improve engram and your repos every week, without losing anything.
+- **[Keep](#keep):** you talk → engram files the facts, in your own words, numbers and dates. No forms.
+- **[Find](#find):** you ask → Claude gets the whole story in time order, corrections beside each fact.
+- **[Rewire](#rewire):** reshape a repo around the questions you bring it, on a copy first; you see your pages before and after.
+- **[Evolve](#evolve):** once you turn it on, a weekly pass under a dollar cap you set: changes one revert undoes land, the rest wait for your yes.
 
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/loop-dark.svg">
     <source media="(prefers-color-scheme: light)" srcset="docs/assets/loop-light.svg">
-    <img alt="The loop. Keep: you tell Claude something; the hourly filer checks it is knowledge, writes it as the latest entry, and commits and pushes it; the index, your records linked as a graph, takes it in. Find: you ask a question; one call lights its match and what links to it, returns them in time order, and Claude answers." src="docs/assets/loop-light.svg" width="100%">
+    <img alt="The loop. Keep: you tell Claude something; the hourly filer checks it against your words, writes it as the latest entry, and commits and pushes it; the index, your records linked as a graph, takes it in. Find: you ask a question; one call lights its match and what links to it, returns them in time order, and Claude answers." src="docs/assets/loop-light.svg" width="100%">
   </picture>
 </p>
 
 ## Keep
 
-Just talk to Claude. Every hour, engram reads your finished sessions and files what a good advisor would note. Most sessions file nothing.
+Just talk to Claude Code. Every hour, engram reads your finished sessions and files the facts worth keeping. Most sessions file nothing.
 
-A model proposes facts; code decides what gets in:
+Claude, through your own Claude Code, proposes facts; code decides what gets in:
 
-| Proposed fact | → |
+| Proposed fact | What happens |
 |---|---|
 | Quote, numbers included, isn't in your own words | dropped |
 | Has a day you never said | narrowed to the month or year you did say |
 | Already in the record | dropped as a repeat |
-| Passes all three | filed as an entry, committed and pushed |
+| Passes all three | filed as an entry and committed; pushed, if the repo pushes, to its own remote |
 
 <p align="center">
   <picture>
@@ -64,11 +65,11 @@ A model proposes facts; code decides what gets in:
   </picture>
 </p>
 
-Rather file things yourself? Keep your own schema-checked store; engram only reads it. More in [technical](docs/technical.md#the-filer).
+How the filer checks each fact: [technical](docs/technical.md#the-filer).
 
 ## Find
 
-Ask for a whole history:
+You ask Claude; Claude runs these through Bash, one call per question (`engram setup` allows it). For a whole history:
 
 ```
 $ uv run engram timeline "what happened with the north bed this season?" --domain notes
@@ -98,14 +99,24 @@ Corrections never erase. Fix a fact → engram keeps both and links them, and yo
 | Command | You get |
 |---|---|
 | `engram timeline "<question>"` | the threads it touches, every row in time order, corrections beside each fact |
-| `engram search "<question>"` | ranked matches, tuned by the area's own weights |
+| `engram search "<question>"` | ranked matches, tuned by the repo's own weights |
 | `engram show <id>` | one record, by the short id a search printed |
 
-Each repo searches only itself unless you ask. More in [search](docs/search.md).
+Each repo searches only itself unless you ask. More in [search](docs/search.md#the-one-call-timeline).
 
 ## Rewire
 
-Shapes each repo around what you use it for:
+Have notes already?
+
+| You have | You get |
+|---|---|
+| A git repo of Markdown | search by heading, as it stands, read only: add it to your config ([Quickstart](#quickstart)) |
+| The same, rewired | stories, timelines, corrections and hourly filing |
+| Your own tool and its store | a [pack](docs/shape.md#a-pack) reads it in; engram never files there |
+
+A folder that isn't in git needs `git init` first. Apple Notes and Keep have to be exported to Markdown.
+
+Rewiring shapes a repo around what you use it for, on a scratch copy; nothing lands until you've seen your pages before and after:
 
 your own words → your jobs → the kinds of question each job brings → the part of the record that answers each
 
@@ -129,17 +140,17 @@ More in [shape](docs/shape.md#rewiring-a-repo).
 
 ## Evolve
 
-Every week, `engram refine` (skill: `skills/engram-refine/`) tunes engram and each repo against that repo's jobs, within a budget. It never touches your record.
+Once you turn it on (`engram refine install`), `engram refine` tunes engram and each repo against that repo's jobs every week, under a dollar cap you set. A change lands by itself only if one revert undoes it and nothing in your record is lost; anything bigger, or dropping something you asked for, waits for your yes.
 
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/evolve-dark.svg">
     <source media="(prefers-color-scheme: light)" srcset="docs/assets/evolve-light.svg">
-    <img alt="Every week, on its own, engram tidies your graph. Week 1: as rewired. Week 2: a record regrouped, saved by itself. Week 3: new ingested knowledge, linked, saved by itself. Week 4: dropping a group you asked for is a bigger change, so it asks you first. Small and undoable changes save themselves; bigger ones, or losing anything you asked for, are asked at your next session." src="docs/assets/evolve-light.svg" width="100%">
+    <img alt="Every week, once you turn it on, engram tidies your graph. Week 1: as rewired. Week 2: a record regrouped, saved by itself. Week 3: new knowledge, linked, saved by itself. Week 4: dropping a group you asked for is a bigger change, so it asks you first. Small and undoable changes save themselves; bigger ones, or losing anything you asked for, are asked at your next session." src="docs/assets/evolve-light.svg" width="100%">
   </picture>
 </p>
 
-More in [operations](docs/operations.md#the-weekly-refinement).
+More in [the example's rules](examples/notes/.engram/README.md#lands-on-its-own-only-if-all-of-these-hold).
 
 ## What a record is made of
 
@@ -163,56 +174,49 @@ More in [data model](docs/data-model.md).
   </picture>
 </p>
 
-- **`.engram/`:** engram's folder inside it: the repo's shape, your jobs and rules, and the pack, the area's own words ([shape](docs/shape.md#a-pack), [example](examples/notes/.engram/README.md))
-- **The index:** rebuilt from git at will, never the source of truth
+- **`.engram/`:** engram's folder inside it: the repo's shape, your jobs and rules, and the pack, the repo's words for engram's model calls ([shape](docs/shape.md#a-pack), [example](examples/notes/.engram/))
+- **Where your data goes:** records stay in your repos, pushed only to the remote each one names; the index stays in `~/.local/share/engram/`, rebuilt from git at will; filing sends each finished session to Claude through your own Claude Code (`claude -p`, your subscription). More in [operations](docs/operations.md#where-things-live).
 
 > **Not goals:** embeddings (unless [this rule](docs/evaluation.md#embeddings-the-rule) fires), breaking arguments into fragments, multiple users, a web UI.
 
 ## Quickstart
 
-Needs Python 3.12+ and [uv](https://docs.astral.sh/uv/).
+Needs git, Python 3.12+ and [uv](https://docs.astral.sh/uv/).
 
 ```sh
 git clone https://github.com/rickdiculousli/engram.git && cd engram
 uv sync
-mkdir -p ~/.config/engram
-cat > ~/.config/engram/config.toml <<EOF
-owner = "Sam"
-
-[sessions]
-roots = ["$PWD/examples/sessions"]
-
-[domains.notes]
-repo = "$PWD/examples/notes"
-EOF
+export ENGRAM_CONFIG=examples/config.toml
 uv run engram ingest
 uv run engram timeline "what happened with the north bed this season?" --domain notes
 uv run engram search "when did the basil bolt" --domain notes
 ```
 
-- `examples/notes/`: a made-up garden record
-- `examples/sessions/`: its made-up Claude Code sessions
-- Inside an area's own repo → drop `--domain`
-- `engram setup <repo>` → turns on hourly filing for that repo (once its pack has filing words and it's rewired)
+- `examples/config.toml`: the made-up garden's config, laid over yours for this shell only; your own is `~/.config/engram/config.toml`
+- Your own notes: add `[domains.<name>]` with `repo = "<a git repo of Markdown>"` to your config, then `uv run engram ingest` and `uv run engram search "<something you wrote>" --domain <name>`
+- Inside a repo of your own → drop `--domain`
+- `engram setup <repo>` → hourly filing for a rewired repo, and lets Claude run engram there
 
 ## Docs
 
 **Start here:**
-- [shape](docs/shape.md): the layout every record follows, packs, onboarding a repo
-- [technical](docs/technical.md): how engram is built, and why
+- [data model](docs/data-model.md): what's on disk: entries, documents, threads, links
+- [search](docs/search.md): how one call returns a whole history, corrections included
+- [alternatives](docs/alternatives.md): why SQLite FTS5, no embeddings, no graph database, with measurements
 
-**How it works:**
-- [data model](docs/data-model.md): entries, documents, threads, links, `engram.toml`
+**Bringing a repo in:**
+- [shape](docs/shape.md): the layout every record follows, packs, rewiring
+- [migration](docs/migration.md): how a repo changes shape: on a copy first, you see your pages before and after
 - [sources](docs/sources.md): what gets indexed, sessions, the archive
-- [search](docs/search.md): the index, queries, corrections, the timeline, scope
-- [summaries](docs/summaries.md): who-said-what rules, session and record summaries
-- [writing](docs/writing.md): the library, transactions, checks, advisor hookup
-- [operations](docs/operations.md): where things live, the jobs, releases, health
 
-**Changing a record, and measuring it:**
-- [migration](docs/migration.md): phases, gates, deletions, risks
-- [evaluation](docs/evaluation.md): question sets, the bar, the frozen gate
-- [alternatives](docs/alternatives.md): why SQLite FTS5, and other choices
+**Running it:**
+- [operations](docs/operations.md): where things live, the jobs, releases, health
+- [writing](docs/writing.md): the library, transactions, checks, how Claude calls engram
+- [summaries](docs/summaries.md): who-said-what rules, session and record summaries
+
+**Why, and how it's measured:**
+- [technical](docs/technical.md): the decision log, each call with its why
+- [evaluation](docs/evaluation.md): how retrieval is measured against grep, and the frozen gate
 
 The README's art is generated: [docs/assets/gen](docs/assets/gen/README.md).
 

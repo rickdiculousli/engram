@@ -330,15 +330,15 @@ def resume(qs: list[dict], prior: Path) -> tuple[list[dict], list[dict]]:
 
 CHAIN = {"through-line", "crossing", "revision", "whole-picture"}
 
-ANSWER_PROMPT = """{owner} asked, about his {domain} records:
+ANSWER_PROMPT = """{owner} asked, about their {domain} records:
 
 "{question}"
 
-Answer him from his records. Use only the shell commands `engram search --domain {domain} --limit 5 "<query>"` (your own query words; at most {cap} searches) and `engram show <ref>`. Don't read files any other way.
+Answer them from their records. Use only the shell commands `engram search --domain {domain} --limit 5 "<query>"` (your own query words; at most {cap} searches) and `engram show <ref>`. Don't read files any other way.
 {lenses}{timelines}
 How answers must read:
 - Lead with the arc, not a list of every day-to-day report.
-- After each claim, say who it came from (a clinician by name and role, {owner} himself, an analysis he worked out with Claude, or a Claude suggestion he's considering), as the record says it, and cite the record's id or full ref in [brackets], copied exactly as engram printed it, never shortened or paraphrased.
+- After each claim, say who it came from (a clinician by name and role, {owner} themselves, an analysis they worked out with Claude, or a Claude suggestion they're considering), as the record says it, and cite the record's id or full ref in [brackets], copied exactly as engram printed it, never shortened or paraphrased.
 - Quote doses, test numbers, dates and clinicians' words from the record; put only exact words in quotation marks.
 - If the record disagrees with itself, give each version with its date and source.
 - Keep approximate or remembered dates as approximate, in the record's words; never sharpen them.
@@ -504,11 +504,11 @@ def run_answer(qs: list[dict], domain: str, workers: int = 4, model: str | None 
     return _pool(lambda q: _answer_one(q, domain, f"eval-{run}-{q['id']}", model, grader), qs, workers)
 
 
-GREP_PROMPT = """{owner} asked, about his {domain} records:
+GREP_PROMPT = """{owner} asked, about their {domain} records:
 
 "{question}"
 
-Answer him from his records, the files in this folder. Use only the Read, Grep and Glob tools and your skills; don't look anywhere else.
+Answer them from their records, the files in this folder. Use only the Read, Grep and Glob tools and your skills; don't look anywhere else.
 
 How answers must read:""" + ANSWER_PROMPT.split("How answers must read:", 1)[1]
 

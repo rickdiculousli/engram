@@ -37,8 +37,12 @@ def spine(rel: str, folders: list[str]) -> str:
 
 
 def files(d: Domain) -> list[Path]:
-    out = subprocess.run(["git", "-C", str(d.repo), "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
-                         capture_output=True, text=True, check=True).stdout.split("\0")
+    git = subprocess.run(["git", "-C", str(d.repo), "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+                         capture_output=True, text=True)
+    if git.returncode:
+        raise RuntimeError(f"{d.repo} isn't a git repo; `git init` it first" if "not a git repository" in git.stderr
+                           else git.stderr.strip())
+    out = git.stdout.split("\0")
     keep = []
     skip = excluded(d)
     for rel in out:

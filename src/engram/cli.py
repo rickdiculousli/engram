@@ -179,7 +179,7 @@ def cmd_timeline(a):
         have = timeline.names(d)
         if not a.name:
             if have["stories"] or have["symptoms"]:
-                print(f"[{d}] stories: {', '.join(have['stories'])}\n[{d}] recurring symptoms: {', '.join(have['symptoms'])}")
+                print(f"[{d}] stories: {', '.join(have['stories'])}\n[{d}] recurring: {', '.join(have['symptoms'])}")
                 for kind in sorted(set(have) - {"stories", "symptoms"}):
                     print(f"[{d}] {kind}: {', '.join(have[kind])}")
             continue
@@ -194,7 +194,7 @@ def cmd_timeline(a):
         print(timeline.render(header, rows, a.format))
         return
     if a.name:
-        sys.exit("engram: no stories or recurring symptoms here; `engram timeline` lists them")
+        sys.exit("engram: no stories here; a repo gets them once it's rewired, and `engram timeline` lists what there is")
 
 
 def cmd_now(a):
@@ -778,15 +778,15 @@ def main(argv=None):
     s.add_argument("--json", action="store_true")
     s.set_defaults(fn=cmd_search)
 
-    s = sub.add_parser("timeline", help="whole chains in time order, merged into one: name stories or recurring symptoms, or "
+    s = sub.add_parser("timeline", help="whole chains in time order, merged into one: name stories or recurring things, or "
                        "give free text to pick them by search; no argument lists them")
     s.add_argument("name", nargs="*")
     s.add_argument("--domain")
     s.add_argument("--format", choices=["jsonl", "tsv"], default=os.environ.get("ENGRAM_TIMELINE_FORMAT", "tsv"))
     s.set_defaults(fn=cmd_timeline)
 
-    s = sub.add_parser("now", help="where things stand: current medications, treatments, alerts, upcoming visits, open "
-                       "questions, built from the record")
+    s = sub.add_parser("now", help="where things stand: what's current, what's coming, open questions, built from the "
+                       "record")
     s.add_argument("--domain")
     s.set_defaults(fn=cmd_now)
 

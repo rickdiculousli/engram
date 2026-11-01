@@ -134,7 +134,7 @@ def loop():
     b.append(bubble(32, 272, 230, "claude:", "[answer]", "pn", 11.0))
     # the hourly filer: checks, then writes and pushes the entry
     b += card(350, 20, 594, 130, "hourly filer")
-    b.append(T(366, 94, "is knowledge", "s"))
+    b.append(T(366, 94, "your words", "s"))
     for i, t in enumerate((2.1, 2.5, 2.9)):
         x = 462 + 24 * i
         b.append(R(x, 80, 18, 18, "pn", 4))
@@ -175,14 +175,14 @@ def loop():
     e1, e3 = "M278 85 H346", "M813 150 V186"
     e4, ask, ans = "M682 255 H616", "M278 246 H346", "M350 289 H282"
     b += [P(e1), P(e3), P(e4), P(ask), P(ans)]
-    b.append(T(823, 173, "ingest", "m mu"))
+    b.append(T(823, 173, "indexed", "m mu"))
     b.append(chip(314, 62, "keep"))
     b.append(chip(314, 316, "find"))
     b += [a.move(e1, 1.0, 1.8), a.move(e3, 4.3, 4.9), a.move(ask, 6.8, 7.6),
           a.move("M616 255 H682", 7.8, 8.4), a.move(e4, 9.0, 9.6), a.move(ans, 10.2, 10.9)]
     return svg("engram: keep and find", 960, 340,
-               "The loop. Keep: you tell Claude something in a session; the hourly filer checks it is knowledge, "
-               "three checks, then writes it as the latest entry and commits and pushes it. The index, your records "
+               "The loop. Keep: you tell Claude something in a session; the hourly filer checks it against your "
+               "words, three checks, then writes it as the latest entry and commits and pushes it. The index, your records "
                "linked as a graph, takes it in. Find: you ask a question; one call lights its match in the graph and "
                "what links to it, returns them in time order, and Claude answers from them.", b, a)
 
@@ -335,8 +335,8 @@ def evolve():
     sx, sy = 128, 128  # a record, filed with A, that belongs with B
     W = 220
     caps = (("as rewired", ""), ("a record regrouped", "✓ saved by itself"),
-            ("new ingested knowledge, linked", "✓ saved by itself"), ("drop a group you asked for?", "? asks you first"))
-    b.append(T(16, 34, "⟳ every week, on its own: tidies your graph", "s b"))
+            ("new knowledge, linked", "✓ saved by itself"), ("drop a group you asked for?", "? asks you first"))
+    b.append(T(16, 34, "⟳ every week, once you turn it on: tidies your graph", "s b"))
     for i in range(4):
         ox, oy = 16 + 236 * i, 52
         base, change = [], []
@@ -375,8 +375,8 @@ def evolve():
     b.append(T(16, 304, "small and undoable → saves itself · bigger, or losing anything you asked for → asks you "
                         "at your next session", "s mu"))
     return svg("engram: the weekly pass", 960, 320,
-               "Every week, on its own, engram tidies your graph. Week 1: as rewired. Week 2: a record regrouped, saved "
-               "by itself. Week 3: new ingested knowledge, linked, saved by itself. Week 4: dropping a group you asked "
+               "Every week, once you turn it on, engram tidies your graph. Week 1: as rewired. Week 2: a record regrouped, saved "
+               "by itself. Week 3: new knowledge, linked, saved by itself. Week 4: dropping a group you asked "
                "for is a bigger change, so it asks you first. Small and undoable changes save themselves; bigger ones, "
                "or losing anything you asked for, are asked at your next session.", b)
 

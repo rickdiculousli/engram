@@ -110,11 +110,11 @@ Have notes already?
 
 | You have | You get |
 |---|---|
-| A git repo of Markdown | search by heading, as it stands, read only: add it to your config ([Quickstart](#quickstart)) |
-| The same, rewired | stories, timelines, corrections and hourly filing |
+| A folder of Markdown, in git or not | search by heading, as it stands, read only: add it to your config ([Quickstart](#quickstart)) |
+| A git repo of it, rewired | stories, timelines, corrections and hourly filing |
 | Your own tool and its store | a [pack](docs/shape.md#a-pack) reads it in; engram never files there |
 
-A folder that isn't in git needs `git init` first. Apple Notes and Keep have to be exported to Markdown. On hold: an Obsidian vault read as it stands, in git or synced another way, its tags, daily notes and `[[links]]` included, and never written to.
+Apple Notes and Keep have to be exported to Markdown. On hold: an Obsidian vault's tags, daily notes and `[[links]]` read as they stand, never written to.
 
 Rewiring shapes a repo around what you use it for, on a scratch copy; nothing lands until you've seen your pages before and after:
 
@@ -175,7 +175,7 @@ More in [data model](docs/data-model.md).
 </p>
 
 - **`.engram/`:** engram's folder inside it: the repo's shape, your jobs and rules, and the pack, the repo's words for engram's model calls ([shape](docs/shape.md#a-pack), [example](examples/notes/.engram/))
-- **Where your data goes:** records stay in your repos, pushed only to the remote each one names; the index stays in `~/.local/share/engram/`, rebuilt from git at will; filing sends each finished session to Claude through your own Claude Code (`claude -p`, your subscription). More in [operations](docs/operations.md#where-things-live).
+- **Where your data goes:** records stay in your repos, pushed only to the remote each one names; the index stays in `~/.local/share/engram/`, rebuilt from your files at will; filing sends each finished session to Claude through your own Claude Code (`claude -p`, your subscription). More in [operations](docs/operations.md#where-things-live).
 
 > **Not goals:** embeddings (unless [this rule](docs/evaluation.md#embeddings-the-rule) fires), breaking arguments into fragments, multiple users, a web UI.
 
@@ -193,7 +193,7 @@ uv run engram search "when did the basil bolt" --domain notes
 ```
 
 - `examples/config.toml`: the made-up garden's config, laid over yours for this shell only; your own is `~/.config/engram/config.toml`
-- Your own notes: add `[domains.<name>]` with `repo = "<a git repo of Markdown>"` to your config, then `uv run engram ingest` and `uv run engram search "<something you wrote>" --domain <name>`
+- Your own notes: add `[domains.<name>]` with `repo = "<a folder of Markdown>"` to your config, then `uv run engram ingest` and `uv run engram search "<something you wrote>" --domain <name>`
 - Inside a repo of your own → drop `--domain`
 - `engram setup <repo>` → hourly filing for a rewired repo, and lets Claude run engram there
 

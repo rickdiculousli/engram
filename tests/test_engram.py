@@ -85,6 +85,17 @@ def test_ingest_tracks_edits_and_removals(medical):
     assert "5.6%" in search.search("HbA1c", ["medical"])[0]["snip"]
 
 
+def test_a_folder_outside_git_is_searched_and_its_hidden_files_skipped(env, tmp_path):
+    notes = tmp_path / "notes"
+    (notes / ".obsidian").mkdir(parents=True)
+    (notes / ".obsidian/app.md").write_text("# Settings\n\nbasil\n")
+    (notes / "beds.md").write_text("# Beds\n\n## South bed\nThe basil bolted.\n")
+    env["set_repo"]("notes", notes, pack=None)
+    main(["ingest", "--domain", "notes"])
+    assert [r["ref"] for r in search.search("basil", ["notes"])] == ["beds.md#South bed"]
+    assert resolve(notes, config.load()) == ["notes"]
+
+
 def test_search_works_while_an_ingest_holds_a_write(medical, env, tmp_path):
     flag = tmp_path / "locked"
     holder = subprocess.Popen([sys.executable, "-c", textwrap.dedent(f"""

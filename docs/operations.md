@@ -31,7 +31,7 @@ A timed job is a launchd job on macOS and a systemd user timer on Linux, WSL2 in
 
 To release:
 1. A pack change is committed in its record repo first and pushed; it's inert until pinned.
-2. From the engram commit to release: `uv run python bench/medical_gate.py run <out.json> --pack <record repo>@<pack commit>`, then `compare <baseline.json> <out.json>` says "same".
+2. From the engram commit to release: `uv run python bench/gate.py run <out.json> --pack <record repo>@<pack commit>`, then `compare <baseline.json> <out.json>` says "same".
 3. Tag the commit `release-<date>` and push the tag.
 4. Set `pack = "<pack commit>"` in the config, then `uv run engram review --release <tag> --gate <out.json>` from that commit: it refuses unless the pin's pack (its `.engram/` without the page, specs, settings and hooks) is the one the gate measured, moves the release clone to the tag, and logs the tag with its pins.
 5. Check `engram health` and capture after the next hourly run.
@@ -41,7 +41,7 @@ To roll back, take the previous line of `releases.jsonl`: set its pins in the co
 ## The value review
 
 engram reviews its own value ([technical](technical.md#the-value-review)). It's off for every repo until turned on.
-- **Turning it on:** first the dry run, `uv run engram review <session> --dry-run`, its cost reported afterwards. Then `[review] on = true` in the repo's `engram.toml`; `landing = "auto"` only once proposals have landed well. In engram's config, `[review]` sets `gate` (the domain whose frozen gate checks every fix), `gate_base` (its baseline), `heldout` (a command printing a JSON object of numbers), `measure.<domain>`, and optionally `release` and `remote`.
+- **Turning it on:** first the dry run, `uv run engram review <session> --dry-run`, its cost reported afterwards. Then `[review] on = true` in the repo's `engram.toml`; `landing = "auto"` only once proposals have landed well. In engram's config, `[review]` sets `gate` (the domain whose frozen gate checks every fix), `gate_sets` (its question sets, read when it's frozen), `gate_base` (its baseline), `heldout` (a command printing a JSON object of numbers), `measure.<domain>`, and optionally `release` and `remote`.
 - **A stop:** `engram review` says whether it's stopped and why. Once the cause is looked at, `engram review --clear-stop`.
 - **A proposed fix:** merge `review/fix-<id>`, release as above, then `engram review --landed <id>`.
 - **The owner's answer to an ask:** `engram review --answered <note id>`.

@@ -104,7 +104,7 @@ def db() -> sqlite3.Connection:
 def config() -> dict:
     """engram's own `[review]` settings: `release` (the clone the hourly job runs), `remote`, `heldout`,
     `measure.<domain>` (commands printing a JSON object of numbers), `gate` (the domain whose frozen gate,
-    `bench/<gate>_gate.py`, every fix passes) and `gate_base` (its baseline)."""
+    `bench/gate.py`, every fix passes) and `gate_base` (its baseline)."""
     return config_mod.raw().get("review", {})
 
 
@@ -426,7 +426,7 @@ def check_gate(base: Path, fixed: Path, domain: str, work: Path) -> tuple[bool, 
     dom, baseline = gate()
     if not dom:
         return False, "no gate set ([review] gate)"
-    script, out = f"bench/{dom}_gate.py", work / "gate.json"
+    script, out = "bench/gate.py", work / "gate.json"
     gate_py, ours = fixed / script, Path(__file__).resolve().parents[2] / script
     if not gate_py.exists() and ours.exists():  # a release older than the gate: the gate of record is the running engram's
         shutil.copy(ours, gate_py)

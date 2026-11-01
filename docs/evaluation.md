@@ -65,9 +65,9 @@ How retrieval is measured. The sets are an alarm run by script, never a target: 
 
 ## The frozen gate
 
-Every change must pass it before it lands, since the hourly job runs what's released ([operations](operations.md#the-release)). It guards the product against a real area: the domain the box configures under the gate's name, with the pack the box pins for it. `bench/medical_gate.py` freezes it.
+Every change must pass it before it lands, since the hourly job runs what's released ([operations](operations.md#the-release)). It guards the product against a real area: the domain the config names in `[review] gate`, with the pack the box pins for it, and the question sets `[review] gate_sets` names when it's frozen, the newest last. `bench/gate.py` freezes it.
 
-- **Run:** from the checkout under test, `uv run python bench/medical_gate.py run <out.json> --pack <repo>@<commit>`, then `uv run python bench/medical_gate.py compare <baseline.json> <out.json>`. It prints "same", or each value that moved by name. `--pack` takes the area's pack as a commit of a repo holding it, extracted the way a pin is; a directory serves while building, but only a commit can be released.
+- **Run:** from the checkout under test, `uv run python bench/gate.py run <out.json> --pack <repo>@<commit>`, then `uv run python bench/gate.py compare <baseline.json> <out.json>`. It prints "same", or each value that moved by name. `--pack` takes the area's pack as a commit of a repo holding it, extracted the way a pin is; a directory serves while building, but only a commit can be released.
 - **Its inputs are frozen** in `~/.local/share/engram/gate/` (`ENGRAM_GATE`): a clone of the record at a pinned commit, with no remote; a copy of the data folder (the index, capture's and sessions' state, the theory graph, summaries, and the tuning sets, never the sealed set); 10 fixed sessions, those that filed something and small ones that filed nothing; and one recorded real reply per filer ask, made once.
 - **Each run works on a fresh copy,** with `ENGRAM_FROZEN=1`, every model call refused, and the clock pinned: every engram module, and the pack, is loaded first, then each one's `date.today()` and `datetime.now()` reads noon on the day it was frozen.
 - **What it compares,** as counts and hashes only:

@@ -3,6 +3,7 @@
 Seven made-up readers walked the repo cold, as agents in character; three critics then took apart the structure, order and value they met. Use it as feedback for onboarding: the README, the docs' first screens, the Quickstart.
 
 - **Snapshot:** the README at `750b03f` on `readme-art`. Line numbers in the logs point there; the screenshots the agents saw aren't kept (`capture.cjs` makes them again).
+- **Next:** [round 2](../onboarding-2026-11/README.md), on the README after these fixes.
 - **Evidence, not verdicts:** a persona can misread; the critics checked the repo, and a correction is marked where one was wrong.
 
 ## Files

@@ -22,9 +22,7 @@
 
 **engram** files what you tell Claude Code into plain git, and hands Claude the whole story when you ask. On real records it finds what grep finds in fewer tokens, or more of the story for about the same.
 
-**For** one person using [Claude Code](https://claude.com/claude-code) on their own computer: macOS, Linux, or Windows through WSL2\*. Not the Claude app or claude.ai.
-
-<sub>\* Hourly filing and the weekly pass run as launchd jobs on macOS and systemd user timers on Linux. On WSL2, systemd must be on (it is on current installs), and jobs run while WSL does. Native Windows isn't supported.</sub>
+**For** one person using [Claude Code](https://claude.com/claude-code) on their own computer: macOS, Linux, or Windows through WSL2\* ([see Quickstart](#quickstart)). Not the Claude app or claude.ai.
 
 - **Only what you said:** a fact gets in only in your words and numbers; a day you never gave → the month you did
 - **Corrections kept:** fix a fact → both versions come back as one result, the newest in full
@@ -184,6 +182,12 @@ More in [data model](docs/data-model.md).
 ## Quickstart
 
 Needs git, Python 3.12+ and [uv](https://docs.astral.sh/uv/).
+
+| Machine | Hourly filing (`engram setup`) and the weekly pass (`engram refine install`) |
+|---|---|
+| macOS | launchd jobs |
+| Linux | systemd user timers; `loginctl enable-linger` keeps them running while you're logged out |
+| Windows | through WSL2, as Linux, with systemd on (it is on current installs); jobs run while WSL does. Native Windows isn't supported |
 
 ```sh
 git clone https://github.com/rickdiculousli/engram.git && cd engram

@@ -1,11 +1,12 @@
-"""The frozen medical gate: what medical's retrieval and filer do on fixed inputs, as counts and hashes, so a change that
-moves anything medical sees is caught before it lands (docs/evaluation.md, "The frozen gate").
+"""The frozen gate: what one area's retrieval and filer do on fixed inputs, as counts and hashes, so a change that
+moves anything that area sees is caught before it lands (docs/evaluation.md, "The frozen gate"). The area is the
+config's `[review] gate`; `[review] gate_sets` names its question sets at freeze, the newest last.
 
-usage: uv run python bench/medical_gate.py freeze            # once: pin the record, copy the data, pick the sessions
-       uv run python bench/medical_gate.py record            # once: the real filer over the sessions, replies saved
-       uv run python bench/medical_gate.py run <out.json> --pack <repo>@<commit>   # every change: the measures on the frozen inputs
-       uv run python bench/medical_gate.py check-pin <out.json>   # before a release: the box's medical pin is the gated tree
-       uv run python bench/medical_gate.py compare <a.json> <b.json>
+usage: uv run python bench/gate.py freeze            # once: pin the record, copy the data, pick the sessions
+       uv run python bench/gate.py record            # once: the real filer over the sessions, replies saved
+       uv run python bench/gate.py run <out.json> --pack <repo>@<commit>   # every change: the measures on the frozen inputs
+       uv run python bench/gate.py check-pin <out.json>   # before a release: the box's pin for the area is the gated tree
+       uv run python bench/gate.py compare <a.json> <b.json>
 
 The gate folder is $ENGRAM_GATE, else the data folder's gate/. Each run works on a fresh copy of its data, with
 ENGRAM_FROZEN=1, the clock pinned to the day it was frozen and every model call refused. Nothing it writes holds
@@ -26,15 +27,16 @@ import tomllib
 from datetime import date, datetime
 from pathlib import Path
 
+from engram import config as _config
 from engram.paths import data_dir, data_path
 
 GATE = Path(os.environ.get("ENGRAM_GATE") or data_path("gate")).expanduser()
 LIVE = data_dir()
 PROJECTS = Path.home() / ".claude/projects"
 SESSIONS, WITH_ENTRIES, MAX_BYTES = 10, 5, 1 << 20  # the fixed sessions: those that filed something first, then small ones
-DATA_FILES = ["medical.sqlite", "capture.sqlite", "sessions-state.sqlite", "theory.sqlite"]
-DATA_DIRS = ["moved", "summaries/medical", "record-summaries/medical"]
-EVAL_SETS = ["medical.toml", "medical-v2.toml"]  # the held-back set is sealed: the gate never reads it
+D = str(_config.raw().get("review", {}).get("gate") or "")  # the area gated, read before a run swaps the config
+DATA_FILES = [f"{D}.sqlite", "capture.sqlite", "sessions-state.sqlite", "theory.sqlite"]
+DATA_DIRS = ["moved", f"summaries/{D}", f"record-summaries/{D}"]
 # The index rows hashed, by table and column. Timestamps (doc.recorded) and row ids are left out, and a column added
 # later is outside the hash until it's listed here, so an additive change leaves the hash alone.
 INDEX_COLUMNS = {
@@ -119,22 +121,31 @@ def _manifest() -> dict:
     return json.loads((GATE / "manifest.json").read_text())
 
 
+def _record() -> Path:
+    return GATE / _manifest()["record"]
+
+
+def _sets() -> list[str]:
+    """The question sets frozen, the newest last; the held-back set is sealed, so the gate never reads it."""
+    return _manifest()["sets"]
+
+
 def _env(data: Path, conf: Path):
     os.environ.update(ENGRAM_DATA=str(data), ENGRAM_CONFIG=str(conf), ENGRAM_FROZEN="1",
-                      ENGRAM_SANDBOX="1", MEDICAL_HISTORY_NO_CAPTURE="1")
+                      ENGRAM_SANDBOX="1")
     for k in ("ENGRAM_EXCLUDE_SOURCES", "ENGRAM_AS_OF", "ENGRAM_AS_IT_STOOD", "ENGRAM_TAG", "ENGRAM_FIX"):
         os.environ.pop(k, None)
 
 
 def _pin_clock(today: date):
-    """Every `date.today()` and `datetime.now()` in every engram module loaded, medical's pack's included, read as noon
+    """Every `date.today()` and `datetime.now()` in every engram module loaded, the area's pack's included, read as noon
     on the day the gate was frozen. Every engram module is imported first: one a call imports later would read the real
     clock."""
     import engram
     from engram import pack
     for m in pkgutil.walk_packages(engram.__path__, "engram."):
         importlib.import_module(m.name)
-    pack.load("medical")
+    pack.load(D)
     noon = datetime(today.year, today.month, today.day, 12).astimezone()
 
     class Day(date):
@@ -166,29 +177,29 @@ def _no_models():
 
     def guarded(cmd, *a, **kw):
         if (cmd[0] if isinstance(cmd, (list, tuple)) else str(cmd).split()[0]) == "claude":
-            raise RuntimeError("the medical gate makes no model calls")
+            raise RuntimeError("the gate makes no model calls")
         return real(cmd, *a, **kw)
     subprocess.run = guarded
 
 
 def _world(work: Path, pack: str = "") -> dict:
-    """A fresh copy of the gate's data in `work`, engram pointed at it with medical's pack, the record checked at its
+    """A fresh copy of the gate's data in `work`, engram pointed at it with the area's pack, the record checked at its
     pinned commit. The pack is `<repo>@<commit>`, extracted as live extracts a pin and pinned the same way (the tree it
     measured goes in the result), or a directory while building."""
     m = _manifest()
-    head = subprocess.run(["git", "-C", str(GATE / "medical_history"), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
-    dirty = subprocess.run(["git", "-C", str(GATE / "medical_history"), "status", "--porcelain"], capture_output=True, text=True).stdout
-    if head != m["medical_commit"] or dirty:
+    head = subprocess.run(["git", "-C", str(_record()), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+    dirty = subprocess.run(["git", "-C", str(_record()), "status", "--porcelain"], capture_output=True, text=True).stdout
+    if head != m["commit"] or dirty:
         sys.exit(f"the gate's record moved: HEAD {head[:12]}, {len(dirty.splitlines())} changed paths")
     shutil.copytree(GATE / "data", work / "data")
     conf = work / "config.toml"
     repo, _, pin = pack.rpartition("@")
     pin = pin if repo else pack
-    conf.write_text((GATE / "config.toml").read_text().replace("[domains.medical]\n", f"[domains.medical]\npack = {json.dumps(pin)}\n"))
+    conf.write_text((GATE / "config.toml").read_text().replace(f"[domains.{D}]\n", f"[domains.{D}]\npack = {json.dumps(pin)}\n"))
     _env(work / "data", conf)
     if repo:
         from engram import pack as packs
-        packs.extract("medical", Path(repo).expanduser(), pin)
+        packs.extract(D, Path(repo).expanduser(), pin)
         m["pack_tree"] = packs.tree(Path(repo).expanduser(), pin)
     _pin_clock(date.fromisoformat(m["today"]))
     return m
@@ -207,8 +218,9 @@ def freeze():
     if subprocess.run(["pgrep", "-f", "capture run"], capture_output=True).stdout.strip():
         sys.exit("the hourly job is running; freeze when it's done")
     GATE.mkdir(parents=True, exist_ok=True)
-    clone = GATE / "medical_history"
-    subprocess.run(["git", "clone", "-q", str(config.load()["medical"].repo), str(clone)], check=True)
+    sets = list(_config.raw().get("review", {}).get("gate_sets") or [f"{D}.toml"])
+    clone = GATE / config.load()[D].repo.name
+    subprocess.run(["git", "clone", "-q", str(config.load()[D].repo), str(clone)], check=True)
     subprocess.run(["git", "-C", str(clone), "remote", "remove", "origin"], check=True)  # nothing here can push
     commit = subprocess.run(["git", "-C", str(clone), "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout.strip()
     data = GATE / "data"
@@ -224,12 +236,12 @@ def freeze():
     if (LIVE / "summaries/vocabulary.txt").exists():
         shutil.copy2(LIVE / "summaries/vocabulary.txt", data / "summaries/vocabulary.txt")
     (data / "eval").mkdir()
-    for f in EVAL_SETS:
+    for f in sets:
         shutil.copy2(LIVE / "eval" / f, data / "eval" / f)
-    (GATE / "config.toml").write_text(f'[domains.medical]\nrepo = "{clone}"\n'
-                                      '[domains.investments]\nrepo = ""\n[domains.general]\nrepo = ""\n')
+    (GATE / "config.toml").write_text(f'[domains.{D}]\nrepo = "{clone}"\n'  # every other area emptied
+                                      + "".join(f'[domains.{n}]\nrepo = ""\n' for n in config.load() if n != D))
     c = sqlite3.connect(data / "capture.sqlite")
-    rows = [r for r in c.execute("SELECT session, path, entries FROM filed WHERE domain = 'medical' ORDER BY session")
+    rows = [r for r in c.execute("SELECT session, path, entries FROM filed WHERE domain = ? ORDER BY session", (D,))
             if Path(r[1]).exists() and "/subagents/" not in r[1]]
     chosen = [r for r in rows if json.loads(r[2])][:WITH_ENTRIES]
     chosen += [r for r in rows if not json.loads(r[2]) and Path(r[1]).stat().st_size <= MAX_BYTES][:SESSIONS - len(chosen)]
@@ -244,10 +256,10 @@ def freeze():
         picked.append(s)
         # read whole, as `capture refile` would, with nothing shown as already filed
         c.execute("UPDATE filed SET upto = 0, bytes = 0, entries = '[]', path = ? WHERE session = ?", (str(dst), sid))
-    c.execute("UPDATE repo SET root = ? WHERE domain = 'medical'", (str(clone),))
+    c.execute("UPDATE repo SET root = ? WHERE domain = ?", (str(clone), D))
     c.commit()
     c.close()
-    m = {"medical_commit": commit, "today": date.today().isoformat(), "frozen": datetime.now().astimezone().isoformat(timespec="seconds"),
+    m = {"commit": commit, "record": clone.name, "sets": sets, "today": date.today().isoformat(), "frozen": datetime.now().astimezone().isoformat(timespec="seconds"),
          "sessions": picked}
     (GATE / "manifest.json").write_text(json.dumps(m, indent=1))
     print(f"frozen at {commit[:12]}: {len(picked)} sessions, {sum(s['filed_before'] > 0 for s in picked)} that filed something")
@@ -259,7 +271,7 @@ def record():
     out = GATE / "replies"
     if out.exists():
         sys.exit(f"{out} already holds the recorded replies")
-    with tempfile.TemporaryDirectory(prefix="medical-gate-") as work:
+    with tempfile.TemporaryDirectory(prefix="gate-") as work:
         m = _world(Path(work))
         out.mkdir()
         calls, usd = 0, 0.0
@@ -273,7 +285,7 @@ def record():
                     return reply, cost
                 return ask
             try:
-                capture.file_session("medical", GATE / "medical_history", _session_path(s), dry_run=True,
+                capture.file_session(D, _record(), _session_path(s), dry_run=True,
                                      ask=saving("facts", capture._ask), ask_verify=saving("verify", capture._ask_verify),
                                      ask_structure=saving("structure", capture._ask_structure))
                 error = None
@@ -289,19 +301,19 @@ def record():
 
 
 def measure16(qs: list[dict]) -> dict:
-    """Vendored from scratch/medical/measure16.py, on the tuning set only: frame questions (records in one
+    """On the newest tuning set only: frame questions (records in one
     timeline call, tokens per call), single facts both ways, waxing occurrences. Counts, miss ids and a row hash."""
     import statistics
     from engram import evalset, search, timeline
     qs = evalset.live(qs)
-    pairs, pic, nrows = evalset.same_records("medical"), evalset.picture("medical"), evalset.now_rows("medical")
-    syms = timeline.names("medical")["symptoms"]
-    chains = {s: evalset.timeline_refs([r for r in timeline.chain("medical", s)[1] if r.get("_ref")]) for s in syms}
+    pairs, pic, nrows = evalset.same_records(D), evalset.picture(D), evalset.now_rows(D)
+    syms = timeline.names(D)["symptoms"]
+    chains = {s: evalset.timeline_refs([r for r in timeline.chain(D, s)[1] if r.get("_ref")]) for s in syms}
     o = {"frame": {}, "facts": {}, "new": {}, "wax": {}, "tokens": []}
     for q in qs:
         if q.get("kind") == "lookup" or not q.get("links"):
             continue
-        h, rows = timeline.chain("medical", [], q["question"])
+        h, rows = timeline.chain(D, [], q["question"])
         own = evalset.own_source(q).replace("sessions:", "session:")
         rows = [r for r in rows if own == "" or not r.get("_ref", "").startswith(own)]
         refs = evalset.timeline_refs(rows)
@@ -309,10 +321,10 @@ def measure16(qs: list[dict]) -> dict:
         o["tokens"].append(len(timeline.render(h, rows, "tsv")) // 4)
     for q in [q for q in qs if q.get("kind") == "lookup"]:
         refs = []
-        for hh in search.search(q["question"], ["medical"], limit=5):
+        for hh in search.search(q["question"], [D], limit=5):
             refs += evalset.result_refs(hh)
         o["facts"][q["id"]] = bool(evalset.hit(q["expect"], refs))
-        o["new"][q["id"]] = evalset.fact_in_hand(q, *evalset.hand("medical", q["question"], pic), pairs, nrows)
+        o["new"][q["id"]] = evalset.fact_in_hand(q, *evalset.hand(D, q["question"], pic), pairs, nrows)
     for q in [q for q in qs if q.get("waxing")]:
         best = max(syms, key=lambda s: sum(evalset.hit([e], chains[s]) for e in q["expect"]))
         o["wax"][q["id"]] = [bool(evalset.hit([e], chains[best])) for e in q["expect"]]
@@ -378,10 +390,12 @@ def _relink_reply(prompt: str) -> tuple[str, float]:
 
 def probes(work: Path, m: dict) -> dict:
     from engram import capture, now, relink, theory, theorychange
-    repo, today = GATE / "medical_history", date.fromisoformat(m["today"])
+    repo, today = _record(), date.fromisoformat(m["today"])
     out = {"now": {"text": sha(now.text(repo, today)), "standing": sha(sorted(now.standing(repo).items())),
                    "rows": sha([vars(d) for d in now.docs_for(repo, today)])}}
     g = theory.load(repo)
+    if not g.loops():  # an area with no theory graph: nothing more to probe
+        return out
     out["theory"] = {"now": {"text": sha(theory.text(g)), "mermaid": sha(theory.mermaid(g))}}
     for day in THEN:
         h = theory.load(repo, asof=day)
@@ -408,7 +422,9 @@ def probes(work: Path, m: dict) -> dict:
     rl = relink._run("gate-probe", repo, summary, lambda p: (asked.append(sha(p)), _relink_reply(p))[1], True, None)
     out["relink"] = {"prompts": sha(asked), "batches": rl["batches"], "links": sha(rl["links"]),
                      "dropped": sha(rl["dropped"]), "result": rl["result"]}
-    med = next(c.name for c in now.build(repo, today).get("medications", []) if c.status == "taking")
+    med = next((c.name for c in now.build(repo, today).get("medications", []) if c.status == "taking"), None)
+    if med is None:  # the synthetic session repeats a tracked thing the area has
+        return out
     proposal = "Shall I add a probe condition into the first loop?"
     path = _probe_session(work, m["sessions"][0]["project"], med, proposal)
     facts = {"facts": [
@@ -426,7 +442,7 @@ def probes(work: Path, m: dict) -> dict:
             asked.append(f"{kind}:{sha(prompt)}")
             return json.dumps(reply), 0.0
         return ask
-    res = capture.file_session("medical", repo, path, dry_run=True, ask=fixed("facts", facts),
+    res = capture.file_session(D, repo, path, dry_run=True, ask=fixed("facts", facts),
                                ask_verify=fixed("verify", {"repeats": []}), ask_structure=fixed("structure", structural))
     out["synthetic"] = {"prompts": sha(asked), "asks": len(asked), "would_file": sha(res["would_file"]),
                         "dropped": sha(res["dropped"]), "kept": sha(res["kept"]),
@@ -439,11 +455,11 @@ def shown(qs: list[dict]) -> dict:
     """Every question's search as `engram search` prints it, and every timeline whole: each chain by name, and each
     question's own."""
     from engram import cli, search, timeline
-    out = {"search": sha([cli.render(search.search(q["question"], ["medical"], limit=5)) for q in qs])}
-    have = timeline.names("medical")
-    out["timeline"] = {kind: sha([timeline.render(*timeline.chain("medical", n), "tsv") for n in names])
+    out = {"search": sha([cli.render(search.search(q["question"], [D], limit=5)) for q in qs])}
+    have = timeline.names(D)
+    out["timeline"] = {kind: sha([timeline.render(*timeline.chain(D, n), "tsv") for n in names])
                        for kind, names in sorted(have.items())}
-    out["timeline"]["questions"] = sha([timeline.render(*timeline.chain("medical", [], q["question"]), "tsv") for q in qs])
+    out["timeline"]["questions"] = sha([timeline.render(*timeline.chain(D, [], q["question"]), "tsv") for q in qs])
     return out
 
 
@@ -451,30 +467,30 @@ def run(out: Path, pack: str = ""):
     from engram import capture, cli, evalset
     from engram.paths import index_path
     from engram.sources import sections
-    with tempfile.TemporaryDirectory(prefix="medical-gate-") as work:
+    with tempfile.TemporaryDirectory(prefix="gate-") as work:
         m = _world(Path(work), pack)
         _no_models()
         result = {"pack_tree": m.get("pack_tree"),
-                  "meta": {"gate": str(GATE), "code": str(Path(capture.__file__).parent), "pack": pack, "medical_commit": m["medical_commit"],
+                  "meta": {"gate": str(GATE), "code": str(Path(capture.__file__).parent), "pack": pack, "commit": m["commit"],
                            "today": m["today"], "at": datetime.now().astimezone().isoformat(timespec="seconds")}}
         result["filer"] = {}  # first, on the frozen index the replies were recorded against
         for s in m["sessions"]:
             rec = GATE / "replies" / f"{s['id']}.json"
             rep = Replies(json.loads(rec.read_text()) if rec.exists() else [])
             try:
-                res = capture.file_session("medical", GATE / "medical_history", _session_path(s), dry_run=True,
+                res = capture.file_session(D, _record(), _session_path(s), dry_run=True,
                                            ask=rep.ask("facts"), ask_verify=rep.ask("verify"), ask_structure=rep.ask("structure"))
                 result["filer"][s["id"][:8]] = filer_result(res, rep)
             except Exception as e:
                 result["filer"][s["id"][:8]] = {"error": type(e).__name__, "prompts": sha(rep.prompts)}
-        cli._ingest("medical", sections)  # then the record re-read by this code, as the 15-minute refresh would
-        result["index"] = index_hash(index_path("medical"))
+        cli._ingest(D, sections)  # then the record re-read by this code, as the 15-minute refresh would
+        result["index"] = index_hash(index_path(D))
         result["direct"] = {}
-        for f in EVAL_SETS:
-            rows = evalset.run_direct(evalset.live(evalset.load(Path(work) / "data/eval" / f)["q"]), "medical")
+        for f in _sets():
+            rows = evalset.run_direct(evalset.live(evalset.load(Path(work) / "data/eval" / f)["q"]), D)
             result["direct"][f] = {**evalset.summarize(rows), "rows": sha(rows)}
-        result["measure16"] = measure16(evalset.load(Path(work) / "data/eval/medical-v2.toml")["q"])
-        qs = [q for f in EVAL_SETS for q in evalset.live(evalset.load(Path(work) / "data/eval" / f)["q"])]
+        result["measure16"] = measure16(evalset.load(Path(work) / "data/eval" / _sets()[-1])["q"])
+        qs = [q for f in _sets() for q in evalset.live(evalset.load(Path(work) / "data/eval" / f)["q"])]
         result["shown"] = shown(qs)
         result["probes"] = probes(Path(work), m)
     out.write_text(json.dumps(result, indent=1, sort_keys=True))
@@ -487,11 +503,11 @@ def run(out: Path, pack: str = ""):
 
 
 def check_pin(result: dict) -> str | None:
-    """Why the box's medical pin isn't the pack this run measured, or None: its pack's tree must be the gated one."""
+    """Why the box's pin for the area isn't the pack this run measured, or None: its pack's tree must be the gated one."""
     from engram import config, pack
-    d = config.load().get("medical")
+    d = config.load().get(D)
     if not d or not d.repo or not pack.SHA.match(d.pack):
-        return "the box's config pins no medical pack commit"
+        return f"the box's config pins no {D or 'gated'} pack commit"
     if not result.get("pack_tree"):
         return "this run measured no pinned pack (run it with --pack <repo>@<commit>)"
     have = pack.tree(d.repo, d.pack)
@@ -502,6 +518,8 @@ def main(argv: list[str]):
     if os.environ.get("PYTHONHASHSEED") != "0":  # set order reaches prompts and ranking ties: pin it
         os.execve(sys.executable, [sys.executable, *sys.argv], {**os.environ, "PYTHONHASHSEED": "0"})
     cmd = argv[0] if argv else ""
+    if cmd in ("freeze", "record", "run", "check-pin") and not D:
+        sys.exit("no gate set: name the area in the config's [review] gate")
     if cmd == "freeze":
         freeze()
     elif cmd == "record":

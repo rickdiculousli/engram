@@ -14,14 +14,14 @@ Every source is a `pull(state) -> Iterable[Row]` with a declared freshness. Each
 
 | Source | Reads | Index file |
 |---|---|---|
-| a domain's repo | its working tree: entries, threads, documents, minus its excludes | that domain |
+| a domain's repo | its working tree: entries, threads, documents, minus its excludes; a folder outside git is searched too, every file but hidden ones, with no history | that domain |
 | `events` | each entry as itself, with its links | that domain |
 | `sessions` | `~/.claude/projects/*/*.jsonl`, through their checked summaries only | by classification |
 | a pack's sources | what its reader reads: rows the area's own tools keep, or text outside git, some only on request | that domain |
 
 ## Session classification
 
-Each session goes to exactly one index file: the repo it was started in ([decisions](../.engram/README.md#decisions)).
+Each session goes to exactly one index file: the repo it was started in (an owner's decision, in the private `.engram/README.md`).
 1. **The first configured domain** whose repo it was started in, a folder below it, or a worktree of it. Claude Code names a session's project folder after the folder it started in, so that name is the test; the session's first working folder is the fallback. A domain's `sessions_from` adds folders a harness starts its own runs in; those count as launched by a program.
 2. **general** otherwise, searched only on request. Touching a repo's files from elsewhere doesn't count: a meta session carries far too much context to sit in a record's index.
 

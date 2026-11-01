@@ -43,6 +43,7 @@ def box_config(tmp_path, monkeypatch):
     monkeypatch.setattr("engram.sources.sessions.ROOT", tmp_path / "no-sessions")
     for v in GIT_LOCAL:  # run from a git hook, these would point every repo a test makes at the repo committing
         monkeypatch.delenv(v, raising=False)
+    monkeypatch.setattr("engram.jobs.KIND", "launchd")  # the same job files on every platform; test_jobs covers systemd
 
 
 @pytest.fixture

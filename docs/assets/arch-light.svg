@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 306" width="960" height="306" class="light" role="img" aria-label="Where things live: engram's own repo holds the code and skills. Your repo is your record, plain git, with engram's folder .engram/ inside it beside your entries, links and documents. On your machine, ~/.config/engram/config.toml names which repos engram serves, and ~/.local/share/engram/ holds the index.">
+<title>engram: where things live</title>
+<defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="aho" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker></defs>
+<style>
+svg{--fg:#e6edf3;--mu:#8b949e;--pf:#161b22;--ps:#30363d;--ed:#4a5260;--or:#ff8a2a;--or2:#ffb35a;--ort:rgba(255,138,42,.13);--ok:#3fb950;--rd:#f85149;--am:#d29922}
+svg.light{--fg:#1f2328;--mu:#59636e;--pf:#f6f8fa;--ps:#d0d7de;--ed:#afb8c1;--or:#c2410c;--or2:#e8590c;--ort:rgba(232,89,12,.09);--ok:#1a7f37;--rd:#cf222e;--am:#9a6700}
+text{fill:var(--fg);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans',Helvetica,Arial,sans-serif;font-size:14px}
+.m{font-family:ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;font-size:13px}.s{font-size:13px}.t{font-size:17px;font-weight:600}.b{font-weight:600}
+.mu{fill:var(--mu)}.or{fill:var(--or)}.ok{fill:var(--ok)}.rd{fill:var(--rd)}.am{fill:var(--am)}
+.pn{fill:var(--pf);stroke:var(--ps);stroke-width:1.5}.po{fill:var(--ort);stroke:var(--or);stroke-width:1.5}
+.ln{fill:none;stroke:var(--ed);stroke-width:1.5}.lo{fill:none;stroke:var(--or);stroke-width:1.5}.dash{stroke-dasharray:4 5}
+.ar{marker-end:url(#ah)}.aro{marker-end:url(#aho)}#ah path{fill:var(--ed)}#aho path{fill:var(--or)}
+.chip{fill:var(--pf);stroke:var(--or);stroke-width:1.2}.hl{fill:var(--ort)}
+.mv{opacity:0}.mv .c{fill:var(--or)}.mv .g{fill:var(--or);opacity:.3}
+.nd{fill:var(--or)}.nl{fill:var(--fg)}.nb{fill:var(--ed);stroke:var(--mu);stroke-width:1.5}.strike{stroke:var(--rd);stroke-width:1.5}
+@supports not (offset-path:path('M0 0')){.mv{display:none}}
+@media (prefers-reduced-motion: reduce){*{animation:none!important}}
+</style>
+<rect x="16" y="20" width="452" height="180" rx="10" class="pn"/>
+<text x="32" y="46" class="t">engram/</text>
+<text x="32" y="66" class="m mu">this repo</text>
+<text x="32" y="96" class="m">src/engram/</text>
+<text x="32" y="118" class="m">skills/</text>
+<text x="50" y="140" class="m">engram-rewire/</text>
+<text x="50" y="162" class="m">engram-refine/</text>
+<text x="32" y="184" class="m">docs/</text>
+<rect x="492" y="20" width="452" height="180" rx="10" class="pn"/>
+<text x="508" y="46" class="t">[your repo]/</text>
+<text x="508" y="66" class="m mu">your record, plain git</text>
+<rect x="500" y="80" width="436" height="24" rx="6" class="po"/>
+<text x="928" y="96" class="s mu" text-anchor="end">engram's folder</text>
+<text x="508" y="96" class="m or b">.engram/</text>
+<text x="508" y="118" class="m">events/…/[id].md</text>
+<text x="508" y="140" class="m">events/links.jsonl</text>
+<text x="508" y="162" class="m">[page].md</text>
+<path d="M468 110 H488" class="ln ar"/>
+<rect x="16" y="216" width="928" height="76" rx="10" class="pn"/>
+<text x="32" y="242" class="t">your machine</text>
+<text x="32" y="276" class="m">~/.config/engram/config.toml</text>
+<text x="278" y="276" class="s mu">which repos</text>
+<text x="500" y="276" class="m">~/.local/share/engram/</text>
+<text x="690" y="276" class="s mu">the index</text>
+</svg>

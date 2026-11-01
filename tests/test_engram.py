@@ -85,6 +85,17 @@ def test_ingest_tracks_edits_and_removals(medical):
     assert "5.6%" in search.search("HbA1c", ["medical"])[0]["snip"]
 
 
+def test_a_folder_outside_git_is_searched_and_its_hidden_files_skipped(env, tmp_path):
+    notes = tmp_path / "notes"
+    (notes / ".obsidian").mkdir(parents=True)
+    (notes / ".obsidian/app.md").write_text("# Settings\n\nbasil\n")
+    (notes / "beds.md").write_text("# Beds\n\n## South bed\nThe basil bolted.\n")
+    env["set_repo"]("notes", notes, pack=None)
+    main(["ingest", "--domain", "notes"])
+    assert [r["ref"] for r in search.search("basil", ["notes"])] == ["beds.md#South bed"]
+    assert resolve(notes, config.load()) == ["notes"]
+
+
 def test_search_works_while_an_ingest_holds_a_write(medical, env, tmp_path):
     flag = tmp_path / "locked"
     holder = subprocess.Popen([sys.executable, "-c", textwrap.dedent(f"""
@@ -350,3 +361,13 @@ def test_a_synonym_adds_to_the_score_and_never_filters(medical, env):
     refs = [r["ref"] for r in search.search("walking plan", ["medical"])]
     assert refs[0] == "notes/plan.md#Plan"  # "Walk daily." found through the synonym; "plan" alone found it before too
     assert search.search("glucose", ["medical"])[0]["ref"] == "log.md#Lab"
+
+
+def test_grep_reaches_an_entry_by_its_id_when_its_file_was_read_or_grepped(tmp_path, monkeypatch):
+    info = {"reads": [str(tmp_path / "events/2026/10/20261022-010221-status-2b2f.md")],
+            "greps": [f"{tmp_path}/notes/plan.md:3:Walk daily."], "tokens": 9, "context": 5, "base": 1}
+    monkeypatch.setattr(evalset, "_claude", lambda *a, **kw: ("an answer", "", info))
+    q = {"id": "q1", "question": "how did it go?", "expect": [],
+         "links": [{"refs": ["20261022-010221-status-2b2f"]}, {"refs": ["notes/plan.md#Plan"]}, {"refs": ["20260101-000000-x-0000"]}]}
+    row = evalset._grep_one(q, "medical", tmp_path, None)
+    assert row["links"] == [True, True, False] and row["grepped"] == ["notes/plan.md"]

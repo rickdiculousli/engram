@@ -1,7 +1,7 @@
 """Capture (.engram/README.md, "Filing from conversation"): what the owner says in a repo's sessions gets filed without him
 doing anything. The hourly job is the only filer of facts from talk; the advisor saves only whole documents he hands it.
 
-One launchd job runs every hour (`engram capture run`):
+One timed job runs every hour (`engram capture run`, `engram.jobs`):
 1. It indexes changed sessions. Under "DO NOT STORE GARBAGE" that means their checked summaries, kept current for the
    repos set up; raw transcripts are never indexed.
 2. Each session started in a repo set up that has grown since it was last filed, and has been idle an hour (its last

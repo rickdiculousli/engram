@@ -27,6 +27,10 @@ def repo_domain(cwd: Path, domains: dict[str, Domain]) -> str | None:
         for d in domains.values():
             if d.repo and root == d.repo.resolve():
                 return d.name
+        return None
+    for d in domains.values():  # outside git: the domain whose folder holds cwd
+        if d.repo and cwd.resolve().is_relative_to(d.repo.resolve()):
+            return d.name
     return None
 
 

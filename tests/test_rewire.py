@@ -94,7 +94,7 @@ def test_analyse_finds_one_update_written_in_several_places(tmp_path):
     assert a["copies"] == [{"name": "Brandywine", "date": "10-14",
                             "files": ["garden/beds.md", "garden/log.md", "garden/tomatoes.md"]}]
     assert a["stale"] == [{"file": "garden/tomatoes.md", "as_of": "2026-09-01", "newest_entry": "2026-10-14"}]
-    assert a["folders"]["events/*/*"]["frontmatter"]["kind"] == 1
+    assert a["folders"]["events/*/*"]["frontmatter"]["kind"] == len(list((NOTES / "events").rglob("*.md")))  # every entry has one
 
 
 BRIEF = "\n### 2026-10-05T10:00 b brief\n# Brief\na long brief that quotes a secret\n"

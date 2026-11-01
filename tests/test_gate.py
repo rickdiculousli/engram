@@ -7,7 +7,7 @@ from test_capture import TOML, reply, said  # noqa: F401  (the capture world's f
 from test_capture import world  # noqa: F401
 from engram import capture
 
-spec = importlib.util.spec_from_file_location("medical_gate", Path(__file__).parent.parent / "bench/medical_gate.py")
+spec = importlib.util.spec_from_file_location("gate", Path(__file__).parent.parent / "bench/gate.py")
 gate = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(gate)
 

@@ -1,6 +1,6 @@
 """The value review (.engram/README.md, "Every repo on engram can call a review"; docs/technical.md, "The value
 review"). Once a session in a repo engram serves has idled an hour (the hourly job), or when the owner says the
-value isn't there (`engram review <session>`), one model call reads what he asked, each engram call the advisor made
+value isn't there (`engram review <session>`), one model call reads what they asked, each engram call the advisor made
 and what it returned, what it answered, and what the record held that day through engram's own first call. It asks
 three things (QUESTIONS), and each finding names its cause; the fix goes where the cause is:
 - the advisor stopped early: a proposal for that repo's instructions, which 4-7's instruction diff reads, never applied
@@ -9,7 +9,7 @@ three things (QUESTIONS), and each finding names its cause; the fix goes where t
   lands as a pushed branch with its evidence and its entry in the commit message (`propose`), or merged with the release
   tag advanced and the tag logged with the pins it ran with (`auto`); otherwise dropped.
 - never recorded: a filing-rule proposal, or a lead to dig for the advisor's lane
-A finding whose fix would change what goes into his record, or where his data lives, only asks him. The limits are in
+A finding whose fix would change what goes into their record, or where their data lives, only asks them. The limits are in
 code (LIMITS); each run's cost is logged. A repo turns it on with `[review] on = true` in its engram.toml. State lives
 in the data folder (`review/`), clones in `scratch/review/`, never in a repo."""
 import contextlib
@@ -50,8 +50,8 @@ CREATE TABLE IF NOT EXISTS heldout (at TEXT, result TEXT);
 CREATE TABLE IF NOT EXISTS note (id INTEGER PRIMARY KEY, domain TEXT, kind TEXT, line TEXT, at TEXT, shown TEXT);
 """
 
-PROMPT = """{mark}. Below is one session of {owner} with Claude, the advisor of his {domain} record, which it reads
-through engram's calls. For each of his asks: his words, each engram call the advisor made (numbered c1, c2, ...) with
+PROMPT = """{mark}. Below is one session of {owner} with Claude, the advisor of their {domain} record, which it reads
+through engram's calls. For each of their asks: their words, each engram call the advisor made (numbered c1, c2, ...) with
 what it returned, and the advisor's answer; then what engram's own first call returned for that ask as of the
 session's day ({day}), which is what the record held then.
 
@@ -68,7 +68,7 @@ One finding per problem:
   held it that day but no call the advisor made surfaced it; "unrecorded" when the record never held it
 - "rule": for "unrecorded", true when a filing rule should have caught it from a session; false for a lead to dig
 - "what": one sentence on what was missed
-- "ask": only when fixing it would change what goes into his record or where his data lives, one sentence to {owner}
+- "ask": only when fixing it would change what goes into their record or where their data lives, one sentence to {owner}
   with your recommendation; otherwise ""
 No finding is better than a guessed one. Reply with JSON only: {{"findings": [...]}}
 
@@ -104,7 +104,7 @@ def db() -> sqlite3.Connection:
 def config() -> dict:
     """engram's own `[review]` settings: `release` (the clone the hourly job runs), `remote`, `heldout`,
     `measure.<domain>` (commands printing a JSON object of numbers), `gate` (the domain whose frozen gate,
-    `bench/<gate>_gate.py`, every fix passes) and `gate_base` (its baseline)."""
+    `bench/gate.py`, every fix passes) and `gate_base` (its baseline)."""
     return config_mod.raw().get("review", {})
 
 
@@ -174,7 +174,7 @@ def engram_args(command: str) -> list[str] | None:
 
 
 def read(path: Path) -> dict:
-    """The session as the review reads it: each ask of his, the engram calls made with their output, the answer."""
+    """The session as the review reads it: each ask of theirs, the engram calls made with their output, the answer."""
     s = sessions.parse(path, path.parent.parent)
     turns, n = [], 0
     for e in s.exchanges:
@@ -426,7 +426,7 @@ def check_gate(base: Path, fixed: Path, domain: str, work: Path) -> tuple[bool, 
     dom, baseline = gate()
     if not dom:
         return False, "no gate set ([review] gate)"
-    script, out = f"bench/{dom}_gate.py", work / "gate.json"
+    script, out = "bench/gate.py", work / "gate.json"
     gate_py, ours = fixed / script, Path(__file__).resolve().parents[2] / script
     if not gate_py.exists() and ours.exists():  # a release older than the gate: the gate of record is the running engram's
         shutil.copy(ours, gate_py)
@@ -582,7 +582,7 @@ def landed(fid: int) -> str | None:
 # --- what reaches the owner, and the advisor ---------------------------------------------------------------------------
 
 def opening(domain: str) -> str | None:
-    """His next note's one line: the oldest ask waiting on him (asked every session until answered), else a fix not
+    """His next note's one line: the oldest ask waiting on them (asked every session until answered), else a fix not
     yet told, once."""
     with contextlib.closing(db()) as c, c:
         row = (c.execute("SELECT id, line, kind FROM note WHERE domain = ? AND kind = 'ask' AND shown IS NULL ORDER BY id", (domain,)).fetchone()
@@ -610,7 +610,7 @@ def session_start(domain: str, root: Path) -> list[str]:
     if not on(root):
         return []
     out = [f"Open your first reply to {config_mod.owner()} with this one line: {line}"] if (line := opening(domain)) else []
-    return out + [f"engram's value review left a lead to dig in your lane, if his question touches it: {l}" for l in leads(domain)]
+    return out + [f"engram's value review left a lead to dig in your lane, if their question touches it: {l}" for l in leads(domain)]
 
 
 # --- the triggers ---------------------------------------------------------------------------------------------------

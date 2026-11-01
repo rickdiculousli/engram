@@ -1,6 +1,6 @@
 # Summaries
 
-Machine-written text stands in for the real record, so its rules are strict. The owner set them in [decisions](../.engram/README.md#decisions).
+Machine-written text stands in for the real record, so its rules are strict. The owner set them under Decisions in the private `.engram/README.md`.
 
 ## Rules for every summary
 

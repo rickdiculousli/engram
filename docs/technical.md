@@ -1,6 +1,6 @@
 # Technical decisions
 
-The machinery calls, made without the owner (they read outcomes, not machinery), each with its why. The owner's own calls are in [decisions](../.engram/README.md#decisions); this doc implements them. Before changing any of this, read the entry, and add each new machinery decision here with its why. How search and the timeline work is in [search](search.md); summaries in [summaries](summaries.md).
+The machinery calls, made without the owner (they read outcomes, not machinery), each with its why. The owner's own calls are under Decisions in the private `.engram/README.md`; this doc implements them. Before changing any of this, read the entry, and add each new machinery decision here with its why. How search and the timeline work is in [search](search.md); summaries in [summaries](summaries.md).
 
 ## How work is measured
 
@@ -56,7 +56,7 @@ The hourly job (`engram capture run`; `capture.py`, `setup.py`) indexes changed 
 - **Code drops a fact** unless its quote is in one of the owner's messages past that point (an answered question in Claude's words), with every number in those words. A number counts only whole (`dates.numbers`): "35" isn't in "135B", while "7 out of 10" passes on "7/10".
 - **What the model sees of the record:** every entry dated within 31 days either side of each message's day, where each tracked thing stands (the `now` chains), and search hits; any fact a listed entry states, in any words, is a repeat.
 - **The repeat check:** after the code checks, each candidate's own title and body search the index; its top 8 hits across entries, documents, occurrence pages and where-things-stand, whole up to 1,500 characters, plus every entry dated the same day, go to one low-effort call per session (`verify`), which names the record that already states each repeat. Code drops it only if that ref was shown under it. A new occurrence of a known thing is always filed: for an occurrence kind (the pack's `occurrence_kinds`), the named record's date must fall within 2 days of the candidate's (4 when either is approximate). Why: searching by the owner's raw words missed records worded differently.
-- **Dates he never gave:** code checks the model's date against the message, the question answered and Claude's message before (`capture.said_date`): the day said, a day relative words count back to, a weekday or weekend named, a date written out, a month or year by name. A day that fails narrows to the month or year that passes, else `date: not-sure`.
+- **Dates never said:** code checks the model's date against the message, the question answered and Claude's message before (`capture.said_date`): the day said, a day relative words count back to, a weekday or weekend named, a date written out, a month or year by name. A day that fails narrows to the month or year that passes, else `date: not-sure`.
 - **Placement when filed:** the same call returns each fact's threads, `occurrence_of` and `led_from`; code keeps only known threads, an existing occurrence page and an entry the record holds, with rels its `[links.timeline]` allows. No extra call.
 - **Theory changes:** the job files a status change or a theory link only when the owner states it or agrees to Claude's proposal; code drops an unknown id, status, rel or strength, a repeat, and anything not in the owner's words. When the owner agreed to a structural change, a second call writes the operations, and `plan()` checks them before `apply()`.
 - **A thing's chain:** a change joins the chain its name matches (`now.chain_for`), strictest first: as written, strengths dropped, forms dropped, a prefix, then a name of two words or more inside a longer one.
@@ -109,7 +109,7 @@ An area's words and a few small functions live in its own record repo, under `.e
 
 ## The value review
 
-`review.py`, for the owner's call that engram reviews its own value ([decisions](../.engram/README.md#decisions)).
+`review.py`, for the owner's call that engram reviews its own value (in the private `.engram/README.md`).
 
 - **When:** in the hourly job, for a session idle an hour, in a repo whose `engram.toml` sets `[review] on = true`; on demand, `engram review <session>`. Off by default.
 - **What it reads:** one Opus call at high effort with no tools. For each of the owner's asks: their words, each engram call the advisor made with what it returned, the answer, and engram's own first call on their words as of the session's day.

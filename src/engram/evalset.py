@@ -330,15 +330,15 @@ def resume(qs: list[dict], prior: Path) -> tuple[list[dict], list[dict]]:
 
 CHAIN = {"through-line", "crossing", "revision", "whole-picture"}
 
-ANSWER_PROMPT = """{owner} asked, about his {domain} records:
+ANSWER_PROMPT = """{owner} asked, about their {domain} records:
 
 "{question}"
 
-Answer him from his records. Use only the shell commands `engram search --domain {domain} --limit 5 "<query>"` (your own query words; at most {cap} searches) and `engram show <ref>`. Don't read files any other way.
+Answer them from their records. Use only the shell commands `engram search --domain {domain} --limit 5 "<query>"` (your own query words; at most {cap} searches) and `engram show <ref>`. Don't read files any other way.
 {lenses}{timelines}
 How answers must read:
 - Lead with the arc, not a list of every day-to-day report.
-- After each claim, say who it came from (a clinician by name and role, {owner} himself, an analysis he worked out with Claude, or a Claude suggestion he's considering), as the record says it, and cite the record's id or full ref in [brackets], copied exactly as engram printed it, never shortened or paraphrased.
+- After each claim, say who it came from (a clinician by name and role, {owner} themselves, an analysis they worked out with Claude, or a Claude suggestion they're considering), as the record says it, and cite the record's id or full ref in [brackets], copied exactly as engram printed it, never shortened or paraphrased.
 - Quote doses, test numbers, dates and clinicians' words from the record; put only exact words in quotation marks.
 - If the record disagrees with itself, give each version with its date and source.
 - Keep approximate or remembered dates as approximate, in the record's words; never sharpen them.
@@ -504,11 +504,11 @@ def run_answer(qs: list[dict], domain: str, workers: int = 4, model: str | None 
     return _pool(lambda q: _answer_one(q, domain, f"eval-{run}-{q['id']}", model, grader), qs, workers)
 
 
-GREP_PROMPT = """{owner} asked, about his {domain} records:
+GREP_PROMPT = """{owner} asked, about their {domain} records:
 
 "{question}"
 
-Answer him from his records, the files in this folder. Use only the Read, Grep and Glob tools and your skills; don't look anywhere else.
+Answer them from their records, the files in this folder. Use only the Read, Grep and Glob tools and your skills; don't look anywhere else.
 
 How answers must read:""" + ANSWER_PROMPT.split("How answers must read:", 1)[1]
 
@@ -523,13 +523,15 @@ def _grep_one(q: dict, domain: str, repo: Path, model: str | None) -> dict:
     read = {p.removeprefix(root).removeprefix(str(repo) + "/") for p in info.get("reads", [])}
     grepped = {line.split(":", 1)[0].removeprefix(root) for out in info.get("greps", []) for line in out.splitlines() if ":" in line}
     seen = read | grepped
+    names = {Path(f).stem for f in seen}  # an entry is named by its id, the stem of its file
+
     def reached(refs):  # a link counts when its file was read, or a matching line from it was printed
-        return any(re.split(r"[#:]", r, 1)[0] in seen for r in refs)
+        return any(re.split(r"[#:]", r, maxsplit=1)[0] in seen or r in names for r in refs)
     links = [reached(l["refs"]) for l in q.get("links", [])]
     return {"id": q["id"], "stories": q.get("stories", []), "kind": q.get("kind", "lookup"), "links": links,
             "found": all(links) if links else reached(q["expect"]), "hit": reached(q["expect"]), "file_hit": reached(q["expect"]),
             "pass": all(links) if links else reached(q["expect"]),
-            "reads": sorted(read), "answer": answer, **_cost(info)}
+            "reads": sorted(read), "grepped": sorted(grepped), "answer": answer, **_cost(info)}
 
 
 def run_grep(qs: list[dict], domain: str, repo: Path, workers: int = 4, model: str | None = None) -> list[dict]:

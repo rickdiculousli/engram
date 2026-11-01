@@ -1,0 +1,105 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 320" width="960" height="320" class="dark" role="img" aria-label="Rewiring: a repo starts as a tangle of records. What you want it to do decides its shape: follow each thing becomes a page per name with spokes to its records; keep what happened becomes entries on a thread; sort by category becomes a group per category. The shape is kept in .engram/engram.toml, and a commit that drifts from it is refused.">
+<title>engram: rewiring a repo</title>
+<defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="aho" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker></defs>
+<style>
+svg{--fg:#e6edf3;--mu:#8b949e;--pf:#161b22;--ps:#30363d;--ed:#4a5260;--or:#ff8a2a;--or2:#ffb35a;--ort:rgba(255,138,42,.13);--ok:#3fb950;--rd:#f85149;--am:#d29922}
+svg.light{--fg:#1f2328;--mu:#59636e;--pf:#f6f8fa;--ps:#d0d7de;--ed:#afb8c1;--or:#c2410c;--or2:#e8590c;--ort:rgba(232,89,12,.09);--ok:#1a7f37;--rd:#cf222e;--am:#9a6700}
+text{fill:var(--fg);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans',Helvetica,Arial,sans-serif;font-size:14px}
+.m{font-family:ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;font-size:13px}.s{font-size:13px}.t{font-size:17px;font-weight:600}.b{font-weight:600}
+.mu{fill:var(--mu)}.or{fill:var(--or)}.ok{fill:var(--ok)}.rd{fill:var(--rd)}.am{fill:var(--am)}
+.pn{fill:var(--pf);stroke:var(--ps);stroke-width:1.5}.po{fill:var(--ort);stroke:var(--or);stroke-width:1.5}
+.ln{fill:none;stroke:var(--ed);stroke-width:1.5}.lo{fill:none;stroke:var(--or);stroke-width:1.5}.dash{stroke-dasharray:4 5}
+.ar{marker-end:url(#ah)}.aro{marker-end:url(#aho)}#ah path{fill:var(--ed)}#aho path{fill:var(--or)}
+.chip{fill:var(--pf);stroke:var(--or);stroke-width:1.2}.hl{fill:var(--ort)}
+.mv{opacity:0}.mv .c{fill:var(--or)}.mv .g{fill:var(--or);opacity:.3}
+.nd{fill:var(--or)}.nl{fill:var(--fg)}.nb{fill:var(--ed);stroke:var(--mu);stroke-width:1.5}.strike{stroke:var(--rd);stroke-width:1.5}
+@supports not (offset-path:path('M0 0')){.mv{display:none}}
+@media (prefers-reduced-motion: reduce){*{animation:none!important}}
+</style>
+<rect x="16" y="20" width="220" height="260" rx="10" class="pn"/>
+<text x="32" y="46" class="t">your repo</text>
+<text x="32" y="66" class="m mu">as it is</text>
+<line x1="50.7" y1="167.5" x2="142.3" y2="247.3" class="ln"/>
+<line x1="201.3" y1="101.3" x2="135.8" y2="148.8" class="ln"/>
+<line x1="149.4" y1="107.9" x2="139.4" y2="151.8" class="ln"/>
+<line x1="142.4" y1="153.6" x2="201.6" y2="101.7" class="ln"/>
+<line x1="50.0" y1="170.5" x2="51.7" y2="111.2" class="ln"/>
+<line x1="150.5" y1="108.1" x2="146.8" y2="245.4" class="ln"/>
+<line x1="182.0" y1="135.1" x2="154.6" y2="106.5" class="ln"/>
+<line x1="134.0" y1="153.4" x2="99.2" y2="119.6" class="ln"/>
+<line x1="132.5" y1="158.6" x2="55.5" y2="175.1" class="ln"/>
+<line x1="66.7" y1="126.8" x2="200.3" y2="99.1" class="ln"/>
+<line x1="141.7" y1="248.2" x2="117.1" y2="233.5" class="ln"/>
+<line x1="59.1" y1="108.1" x2="57.3" y2="107.4" class="ln"/>
+<line x1="66.4" y1="130.0" x2="132.7" y2="155.4" class="ln"/>
+<line x1="58.9" y1="122.6" x2="54.0" y2="110.7" class="ln"/>
+<circle cx="95" cy="116" r="5" class="pn"/>
+<circle cx="151" cy="102" r="5" class="pn"/>
+<circle cx="131" cy="152" r="5" class="pn"/>
+<circle cx="50" cy="176" r="5" class="pn"/>
+<circle cx="46" cy="164" r="5" class="pn"/>
+<circle cx="52" cy="105" r="5" class="pn"/>
+<circle cx="112" cy="231" r="5" class="pn"/>
+<circle cx="61" cy="128" r="5" class="pn"/>
+<circle cx="147" cy="251" r="5" class="pn"/>
+<circle cx="138" cy="157" r="5" class="pn"/>
+<circle cx="206" cy="98" r="5" class="pn"/>
+<circle cx="186" cy="139" r="5" class="pn"/>
+<circle cx="65" cy="110" r="5" class="pn"/>
+<path d="M236 150 H268" class="ln ar"/>
+<text x="276" y="40" class="s mu">what you want this repo to do</text>
+<text x="560" y="40" class="s mu">rewired around them</text>
+<rect x="276" y="58" width="230" height="44" rx="10" class="pn"/>
+<text x="292" y="85" class="s b">follow each [thing]</text>
+<path d="M506 80 H552" class="ln ar"/>
+<rect x="560" y="54" width="384" height="66" rx="10" class="pn"/>
+<line x1="588.8" y1="72.1" x2="611.4" y2="86.6" class="ln"/>
+<line x1="588.8" y1="101.9" x2="611.4" y2="87.4" class="ln"/>
+<line x1="691.2" y1="72.1" x2="668.6" y2="86.6" class="ln"/>
+<line x1="691.2" y1="101.9" x2="668.6" y2="87.4" class="ln"/>
+<rect x="612" y="75" width="56" height="24" rx="12" class="pn"/>
+<rect x="612" y="75" width="56" height="24" rx="12" class="po"/>
+<text x="640" y="92" class="m or" text-anchor="middle">[thing]</text>
+<circle cx="584" cy="69" r="5" class="pn"/>
+<circle cx="584" cy="105" r="5" class="pn"/>
+<circle cx="696" cy="69" r="5" class="pn"/>
+<circle cx="696" cy="105" r="5" class="pn"/>
+<text x="928" y="92" class="s" text-anchor="end">a page per name</text>
+<rect x="276" y="138" width="230" height="44" rx="10" class="pn"/>
+<text x="292" y="165" class="s b">keep what happened</text>
+<path d="M506 160 H552" class="ln ar"/>
+<rect x="560" y="134" width="384" height="66" rx="10" class="pn"/>
+<line x1="589.8" y1="167.0" x2="610.2" y2="167.0" class="ln"/>
+<line x1="621.8" y1="167.0" x2="642.2" y2="167.0" class="ln"/>
+<line x1="653.8" y1="167.0" x2="674.2" y2="167.0" class="ln"/>
+<line x1="685.8" y1="167.0" x2="706.2" y2="167.0" class="ln"/>
+<line x1="717.8" y1="167.0" x2="738.2" y2="167.0" class="ln"/>
+<circle cx="584" cy="167" r="5" class="pn"/>
+<circle cx="616" cy="167" r="5" class="pn"/>
+<circle cx="648" cy="167" r="5" class="pn"/>
+<circle cx="680" cy="167" r="5" class="pn"/>
+<circle cx="712" cy="167" r="5" class="pn"/>
+<circle cx="744" cy="167" r="5" class="pn"/>
+<path d="M750 167 H770" class="lo aro"/>
+<text x="928" y="172" class="s" text-anchor="end">entries on a thread</text>
+<rect x="276" y="218" width="230" height="44" rx="10" class="pn"/>
+<text x="292" y="245" class="s b">sort by [category]</text>
+<path d="M506 240 H552" class="ln ar"/>
+<rect x="560" y="214" width="384" height="66" rx="10" class="pn"/>
+<rect x="576" y="227" width="104" height="44" rx="10" class="ln dash"/>
+<rect x="580" y="217" width="96" height="20" rx="10" class="pn"/>
+<rect x="580" y="217" width="96" height="20" rx="10" class="po"/>
+<text x="628" y="231" class="m or" text-anchor="middle">[category]</text>
+<circle cx="604" cy="255" r="5" class="pn"/>
+<circle cx="628" cy="255" r="5" class="pn"/>
+<circle cx="652" cy="255" r="5" class="pn"/>
+<rect x="692" y="227" width="104" height="44" rx="10" class="ln dash"/>
+<rect x="696" y="217" width="96" height="20" rx="10" class="pn"/>
+<rect x="696" y="217" width="96" height="20" rx="10" class="po"/>
+<text x="744" y="231" class="m or" text-anchor="middle">[category]</text>
+<circle cx="720" cy="255" r="5" class="pn"/>
+<circle cx="744" cy="255" r="5" class="pn"/>
+<circle cx="768" cy="255" r="5" class="pn"/>
+<text x="928" y="252" class="s" text-anchor="end">one per category</text>
+<text x="560" y="306" class="s mu">kept in .engram/engram.toml · drift refused at commit</text>
+</svg>

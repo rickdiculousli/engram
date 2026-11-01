@@ -6,7 +6,8 @@ Setup installs three pieces, each idempotent and each repairable on its own:
   self-repair), tagged so teardown finds it, and `Bash(engram:*)` in its allow list.
 - git: core.hooksPath points at a tracked .engram/hooks/ whose pre-commit runs `engram lint --staged` and the rewiring's
   drift check, after any pre-commit the repo already had.
-- launchd: one job for every repo set up, running `engram capture run` every hour.
+- job: one timed job for every repo set up (`engram.jobs`: launchd on macOS, systemd on Linux), running
+  `engram capture run` every hour.
 
 What setup found before it changed anything is kept in the data folder, so teardown restores it exactly. Every hourly
 run and every session start checks the pieces and re-installs a missing or stale one; each repair is recorded."""
@@ -14,7 +15,6 @@ import contextlib
 import functools
 import json
 import os
-import plistlib
 import shlex
 import shutil
 import subprocess
@@ -22,7 +22,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from engram import commitmsg
+from engram import commitmsg, jobs
 from engram.paths import HOOKS as HOOKS_DIR, RECORD_TOML, data_path, record_toml
 
 TAG = "# engram-setup"
@@ -118,14 +118,6 @@ def _norm(conf: dict, man: dict) -> dict:
     return conf
 
 
-def _plist_path(man: dict) -> Path:
-    return Path(man["launch_agents_dir"]) / f"{LABEL}.plist"
-
-
-def _launchctl(*a: str) -> subprocess.CompletedProcess:
-    return subprocess.run(["launchctl", *a], capture_output=True, text=True)
-
-
 # ---- the three pieces --------------------------------------------------------------------------------------------
 
 def install_settings(root: Path, man: dict):
@@ -165,25 +157,9 @@ def install_git(root: Path, man: dict):
     _git(root, "config", "core.hooksPath", HOOKS_DIR)
 
 
-def launch_job(p: Path, label: str, args: list[str], log: Path, load: bool, **when):
-    """Write a launchd job running engram, with this PATH, HOME and data folder, and (re)load it."""
-    p.parent.mkdir(parents=True, exist_ok=True)
-    env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(Path.home())}
-    if os.environ.get("ENGRAM_DATA"):
-        env["ENGRAM_DATA"] = os.environ["ENGRAM_DATA"]
-    p.write_bytes(plistlib.dumps({"Label": label, "ProgramArguments": args, **when, "EnvironmentVariables": env,
-                                  "StandardOutPath": str(log), "StandardErrorPath": str(log)}))
-    if load:
-        uid = os.getuid()
-        _launchctl("bootout", f"gui/{uid}/{label}")
-        r = _launchctl("bootstrap", f"gui/{uid}", str(p))
-        if r.returncode:
-            raise RuntimeError(f"launchctl bootstrap: {r.stderr.strip()[:200]}")
-
-
-def install_launchd(man: dict):
-    launch_job(_plist_path(man), LABEL, [*engram_cmd(), "capture", "run"], data_path("capture.log"), bool(man.get("load")),
-               StartInterval=3600, RunAtLoad=True)
+def install_job(man: dict):
+    jobs.install(Path(man["launch_agents_dir"]), LABEL, [*engram_cmd(), "capture", "run"], data_path("capture.log"),
+                 bool(man.get("load")), every=3600)
 
 
 def missing(root: Path, man: dict) -> dict[str, str]:
@@ -208,16 +184,15 @@ def missing(root: Path, man: dict) -> dict[str, str]:
             any(rest.startswith(check) and runs_this_engram(prog) for prog, rest in
                 (_launcher(l.removeprefix("exec ")) for l in hook.read_text().splitlines()[2:])) for check in PRE_COMMIT):
         out["git"] = "the pre-commit hook is missing, lacks one of its checks or runs an old engram"
-    plist = _plist_path(man)
-    if not plist.exists():
-        out["launchd"] = "the hourly job is missing"
+    args = jobs.command(Path(man["launch_agents_dir"]), LABEL)
+    if args is None:
+        out["job"] = "the hourly job is missing"
     else:
-        args = plistlib.loads(plist.read_bytes()).get("ProgramArguments", [])
         rest = args[3:] if args[1:3] == ["-m", "engram.cli"] else args[1:]
         if not args or rest != ["capture", "run"] or not runs_this_engram(args[0]):
-            out["launchd"] = "the hourly job runs an old engram"
-        elif man.get("load") and _launchctl("print", f"gui/{os.getuid()}/{LABEL}").returncode:
-            out["launchd"] = "the hourly job isn't loaded"
+            out["job"] = "the hourly job runs an old engram"
+        elif man.get("load") and not jobs.loaded(LABEL):
+            out["job"] = "the hourly job isn't loaded"
     return out
 
 
@@ -243,7 +218,7 @@ def setup(root: Path, launch_agents_dir: Path | None = None, load: bool = True) 
     else:
         sp = _settings_path(root)
         hook = root / HOOKS_DIR / "pre-commit"
-        man = {"root": str(root), "launch_agents_dir": str(launch_agents_dir or Path.home() / "Library/LaunchAgents"),
+        man = {"root": str(root), "launch_agents_dir": str(launch_agents_dir or jobs.default_dir()),
                "load": load, "settings_existed": sp.exists(), "settings_before": sp.read_text() if sp.exists() else None,
                "claude_dir_existed": sp.parent.exists(), "added_allow": False,
                "hooks_path_before": _git(root, "config", "core.hooksPath").stdout.strip() or None,
@@ -253,7 +228,7 @@ def setup(root: Path, launch_agents_dir: Path | None = None, load: bool = True) 
             man["kept_hook"] = "pre-commit.before-engram"
     install_settings(root, man)
     install_git(root, man)
-    install_launchd(man)
+    install_job(man)
     with c:
         c.execute("INSERT OR REPLACE INTO repo (domain, root, setup, at) VALUES (?, ?, ?, coalesce((SELECT at FROM repo WHERE domain = ?), ?))",
                   (domain, str(root), json.dumps(man), domain, _now()))
@@ -307,9 +282,7 @@ def _teardown(root: Path) -> list[str]:
         others = c.execute("SELECT count(*) FROM repo").fetchone()[0]
     c.close()
     if not others:  # the hourly job serves every repo set up; it goes with the last one
-        if man.get("load"):
-            _launchctl("bootout", f"gui/{os.getuid()}/{LABEL}")
-        _plist_path(man).unlink(missing_ok=True)
+        jobs.remove(Path(man["launch_agents_dir"]), LABEL, bool(man.get("load")))
     return [f"{domain}: torn down ({root}); records untouched"]
 
 
@@ -327,7 +300,7 @@ def repair(domain: str) -> list[dict]:
     for piece, why in missing(root, man).items():
         try:
             {"settings": lambda: install_settings(root, man), "git": lambda: install_git(root, man),
-             "launchd": lambda: install_launchd(man)}[piece]()
+             "job": lambda: install_job(man)}[piece]()
             still = missing(root, man).get(piece)
             err = f"still: {still}" if still else None
         except Exception as e:
@@ -356,7 +329,7 @@ def status(root: Path | None = None) -> list[str]:
         out.append(f"{domain} ({r})")
         out.append(f"  session-start check: {bad.get('settings', 'in place')}")
         out.append(f"  git pre-commit: {bad.get('git', 'in place')}")
-        out.append(f"  hourly job: {bad.get('launchd', 'in place' + (', loaded' if man.get('load') else ', not loaded (test setup)'))}")
+        out.append(f"  hourly job: {bad.get('job', 'in place' + (', loaded' if man.get('load') else ', not loaded (test setup)'))}")
         at = c.execute("SELECT max(at) FROM repair WHERE domain = ?", (domain,)).fetchone()[0]
         reps = c.execute("SELECT what, ok, error FROM repair WHERE domain = ? AND at = ?", (domain, at)).fetchall()
         out.append(f"  last repair: {at}" if reps else "  last repair: none")

@@ -1,0 +1,5 @@
+# The example garden's config, laid over yours by ENGRAM_CONFIG. Its owner is Sam, as its entries say.
+owner = "Sam"
+
+[domains.notes]
+repo = "examples/notes"

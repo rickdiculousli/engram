@@ -114,7 +114,7 @@ Have notes already?
 | The same, rewired | stories, timelines, corrections and hourly filing |
 | Your own tool and its store | a [pack](docs/shape.md#a-pack) reads it in; engram never files there |
 
-A folder that isn't in git needs `git init` first. Apple Notes and Keep have to be exported to Markdown. In progress: an Obsidian vault read as it stands, in git or synced another way, its tags, daily notes and `[[links]]` included, and never written to.
+A folder that isn't in git needs `git init` first. Apple Notes and Keep have to be exported to Markdown. On hold: an Obsidian vault read as it stands, in git or synced another way, its tags, daily notes and `[[links]]` included, and never written to.
 
 Rewiring shapes a repo around what you use it for, on a scratch copy; nothing lands until you've seen your pages before and after:
 

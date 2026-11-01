@@ -20,21 +20,14 @@
 
 <br>
 
-**engram** files what you tell Claude Code into plain git, and hands Claude the whole story when you ask. On a real record it finds what grep finds for just over half the tokens, and more of the story ([measured](docs/evaluation.md#against-grep)).
+**engram** files what you tell [Claude Code](https://claude.com/claude-code) as Markdown in your own git repos, one per area of your life, and hands Claude the whole story when you ask, in about half the tokens of Claude grepping the files itself ([measured](docs/evaluation.md#against-grep): one record, 74 questions).
 
-**For** one person using [Claude Code](https://claude.com/claude-code) on their own computer: macOS, Linux, or Windows through WSL2\* ([see Quickstart](#quickstart)). Not the Claude app or claude.ai.
+- **[Keep](#keep):** talk as usual → each hour engram files the facts. Only in your words and numbers; a date you never gave narrows to the month you did.
+- **[Find](#find):** ask → one call returns the match, what links to it, in time order. Fix a fact → both versions kept, returned as one result.
+- **[Rewire](#rewire):** [bring your notes](#bring-your-notes), searched as they stand; rewire a copy for stories, timelines and filing, and nothing lands until you've seen the pages.
+- **[Evolve](#evolve):** opt in → a weekly pass tunes each repo to how you use it. Undoable changes land; bigger ones wait for you.
 
-- **Only what you said:** a fact gets in only in your words and numbers; a day you never gave → the month you did
-- **Corrections kept:** fix a fact → both versions come back as one result, the newest in full
-- **Whole stories:** one call → the match and what it links to, in time order, headlines first
-- **Plain git:** one repo per area of your life, readable without engram
-
-It does four jobs:
-
-- **[Keep](#keep):** you talk → engram files the facts, in your own words, numbers and dates. No forms.
-- **[Find](#find):** you ask → Claude gets the whole story in time order, corrections beside each fact.
-- **[Rewire](#rewire):** reshape a repo around the questions you bring it, on a copy first; you see your pages before and after.
-- **[Evolve](#evolve):** once you turn it on, a weekly pass under a dollar cap you set: changes one revert undoes land, the rest wait for your yes.
+Runs where Claude Code runs on your own machine: macOS, Linux, WSL2. Readable without engram; pushed only if you turn it on.
 
 <p align="center">
   <picture>
@@ -69,7 +62,7 @@ How the filer checks each fact: [technical](docs/technical.md#the-filer).
 
 ## Find
 
-You ask Claude; Claude runs these through Bash, one call per question (`engram setup` allows it). For a whole history:
+You ask; Claude runs the command, one call per question (`engram setup` allows it; no MCP server). For a whole history:
 
 ```
 $ uv run engram timeline "what happened with the north bed this season?" --domain notes
@@ -86,7 +79,7 @@ n  date        on            who  kind         what                             
 
 <sub>From the example garden in this repo; header shortened, empty columns dropped.</sub>
 
-Corrections never erase. Fix a fact → engram keeps both and links them, and you get them back as one result: the current version in full, older ones on one line (row 2 above).
+Corrections never erase. Fix a fact → engram keeps both and links them, and you get them back as one result: the current version in full, older ones on one line (row 2: `corrected: July → late June`).
 
 <p align="center">
   <picture>
@@ -100,21 +93,11 @@ Corrections never erase. Fix a fact → engram keeps both and links them, and yo
 |---|---|
 | `engram timeline "<question>"` | the threads it touches, every row in time order, corrections beside each fact |
 | `engram search "<question>"` | ranked matches, tuned by the repo's own weights |
-| `engram show <id>` | one record, by the short id a search printed |
+| `engram show <id>` | one record, by an id search or timeline printed |
 
 Each repo searches only itself unless you ask. More in [search](docs/search.md#the-one-call-timeline).
 
 ## Rewire
-
-Have notes already?
-
-| You have | You get |
-|---|---|
-| A folder of Markdown, in git or not | search by heading, as it stands, read only: add it to your config ([Quickstart](#quickstart)) |
-| A git repo of it, rewired | stories, timelines, corrections and hourly filing |
-| Your own tool and its store | a [pack](docs/shape.md#a-pack) reads it in; engram never files there |
-
-Apple Notes and Keep have to be exported to Markdown. On hold: an Obsidian vault's tags, daily notes and `[[links]]` read as they stand, never written to.
 
 Rewiring shapes a repo around what you use it for, on a scratch copy; nothing lands until you've seen your pages before and after:
 
@@ -138,9 +121,17 @@ ln -s "$PWD/skills/engram-rewire" ~/.claude/skills/
 
 More in [shape](docs/shape.md#rewiring-a-repo).
 
+### Bring your notes
+
+Any folder of Markdown, text or CSV, in git or not, an Obsidian vault included: full-text search by section, as it stands. engram never writes to it. Add it to your config ([Quickstart](#quickstart)).
+
+- **For stories, timelines, corrections and filing:** rewire a git copy of it
+- **Your own tool, with its own store:** write a [pack](docs/shape.md#a-pack) that reads it; engram never files there
+- **Not yet:** Obsidian `[[links]]` and tags aren't followed; no importer for Apple Notes, Keep or spreadsheets, so export to Markdown or CSV
+
 ## Evolve
 
-Once you turn it on (`engram refine install`), `engram refine` tunes engram and each repo against that repo's jobs every week, under a dollar cap you set. A change lands by itself only if one revert undoes it and nothing in your record is lost; anything bigger, or dropping something you asked for, waits for your yes.
+Off until `engram refine install`. Then every week `engram refine` tunes engram and each repo against that repo's jobs, capped by default at $100 a week of Claude Code's reported cost (`[refine] weekly_cap`). A change lands by itself only if one revert undoes it and nothing in your record is lost; anything bigger, or dropping something you asked for, waits for your yes.
 
 <p align="center">
   <picture>
@@ -152,7 +143,7 @@ Once you turn it on (`engram refine install`), `engram refine` tunes engram and 
 
 More in [the example's rules](examples/notes/.engram/README.md#lands-on-its-own-only-if-all-of-these-hold).
 
-## What a record is made of
+## Where things live
 
 <p align="center">
   <picture>
@@ -162,10 +153,6 @@ More in [the example's rules](examples/notes/.engram/README.md#lands-on-its-own-
   </picture>
 </p>
 
-More in [data model](docs/data-model.md).
-
-## Architecture
-
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/arch-dark.svg">
@@ -174,20 +161,16 @@ More in [data model](docs/data-model.md).
   </picture>
 </p>
 
-- **`.engram/`:** engram's folder inside it: the repo's shape, your jobs and rules, and the pack, the repo's words for engram's model calls ([shape](docs/shape.md#a-pack), [example](examples/notes/.engram/))
-- **Where your data goes:** records stay in your repos, pushed only to the remote each one names; the index stays in `~/.local/share/engram/`, rebuilt from your files at will; filing sends each finished session to Claude through your own Claude Code (`claude -p`, your subscription). More in [operations](docs/operations.md#where-things-live).
+- **Your records:** your repos, plain files ([data model](docs/data-model.md)); pushed only if a repo sets `push = true`, to its own remote
+- **`.engram/`:** engram's folder in each repo: its shape, your jobs and rules, and the pack, the repo's words for engram's model calls ([shape](docs/shape.md#a-pack), [example](examples/notes/.engram/))
+- **The index:** `~/.local/share/engram/`, rebuilt from your files at will
+- **Model calls:** filing sends each finished session in a set-up repo through your own Claude Code (`claude -p`)
 
 > **Not goals:** embeddings (unless [this rule](docs/evaluation.md#embeddings-the-rule) fires), breaking arguments into fragments, multiple users, a web UI.
 
 ## Quickstart
 
 Needs git, Python 3.12+ and [uv](https://docs.astral.sh/uv/).
-
-| Machine | Hourly filing (`engram setup`) and the weekly pass (`engram refine install`) |
-|---|---|
-| macOS | launchd jobs |
-| Linux | systemd user timers; `loginctl enable-linger` keeps them running while you're logged out |
-| Windows | through WSL2, as Linux, with systemd on (it is on current installs); jobs run while WSL does. Native Windows isn't supported |
 
 ```sh
 git clone https://github.com/rickdiculousli/engram.git && cd engram
@@ -199,9 +182,9 @@ uv run engram search "when did the basil bolt" --domain notes
 ```
 
 - `examples/config.toml`: the made-up garden's config, laid over yours for this shell only; your own is `~/.config/engram/config.toml`
-- Your own notes: add `[domains.<name>]` with `repo = "<a folder of Markdown>"` to your config, then `uv run engram ingest` and `uv run engram search "<something you wrote>" --domain <name>`
-- Inside a repo of your own → drop `--domain`
-- `engram setup <repo>` → hourly filing for a rewired repo, and lets Claude run engram there
+- Your own notes: add `[domains.<name>]` with `repo = "<folder>"` to your config, then `uv run engram ingest` and `uv run engram search "<something you wrote>" --domain <name>`
+- `uv tool install -e .` → `engram` on your PATH; inside a folder you added, drop `--domain`
+- `engram setup <repo>` → hourly filing for a rewired repo, and lets Claude run engram there: launchd on macOS, systemd timers on Linux and WSL2 ([operations](docs/operations.md#jobs))
 
 ## Docs
 

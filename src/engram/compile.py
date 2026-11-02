@@ -83,7 +83,8 @@ def items(root: Path) -> dict[str, Item]:
             if not rel.endswith(".md"):
                 continue
             text = at_head(root, rel) or ""
-            since = float(_git(root, "log", "-1", "--format=%ct", "--", rel).strip() or 0)
+            since = float(_git(root, "log", "-1", "--follow", "-M100%", "--diff-filter=AM", "--format=%ct", "--", rel).strip()
+                          or 0)  # its text's last change: a pure rename isn't one
             it = Item(reg.owner(rel) or "", what, post_title(text, rel), text, path=rel, since=since)
             out[it.ref] = it
     return out
@@ -221,13 +222,24 @@ def _ask(prompt: str) -> tuple[dict | None, float]:
 
 
 def _concept_link(b: Book, new: dict[str, wiki.Concept]):
-    """`[[Name]]` the model wrote for a concept, as the concept's link; anything else is left for the checker."""
+    """A link the model wrote to a concept (`[[Name]]`), as that concept's link; to a concept that isn't there, its
+    words without the link. A link to a file is left for the checker."""
     def sub(m):
-        if "/" in m.group(1):
+        t = m.group(1)
+        if "/" in t and not t.startswith(wiki.CONCEPTS + "/"):
             return m.group(0)
-        c = b.concept(m.group(1)) or new.get(wiki.stem(m.group(1)))
-        return wiki.concept_link(c.name) if c else m.group(0)
+        name = wiki.page_name(t)
+        c = b.concept(name) or new.get(wiki.stem(name))
+        return wiki.concept_link(c.name) if c else (m.group(3) or name)
     return sub
+
+
+def unlink(c: wiki.Concept, gone: set[str]):
+    """Links to new concepts that won't be written taken out of a page: its related list, its summary's words kept."""
+    c.related = [r for r in c.related if r not in gone]
+    targets = {f"{wiki.CONCEPTS}/{wiki.stem(n)}" for n in gone}
+    c.summary = wiki.LINK.sub(lambda m: (m.group(3) or wiki.page_name(m.group(1))) if m.group(1) in targets else m.group(0),
+                              c.summary)
 
 
 def _steelman_at(c: wiki.Concept, ref) -> int | None:
@@ -419,12 +431,14 @@ def compile_item(domain: str, ref: str, ask=None) -> dict:
                 if src:
                     e.source, e.sentences = e2.source, e2.sentences
         failed: dict[str, list[str]] = {}
-        while True:  # a page left linking to a parked page fails with it
+        while True:  # a new page that fails isn't written, so the others' links to it come out
             why, src = problems(b, it, e, set(failed))
             failing = {n: w for n, w in why.items() if w}
             if not failing:
                 break
             failed |= failing
+            for c in e.concepts.values():
+                unlink(c, {n for n in failing if e.old[n] is None})
         drop = set(failed)
         if src:
             e = None

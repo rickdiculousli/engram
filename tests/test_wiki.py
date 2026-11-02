@@ -336,8 +336,8 @@ def test_the_index_and_open_list_are_written_from_the_pages_and_a_rebuild_is_byt
     assert cmp.refresh("essays") == ["wiki/index.md", "wiki/open.md"]
     index = head(repo, "wiki/index.md")
     assert index.startswith("# Index\n\n## Habits\n\n")
-    assert ("- [[wiki/concepts/Cues|Cues]]: Cues start habits. 1 source, 1 steelman (0 unanswered)\n"
-            "- [[wiki/concepts/Willpower|Willpower]]: Willpower is effort. 1 source; 1 spark, no draft yet\n") in index
+    assert ("- [[wiki/concepts/Cues|Cues]]: Cues start habits. — 1 source, 1 steelman (0 unanswered)\n"
+            "- [[wiki/concepts/Willpower|Willpower]]: Willpower is effort. — 1 source; 1 spark, no draft yet\n") in index
     assert "## Sparks no concept has taken yet\n\n> [!quote] Spark, " in index and "Gardens teach patience." in index
     assert "Willpower is a story too." not in index
     assert "## Latest sources\n\n- [[wiki/sources/A habits study|A habits study]] (Ada Lane, " in index
@@ -419,3 +419,29 @@ def test_a_published_draft_s_links_follow_its_move_with_no_model_call(area, tmp_
     cues = head(area, "wiki/concepts/Cues.md")
     assert "- [[posts/streaks|Streaks]]: Streaks follow cues, now published." in cues and "drafts/streaks" not in cues
     assert len(out["compiled"]) == 2  # the published post at once, and the other post
+
+
+def test_a_parked_new_page_s_links_come_out_of_its_siblings_and_a_missing_concept_s_link_is_its_words(compiled):
+    from engram import compile as cmp
+    repo = compiled["repo"]
+    s3 = intake.add(store.Store(repo), "note", "Streaks feel good. Rewards fade.", title="On streaks")
+    bad = {"name": "Rewards", "pillar": "habits", "summary": "Rewards fade. They come after.", "quote": "Rewards never fade.",
+           "position": "Rewards fade."}
+    good = {"name": "Streaks", "pillar": "habits", "summary": "Streaks feel good, unlike [[Rewards]]. See [[Momentum]].",
+            "quote": "Streaks feel good.", "position": "Streaks feel good.", "related": ["Rewards", "Cues"]}
+    reply = {"summary": [{"text": "Streaks feel good.", "quote": "Streaks feel good."}], "concepts": [bad, good]}
+    r = cmp.compile_item("essays", s3.id, ask=replies(reply, reply))
+    assert r["parked"] == ["Rewards"] and "wiki/concepts/Streaks.md" in r["pages"]
+    page = head(repo, "wiki/concepts/Streaks.md")
+    assert "> Streaks feel good, unlike Rewards. See Momentum." in page and "Rewards|" not in page
+    assert "## Related\n\n- [[wiki/concepts/Cues|Cues]]\n" in page
+
+
+def test_a_pure_rename_does_not_restart_a_draft_s_day(area):
+    from engram import compile as cmp
+    since = cmp.items(area)["drafts/streaks.md"].since
+    git(area, "mv", "drafts/streaks.md", "drafts/streaks-renamed.md")
+    subprocess.run(["git", "-C", str(area), "commit", "-qm", "rename"], check=True,
+                   env={**__import__("os").environ, "GIT_COMMITTER_DATE": "2030-01-01T00:00:00"})
+    assert git(area, "log", "-1", "--format=%cd", "--date=short").strip() == "2030-01-01"
+    assert cmp.items(area)["drafts/streaks-renamed.md"].since == since

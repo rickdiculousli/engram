@@ -435,7 +435,7 @@ def _n(n: int, word: str) -> str:
 def counts(c: Concept, v: Vault) -> str:
     """What stands behind a concept: its sources, its steelmans and how many are unanswered, and, while no post uses
     it, the sparks waiting on it (a post to write)."""
-    out = _n(len({s.source for s in c.sources}), "source")
+    out = _n(len({s.source for s in c.sources}), "source") if c.sources else "no sources yet"
     if c.against:
         out += f", {_n(len(c.against), 'steelman')} ({sum(not v.answered(s) for s in c.against)} unanswered)"
     if c.sparks and not c.writing:
@@ -452,7 +452,7 @@ def render_index(concepts: list[Concept], sources: list[Source], loose: list[Spa
         cs = sorted((c for c in concepts if c.pillar == p), key=lambda c: c.name.lower())
         if cs:
             out += [f"## {p[:1].upper() + p[1:]}", ""]
-            out += [f"- {concept_link(c.name)}: {(sentences(c.summary) or [''])[0]} {counts(c, v)}" for c in cs] + [""]
+            out += [f"- {concept_link(c.name)}: {(sentences(c.summary) or [''])[0]} — {counts(c, v)}" for c in cs] + [""]
     if loose:
         out += ["## Sparks no concept has taken yet", ""]
         for s in loose:

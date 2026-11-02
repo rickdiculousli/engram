@@ -15,6 +15,7 @@ The layout every record takes in engram, and the lessons learned getting real re
 | **Way in** | an index that lights records directly: a person, a tracked thing, a recurring thing in the owner's words, a role word | lights rows without depending on matching words |
 | **Lens** | a named category on an axis the owner asks by: a kind, a sector, a part of the body | picks which rows show; chosen from the question |
 | **Session summary** | what a session said, checked against its quotes | the only form a session takes in an index |
+| **Wiki** | what's handed over, compiled: a page per concept, the concepts linking into each other, the sources that bear on each summarised under it, the owner's own writing linked whole | Claude's to keep, by edits code checks and splices in; every quote verbatim from what it cites; committed, changed only by the compiler; read in Obsidian |
 
 ## Identity
 

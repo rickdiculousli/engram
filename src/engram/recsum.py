@@ -33,8 +33,16 @@ Reply with JSON only: {{"summaries": [{{"id": "<id>", "sentences": [{{"text": ".
 {records}"""
 
 
+DASHES = re.compile(r"\s*[-\u2010-\u2015\u2212]\s*")
+BROKEN = re.compile(r"(\w)[-\u00ad]\s*\n\s*(\w)")  # a word hyphenated across a line
+
+
 def _norm(s: str) -> str:
-    return re.sub(r"\s+", " ", s.replace("’", "'").replace("“", '"').replace("”", '"')).strip().lower()
+    """Text as a quote is matched: curly quotes straight, a word hyphenated across lines joined, every dash one hyphen
+    with no spaces round it, an ellipsis three dots, soft hyphens gone, spaces collapsed, lower case."""
+    s = BROKEN.sub(r"\1\2", s.replace("\u00ad", "")).replace("…", "...")
+    s = DASHES.sub("-", s.replace("’", "'").replace("‘", "'").replace("“", '"').replace("”", '"'))
+    return re.sub(r"\s+", " ", s).strip().lower()
 
 
 def check(sentence: dict, body: str) -> str | None:
@@ -114,6 +122,17 @@ def run(domain: str, limit: int | None = None) -> dict:
             (cache / f"{_key(body)}.json").write_text(json.dumps({"ref": ref, "summary": " ".join(keep)}))
             stats["kept"] += bool(keep)
     return stats
+
+
+def keep(domain: str, ref: str, body: str, summary: str):
+    """A summary written elsewhere (a source's, by the compiler), cached by its record's text as this module's are."""
+    (_cache(domain) / f"{_key(body)}.json").write_text(json.dumps({"ref": ref, "summary": summary}))
+
+
+def cached(domain: str, body: str) -> str:
+    """The cached summary of a record's text, or ""."""
+    p = _cache(domain) / f"{_key(body)}.json"
+    return json.loads(p.read_text()).get("summary", "") if p.exists() else ""
 
 
 def summaries(domain: str) -> dict[str, str]:

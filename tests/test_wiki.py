@@ -120,3 +120,61 @@ def test_the_filer_writes_only_the_kinds_the_pack_offers(area, tmp_path):
     res = capture.file_session("essays", area, path, ask=ask)
     assert "(one of spark)" in asked[0]
     assert res["filed"] == 3 and [e.kind for e in store.Store(area).events()] == ["spark"] * 3
+
+
+def test_compile_keeps_only_what_checks(area):
+    from engram import compile as cmp
+    st = store.Store(area)
+    src = intake.add(st, "note", "Cues beat willpower. A study of 96 people found a median of 66 days.", by="Ada Lane")
+    reply = {"nodes": [{"key": "c1", "kind": "claim", "line": "Cues beat willpower", "quote": "Cues beat willpower"},
+                       {"key": "c2", "kind": "claim", "line": "Habits form in a week", "quote": "a habit forms in a week"},
+                       {"key": "s1", "kind": "claim", "line": "Some never need cues", "suggested": True},
+                       {"key": "t1", "kind": "theme", "line": "Habits", "quote": "A study of 96 people"}],
+             "edges": [{"from": "item", "rel": "supports", "to": "c1", "quote": "A study of 96 people found a median of 66 days"},
+                       {"from": "item", "rel": "supports", "to": "c1", "quote": "A study of 96 people found a median of 66 days"},
+                       {"from": "c1", "rel": "part-of", "to": "t1"},
+                       {"from": "s1", "rel": "steelman-of", "to": "c1"},
+                       {"from": "c1", "rel": "causes", "to": "t1"},
+                       {"from": "c1", "rel": "relates-to", "to": "nowhere"},
+                       {"from": "item", "rel": "refutes", "to": "c1"},
+                       {"from": "item", "rel": "data-for", "to": "c1", "quote": "a median of 70 days"}],
+             "summary": [{"text": "A study found 66 days.", "quote": "a median of 66 days"},
+                         {"text": "It found 90 days.", "quote": "a median of 66 days"}]}
+    res = cmp.compile_item("essays", src.id, ask=lambda prompt: (reply, 0.01))
+    whys = sorted(d["why"] for d in res["dropped"])
+    assert whys == sorted(["quote not in the record", "already on the map", "rel causes isn't in [links.map]",
+                           "an end isn't on the map", "evidence with no quote", "quote not in the record",
+                           "number 90 not in the record"])
+    m = cmp.load(area)
+    lines = {n.fm["title"]: n for n in m.nodes.values()}
+    assert sorted(lines) == ["Cues beat willpower", "Habits", "Some never need cues"]
+    assert lines["Some never need cues"].fm["by"] == "claude-suggestion" and lines["Cues beat willpower"].fm["by"] == "other:Ada Lane"
+    assert sorted(e.rel for e in m.edges) == ["part-of", "steelman-of", "supports"]
+    assert next(e for e in m.edges if e.rel == "supports").item == src.id
+    from engram import recsum
+    assert recsum.cached("essays", src.body) == "A study found 66 days."
+    again = cmp.compile_item("essays", src.id, ask=lambda prompt: (reply, 0.01))  # across runs: nothing twice
+    assert again["edges"] == 0 and "already on the map" in [d["why"] for d in again["dropped"]]
+    assert cmp.due("essays", cmp.load(area)) == ["drafts/streaks.md", "posts/cues.md"]  # a source is compiled once
+
+
+def test_a_post_recompiles_only_when_it_changes_and_two_failures_park_it(area):
+    from engram import compile as cmp
+    calls = []
+
+    def ask(prompt):
+        calls.append(prompt)
+        return {"nodes": [], "edges": []}, 0.0
+    cmp.compile_item("essays", "drafts/streaks.md", ask=ask)
+    m = cmp.load(area)
+    doc = next(k for k, it in m.items.items() if it.path == "drafts/streaks.md")
+    assert doc.startswith("doc-") and doc not in cmp.due("essays", m)
+    (area / "drafts/streaks.md").write_text("title: Streaks\n___\nA streak is a story we tell. Then we keep it.\n")
+    assert doc in cmp.due("essays", cmp.load(area))
+    for _ in range(2):
+        r = cmp.compile_item("essays", doc, ask=lambda prompt: (None, 0.0))
+        assert not r["ok"]
+    m = cmp.load(area)
+    assert doc not in cmp.due("essays", m) and [it.path for it in cmp.parked("essays", m)] == ["drafts/streaks.md"]
+    (area / "drafts/streaks.md").write_text("title: Streaks\n___\nA streak is a story.\n")
+    assert doc in cmp.due("essays", cmp.load(area))

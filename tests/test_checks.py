@@ -52,11 +52,13 @@ TODAY = [  # medical's messages as engram wrote them before the templates, byte 
 
 
 REVIEW = [("review", dict(id=3, question="data", call="search"), "engram review: finding 3, data, the search call")]  # group 9
+WIKI = [("map", dict(item="doc-k7f2qa", nodes=2, edges=3), "engram: the map from doc-k7f2qa, 2 nodes and 3 links"),
+        ("merge", dict(n=2), "engram: 2 near-duplicate claims merged")]
 
 
 def test_each_template_writes_medicals_message_byte_for_byte():
-    assert {name for name, *_ in TODAY + REVIEW} == set(commitmsg.TEMPLATES)
-    for name, fields, want in TODAY + REVIEW:
+    assert {name for name, *_ in TODAY + REVIEW + WIKI} == set(commitmsg.TEMPLATES)
+    for name, fields, want in TODAY + REVIEW + WIKI:
         assert commitmsg.message(name, **fields) == want
     assert commitmsg.message("write", "rec: {kind} on {date}", kind="lab", date="2026-10-03") == "rec: lab on 2026-10-03"
 

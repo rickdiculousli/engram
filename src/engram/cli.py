@@ -717,7 +717,7 @@ def cmd_fix(a):
     from engram import fix
     st = _repo(a)
     try:
-        done = fix.apply(st, a.paths, a.why, a.drop_link or [])
+        done = fix.apply(st, a.paths, a.why, a.drop_link or [], a.drop_run)
     except fix.Refused as e:
         sys.exit(f"engram fix: {e}")
     print(f"engram fix: committed {', '.join(done)}")
@@ -1048,9 +1048,10 @@ def main(argv=None):
     s = sub.add_parser("fix", help="edit out a mechanical error (a date never said, a cut title, a correction filed for one): "
                                    "the listed event files as edited or deleted, and --drop-link lines, in one commit with "
                                    "an Engram-Fix trailer; a correction the owner learned is a new entry and a revises link instead")
-    s.add_argument("paths", nargs="+")
+    s.add_argument("paths", nargs="*")
     s.add_argument("--why", required=True)
     s.add_argument("--drop-link", action="append")
+    s.add_argument("--drop-run", metavar="COMMIT", help="drop every link that run of the evidence sweep filed")
     s.add_argument("--repo")
     s.set_defaults(fn=cmd_fix)
 

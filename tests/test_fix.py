@@ -61,3 +61,26 @@ def test_a_fix_refuses_what_it_was_not_given(rec):
     with pytest.raises(fix.Refused, match="no such link"):
         fix.apply(Store(repo), [wrong], "x", ["nope"])
     assert "Engram-Fix" not in git(repo, "log", "-1", "--format=%B")
+
+
+def test_a_link_drops_without_paths_and_a_sweep_run_drops_whole_and_leaves_the_weekly_page(rec):
+    from engram import refine
+    repo, _, _, link = rec
+    done = fix.apply(Store(repo), [], "a link the machinery got wrong", [link])
+    assert done == ["events/links.jsonl"] and link not in (repo / "events/links.jsonl").read_text()
+    swept = [{"id": f"20261101-0900{i:02d}-link-s{i}", "kind": "link", "from": "notes/x.md", "to": "loop/1", "family": "evidence",
+              "rel": "strengthens", "by": "claude", "author": "engram-sweep"} for i in range(3)]
+    with open(repo / "events/links.jsonl", "a") as fh:
+        fh.writelines(json.dumps(x) + "\n" for x in swept)
+    git(repo, "add", "events/links.jsonl")
+    git(repo, "commit", "-qm", "engram: evidence swept\n\nRefinement: 3 records now show for or against the theory")
+    run = git(repo, "rev-parse", "HEAD").strip()
+    assert [line for _, _, line in refine._landed(repo)] == ["3 records now show for or against the theory"]
+    with pytest.raises(fix.Refused, match="filed no sweep link"):
+        fix.apply(Store(repo), [], "x", drop_run="HEAD~1")
+    fix.apply(Store(repo), [], "x", [swept[0]["id"]])  # one already dropped by hand: the run drops what's left
+    fix.apply(Store(repo), [], "the sweep linked the wrong loop", drop_run=run[:8])
+    assert [json.loads(l)["id"] for l in (repo / "events/links.jsonl").read_text().splitlines()] == ["20261024-194412-link-aaaa"]
+    assert f"This reverts commit {run}." in git(repo, "log", "-1", "--format=%B") and refine._landed(repo) == []
+    with pytest.raises(fix.Refused, match="name event files"):
+        fix.apply(Store(repo), [], "x")

@@ -3,7 +3,8 @@ learned later, filed as a new entry that revises the old one, which stays as wha
 (a date the filer never heard, a cut title, a correction filed for one) was never known, so it is edited or deleted in
 place: the listed event files as they stand in the working tree, and the listed link lines dropped from links.jsonl, in
 one commit carrying an `Engram-Fix:` trailer, then pushed. Nothing else may change; the append-only check lets exactly
-these paths through (FIX_ENV)."""
+these paths through (FIX_ENV). A run of the evidence sweep is undone whole (`drop_run`): every link that commit filed is
+dropped, and the fix says it reverts the commit, so the weekly page takes the run's line away with it."""
 import fcntl
 import json
 import os
@@ -11,6 +12,8 @@ import subprocess
 from pathlib import Path
 
 from engram import commitmsg, frontmatter, store
+
+SWEEP = "engram-sweep"  # the author of the evidence sweep's links (engram.relink.sweep)
 
 FIX_ENV = "ENGRAM_FIX"  # the paths a fix commit may edit or delete, as JSON, read by lint.staged_event_violations
 
@@ -23,19 +26,36 @@ def _git(root: Path, *args: str, env: dict | None = None) -> subprocess.Complete
     return subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, env=env)
 
 
-def apply(st: store.Store, paths: list[str], why: str, drop_links: list[str] = ()) -> list[str]:
-    """Commits the working tree's edits and deletions of `paths` (event files) and drops the `drop_links` lines;
-    returns the committed paths. Refuses, changing nothing, when a listed file is unchanged or not an event at HEAD,
-    an edit changes an id or doesn't parse, another event file is changed, a link id isn't found, or a link left
-    behind points at a deleted event."""
+def apply(st: store.Store, paths: list[str], why: str, drop_links: list[str] = (), drop_run: str | None = None) -> list[str]:
+    """Commits the working tree's edits and deletions of `paths` (event files) and drops the `drop_links` lines, and
+    every sweep link commit `drop_run` filed that's still there; returns the committed paths. Refuses, changing
+    nothing, when a listed file is unchanged or not an event at HEAD, an edit changes an id or doesn't parse, another
+    event file is changed, a link id isn't found, a link left behind points at a deleted event, or `drop_run` filed no
+    sweep link that's left."""
     if not why.strip():
         raise Refused("say why: --why names the mechanical error")
+    if not (paths or drop_links or drop_run):
+        raise Refused("name event files, --drop-link or --drop-run")
+    root, ev = st.root, st.events_dir
+    links = f"{ev}/{store.LINKS}"
+    run = None
+    if drop_run:
+        run = _git(root, "rev-parse", "--verify", "-q", f"{drop_run}^{{commit}}").stdout.strip()
+        if not run:
+            raise Refused(f"no commit {drop_run}")
+        added = [l[1:] for l in _git(root, "show", "--format=", "--unified=0", run, "--", links).stdout.splitlines()
+                 if l.startswith("+") and not l.startswith("+++") and l[1:].strip()]
+        filed = {fm["id"] for fm in map(json.loads, added) if fm.get("author") == SWEEP}
+        present = {json.loads(l).get("id") for l in ((root / links).read_text().splitlines() if (root / links).exists() else []) if l.strip()}
+        if not filed & present:
+            raise Refused(f"commit {drop_run} filed no sweep link that's still in {links}")
+        drop_links = [*drop_links, *sorted((filed & present) - set(drop_links))]
     try:
         msg = commitmsg.message("fix", why=why.strip())
     except commitmsg.AmountInMessage as e:
         raise Refused(str(e)) from None
-    root, ev = st.root, st.events_dir
-    links = f"{ev}/{store.LINKS}"
+    if run:  # git revert's line: the weekly page treats the run as reverted
+        msg = msg.replace("\n\nEngram-Fix:", f"\n\nThis reverts commit {run}.\n\nEngram-Fix:", 1)
     paths = list(dict.fromkeys(Path(p).as_posix() for p in paths))
     lock = store.lock_file(root)
     with open(lock, "w") as fh:

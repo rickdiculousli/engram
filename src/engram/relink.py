@@ -140,7 +140,7 @@ def _run(change: str, repo: Path, s: dict, ask, dry_run: bool, limit: int | None
     p = pack.for_repo(repo)
     recs = records(repo, p.relink_skip)
     refused = _refused(st, repo, g, reg)
-    owner_of = _entry_of(recs)
+    owner_of = _entry_of(recs, st)
     things = "\n".join(f"{t.id}\t{t.title}" for t in g.things.values() if t.kind in ("node", "state", "loop"))
     why = f"; why: {s['why']}" if s.get("why") else ""
     out = {"change": change, "batches": 0, "records": len(recs), "links": [], "dropped": [], "usd": 0.0}
@@ -224,19 +224,37 @@ def _check(reply: str, ids: dict[str, str], allowed: set[str], have: set, out: d
                                  "moved_from": moved, "date": date})
 
 
-def _entry_of(recs: list[tuple[str, str, str]]):
-    """For a document's passage, the one entry whose own words it restates (an index row, a table line), as (id, date);
-    None for an entry's own link, a passage that isn't the document's own words (the re-check's reasons aren't
-    checked), or when no entry or more than one says it."""
+DATED_ROW = re.compile(r"^\W*(\d{4}-\d{2}-\d{2})\s*[—–-]+\s*(.+)$")  # an index row: a date, a dash, a headline
+
+
+def _entry_of(recs: list[tuple[str, str, str]], st: Store | None = None):
+    """For a document's passage, the one entry it restates, as (id, date): the one entry whose own words it is (an
+    index row, a table line), or, for a dated index row (a date, a dash, a headline), the entry its row links to, else
+    the one entry titled with its headline (that day's, when several are). None for an entry's own link, a passage that
+    isn't the document's own words (the re-check's reasons aren't checked), or when no one entry fits."""
     entries = [(i, d, _norm(t)) for i, d, t in recs if d]
+    date_of = {i: d for i, d, _ in entries}
     docs = {i: _norm(t) for i, d, t in recs if not d}
+    titles = [(e.id, str(e.date), _norm(str(e.fm.get("title", "")))) for e in (st.events() if st else [])
+              if e.id in date_of and e.fm.get("title")]
 
     def owner_of(rec: str, passage: str):
         n = _norm(passage)
         if not n or rec not in docs or n not in docs[rec]:
             return None
         hits = [(i, d) for i, d, t in entries if n in t]
-        return hits[0] if len(hits) == 1 else None
+        if len(hits) == 1:
+            return hits[0]
+        if hits or not (m := DATED_ROW.match(passage.strip())) or not st:
+            return None
+        rows = [l for l in (st.root / rec).read_text(errors="replace").splitlines() if n in _norm(l)]
+        linked = {i for l in rows for i in date_of if re.search(rf"(?<![\w-]){re.escape(i)}(?![\w-])", l)}
+        if len(linked) == 1:
+            i = linked.pop()
+            return i, date_of[i]
+        named = [(i, d) for i, d, t in titles if t == _norm(m.group(2))]
+        named = named if len(named) == 1 else [(i, d) for i, d in named if d == m.group(1)]
+        return named[0] if len(named) == 1 else None
     return owner_of
 
 def _file(st: Store, g: theory.Graph, reg, links: list[dict], message: str, source: str, author: str) -> None:
@@ -393,7 +411,7 @@ def sweep(repo: Path, ask=None, confirm=None, dry_run: bool = False, limit: int 
     journal = {e.id for e in st.events(kind="journal")}
     recs = [r for r in records(repo, p.relink_skip) if r[0] not in journal]
     text_of = {i: (d, t) for i, d, t in recs}
-    owner_of = _entry_of(recs)
+    owner_of = _entry_of(recs, st)
     sig = lambda t: hashlib.sha1(t.encode()).hexdigest()[:16]
     if state.get("targets") != sorted(tg):
         state = {"targets": sorted(tg), "read": {}, "pending": state.get("pending", []), "confirmed": state.get("confirmed", [])}

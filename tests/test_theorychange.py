@@ -294,3 +294,26 @@ def test_a_page_row_restating_an_entry_counts_as_that_entry_not_again(rec):
     owner_of = relink._entry_of(relink.records(rec))
     assert owner_of("complaints/knee.md", "after the long drive") == ("e3", "2026-03-06")
     assert owner_of("consults/visit.md", "after the long drive") is None  # a reason that isn't the document's own words
+
+
+def test_a_dated_index_row_counts_as_the_entry_it_heads_or_links(rec):
+    st = store.Store(rec)
+    st.add({"id": "e2", "title": "Knee locks on the stairs", "date": "2026-03-05", "kind": "observation",
+            "about": ["series/_observations"]}, "- worse going down\n")
+    st.add({"id": "20260306-ankle", "title": "Ankle swells", "date": "2026-03-06", "kind": "observation",
+            "about": ["series/_observations"]}, "- after the long drive\n")
+    (rec / "complaints").mkdir()
+    (rec / "complaints/knee.md").write_text("# Knee\n\n- 2026-03-05 — knee locks on the stairs…\n"
+                                            "- 2026-03-06 — the ankle puffed up ([entry](../events/20260306-ankle.md))\n"
+                                            "- 2026-03-07 — a new twinge\n")
+    owner_of = relink._entry_of(relink.records(rec), st)
+    assert owner_of("complaints/knee.md", "2026-03-05 — knee locks on the stairs…") == ("e2", "2026-03-05")  # its title
+    assert owner_of("complaints/knee.md", "2026-03-06 — the ankle puffed up") == ("20260306-ankle", "2026-03-06")  # its link
+    assert owner_of("complaints/knee.md", "2026-03-07 — a new twinge") is None  # no entry heads it
+
+    def ask(prompt):
+        return json.dumps({"links": [
+            {"record": "e2", "to": "loop/1", "rel": "strengthens", "passage": "worse going down"},
+            {"record": "complaints/knee.md", "to": "loop/1", "rel": "strengthens", "passage": "2026-03-05 — knee locks on the stairs…"}]}), 0.5
+    out = relink.sweep(rec, ask=ask, confirm=lambda p: ("yes", 0.1), dry_run=True)
+    assert [x["from"] for x in out["confirmed"]] == ["e2"] and [d["why"] for d in out["dropped"]] == ["already linked"]

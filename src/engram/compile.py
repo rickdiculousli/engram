@@ -354,11 +354,11 @@ def _compiler_commit():
             os.environ[lint.WIKI_ENV] = before
 
 
-def write(root: Path, pages: dict[str, str], message: str, register: str = "") -> list[str]:
-    """Pages written under `wiki/` and committed in one transaction, with the post's id given it now if it has none.
-    Nothing outside `wiki/` is ever written here."""
+def write(root: Path, pages: dict[str, str], message: str, register: str = "", removed: list[str] = ()) -> list[str]:
+    """Pages written (or `removed`) under `wiki/` and committed in one transaction, with the post's id given it now if
+    it has none. Nothing outside `wiki/` is ever written here."""
     from engram import docreg
-    bad = [p for p in pages if not p.startswith(wiki.DIR + "/") or ".." in Path(p).parts]
+    bad = [p for p in [*pages, *removed] if not p.startswith(wiki.DIR + "/") or ".." in Path(p).parts]
     if bad:
         raise ValueError(f"the compiler writes only under {wiki.DIR}/: {bad}")
     st = store.Store(root)
@@ -370,7 +370,10 @@ def write(root: Path, pages: dict[str, str], message: str, register: str = "") -
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(text)
             tx.extra.append(rel)
-    return sorted(pages)
+        for rel in removed:
+            (Path(root) / rel).unlink(missing_ok=True)
+            tx.extra.append(rel)
+    return sorted([*pages, *removed])
 
 
 PROMPTS = {"source": "compile", "draft": "compile_post", "published": "compile_post", "spark": "compile_spark"}
@@ -464,6 +467,7 @@ def run(domain: str, ask=None, only: list[str] | None = None) -> dict:
             out["skipped"] = True
             return out
         root = Path(config.load()[domain].repo)
+        follow_moves(domain)
         for ref in only if only is not None else due(domain, items(root)):
             r = compile_item(domain, ref, ask)
             out["usd"] += r["usd"]
@@ -519,9 +523,127 @@ def refresh(domain: str, now: float | None = None) -> list[str]:
     return write(root, pages, commitmsg.message("wiki_index")) if pages else []
 
 
+# the health check
+FOUND = {"splits": "Concepts that may need splitting", "contradictions": "Concepts that contradict each other",
+         "spark_concepts": "A concept these sparks may share", "gaps": "Worth looking up (nothing is fetched until you say go)"}
+SHARED = 3  # sparks no concept has taken that share a thread before a concept is proposed for them
+
+
+def merged(keep: wiki.Concept, gone: wiki.Concept) -> wiki.Concept:
+    """`gone` folded into `keep`: its name an alias, everything it held appended, the summary `keep`'s."""
+    c = copy.deepcopy(keep)
+    c.aliases += [a for a in [gone.name, *gone.aliases] if a not in c.aliases and a != c.name]
+    c.sources += [x for x in gone.sources if x not in c.sources]
+    c.against += [x for x in gone.against if x not in c.against]
+    c.writing += [x for x in gone.writing if x.target not in {u.target for u in c.writing}]
+    c.sparks += [x for x in gone.sparks if x not in c.sparks]
+    c.related += [x for x in gone.related if x not in c.related and x not in (c.name, gone.name)]
+    return c
+
+
+def repoint(b: Book, names: dict[str, str] = {}, targets: dict[str, str] = {}) -> dict[str, str]:
+    """Every page that links a concept in `names` (old -> new) or a post in `targets` (old link target -> new), with
+    its links pointed at the new one; the pages that changed, rendered."""
+    def fix_summary(text):
+        def sub(m):
+            old = wiki.page_name(m.group(1))
+            return wiki.concept_link(names[old]) if m.group(1).startswith(wiki.CONCEPTS + "/") and old in names else m.group(0)
+        return wiki.LINK.sub(sub, text)
+    out = {}
+    for c in b.concepts.values():
+        new = copy.deepcopy(c)
+        new.summary = fix_summary(c.summary)
+        new.related = list(dict.fromkeys(names.get(r, r) for r in c.related if names.get(r, r) != c.name))
+        for u in new.writing:
+            u.target = targets.get(u.target, u.target)
+        for st in new.against:
+            if st.answer:
+                st.answer.target = targets.get(st.answer.target, st.answer.target)
+        if new != c:
+            out[c.path] = wiki.render_concept(new)
+    for src in b.sources.values():
+        new = replace(src, concepts=list(dict.fromkeys(names.get(x, x) for x in src.concepts)))
+        if new != src:
+            out[src.path] = wiki.render_source(new)
+    return out
+
+
+def follow_moves(domain: str) -> list[str]:
+    """A post moved (a draft published to another folder): every link to it pointed at where the document registry
+    says it went, by code, in one commit."""
+    from engram import docreg
+    root = Path(config.load()[domain].repo)
+    b = book(root)
+    reg = docreg.load(root)
+    targets = {}
+    for c in b.concepts.values():
+        for t in [u.target for u in c.writing] + [s.answer.target for s in c.against if s.answer]:
+            if b.vault().resolve(t) or t in targets:
+                continue
+            doc = reg.owner(t + ".md")
+            now = reg.path.get(doc, "") if doc else ""
+            if now and now != t + ".md" and now in b.files:
+                targets[t] = now.removesuffix(".md")
+    pages = repoint(b, targets=targets) if targets else {}
+    return write(root, pages, commitmsg.message("wiki_moved", n=len(targets))) if pages else []
+
+
+def health_listing(b: Book) -> str:
+    out = []
+    for c in sorted(b.concepts.values(), key=lambda c: c.name):
+        aka = f"; also {', '.join(c.aliases)}" if c.aliases else ""
+        srcs = ", ".join(sorted({wiki.page_name(x.source) for x in c.sources})) or "none"
+        out.append(f"- {c.name} ({c.pillar}{aka}; sources: {srcs}): {wiki.LINK.sub(lambda m: m.group(3) or m.group(1), c.summary)}")
+    return "\n".join(out) or "none yet"
+
+
 def health(domain: str, ask=None) -> dict:
-    """The wiki's health check. It arrives with merging."""
-    return {"usd": 0.0, "refreshed": refresh(domain)}
+    """The health check: one call names concepts to merge (applied here: the kept page takes the other's name as an
+    alias and every link is repointed to it), to split, that contradict each other, a concept for sparks no concept has
+    taken, and gaps worth looking up; all but merges wait in `open.md`. Code's own findings are rebuilt with it."""
+    root = Path(config.load()[domain].repo)
+    p = pack.load(domain)
+    res = {"merged": 0, "usd": 0.0}
+    with lock(domain) as got:
+        if not got:
+            return res | {"skipped": True}
+        follow_moves(domain)
+        b = book(root)
+        sparks = loose(b)
+        if b.concepts and p.prompts.get("health"):
+            prompt = config.voice(p.prompts["health"]).format(
+                concepts=health_listing(b), sparks="\n".join(f"{n}. {wiki.one_line(x.text)}" for n, x in enumerate(sparks, 1)) or "none")
+            reply, res["usd"] = (ask or _ask)(prompt)
+            reply = reply if isinstance(reply, dict) else {}
+            pages, removed, names = {}, [], {}
+            for m in reply.get("merges") or []:
+                keep, gone = b.concept(str((m or {}).get("keep", ""))), b.concept(str((m or {}).get("merge", "")))
+                if not keep or not gone or keep.name == gone.name or gone.name in names or keep.name in names:
+                    continue
+                b.concepts[keep.name] = merged(keep, gone)
+                del b.concepts[gone.name]
+                names[gone.name] = keep.name
+                removed.append(gone.path)
+            if names:
+                pages = {c.path: wiki.render_concept(c) for c in b.concepts.values() if c.name in names.values()}
+                b.files -= set(removed)
+                pages |= repoint(b, names=names)
+                write(root, pages, commitmsg.message("wiki_merge", n=len(names)), removed=removed)
+                res["merged"] = len(names)
+            s = state(domain)
+            def lines(key):
+                return [wiki.one_line(x) for x in reply.get(key) or [] if isinstance(x, str) and x.strip()]
+            found = {"splits": lines("splits"), "contradictions": lines("contradictions"), "gaps": lines("gaps"),
+                     "spark_concepts": []}
+            for g in reply.get("spark_concepts") or []:
+                picked = [sparks[n - 1] for n in (g or {}).get("sparks") or [] if isinstance(n, int) and 0 < n <= len(sparks)]
+                if len(picked) >= SHARED and str(g.get("name", "")).strip():
+                    found["spark_concepts"].append(f"{wiki.one_line(g['name'])}: " + "; ".join(
+                        f"“{wiki.one_line(x.text)}”" for x in picked))
+            s["found"] = {FOUND[k]: v for k, v in found.items() if v}
+            save(domain, s)
+        res["refreshed"] = refresh(domain)
+    return res
 
 
 def domain_of(root: Path) -> str | None:

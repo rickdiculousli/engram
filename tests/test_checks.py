@@ -53,7 +53,9 @@ TODAY = [  # medical's messages as engram wrote them before the templates, byte 
 
 REVIEW = [("review", dict(id=3, question="data", call="search"), "engram review: finding 3, data, the search call")]  # group 9
 WIKI = [("wiki", dict(item="doc-k7f2qa", n=3), "engram: the wiki from doc-k7f2qa, 3 pages"),
-        ("wiki_index", {}, "engram: the wiki's index and open list")]
+        ("wiki_index", {}, "engram: the wiki's index and open list"),
+        ("wiki_merge", dict(n=1), "engram: the wiki's health check merged concepts (1), their links repointed"),
+        ("wiki_moved", dict(n=1), "engram: links repointed to moved posts (1)")]
 
 
 def test_each_template_writes_medicals_message_byte_for_byte():

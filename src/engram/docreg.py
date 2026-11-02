@@ -489,8 +489,9 @@ def _q(s: str) -> str:
 def staged_problems(root: Path) -> tuple[list[str], list[str]]:
     """The pre-commit's rename and move check: (problems, what was recorded on its own). A staged change that deletes or
     moves a document a link points at, or renames or removes a heading one points at, is refused unless the staged
-    registry says where it went. A pure `git mv` and a one-to-one heading rename (the only heading gone and the only one
-    new, in the same place, alike) are recorded and staged here. Each problem names the command that fixes it."""
+    registry says where it went. A pure `git mv`, any move git sees of a document with an id that no link points at (a
+    draft published), and a one-to-one heading rename (the only heading gone and the only one new, in the same place,
+    alike) are recorded and staged here. Each problem names the command that fixes it."""
     root = Path(root)
     head, staged = Registry.at(root, "HEAD"), Registry.at(root, "")
     if not head and not staged:
@@ -537,6 +538,11 @@ def staged_problems(root: Path) -> tuple[list[str], list[str]]:
         status, old = c[0], c[1]
         new = c[2] if len(c) == 3 else (None if status == "D" else old)
         n = whole.get(old, 0)
+        if new and new != old and not n and status.startswith("R") and can_fix and head.owner(old) \
+                and not lands(staged, f"{old}#"):  # a document with an id moved, though no link points at it yet
+            record_move(work, root, old, new, patterns)
+            fixed.append(f"{old} → {new} (a move)")
+            staged = Registry(root, work.file.read_text())
         if new != old and n:  # deleted or moved
             if not lands(staged, f"{old}#"):
                 if new and status == "R100" and can_fix:

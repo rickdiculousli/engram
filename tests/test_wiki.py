@@ -350,3 +350,72 @@ def test_the_index_and_open_list_are_written_from_the_pages_and_a_rebuild_is_byt
     assert cmp.refresh("essays") == ["wiki/index.md", "wiki/open.md"]
     assert "1 steelman (1 unanswered)" in head(repo, "wiki/index.md")
     assert "## Answers that no longer check\n\n- [[wiki/concepts/Cues|Cues]]: the answer from Streaks no longer says" in head(repo, "wiki/open.md")
+
+
+def test_the_health_check_merges_with_the_alias_kept_and_every_link_repointed(compiled):
+    from engram import compile as cmp
+    repo = compiled["repo"]
+    st = store.Store(repo)
+    s2 = intake.add(st, "note", "Habit cues are triggers. Triggers make habits automatic.", title="On triggers")
+    assert cmp.compile_item("essays", s2.id, ask=replies({
+        "summary": [{"text": "Triggers make habits automatic.", "quote": "Triggers make habits automatic."}],
+        "concepts": [{"name": "Habit cues", "pillar": "habits", "summary": "Triggers start habits. See [[Willpower]].",
+                      "quote": "Habit cues are triggers.", "position": "Cues are triggers.", "related": ["Willpower"]},
+                     {"name": "Willpower", "quote": "Triggers make habits automatic.", "position": "Triggers beat effort.",
+                      "related": ["Habit cues"]}]}))["ok"]
+    for words in ("I skip the gym when tired.", "I skip reading when tired.", "Tired evenings undo plans."):
+        intake.add(st, "spark", words)
+    asked = []
+
+    def ask(prompt):
+        asked.append(prompt)
+        n = {t: int(l.split(".")[0]) for l in prompt.split("Sparks: ")[1].splitlines() for t in ("gym", "reading", "evenings") if t in l}
+        return {"merges": [{"keep": "Cues", "merge": "Habit cues"}, {"keep": "Nowhere", "merge": "Willpower"}],
+                "splits": ["Willpower: effort and self-control are two ideas"],
+                "contradictions": ["Cues and Willpower disagree on what starts a habit"],
+                "spark_concepts": [{"name": "Tiredness", "sparks": [n["gym"], n["reading"], n["evenings"]]},
+                                   {"name": "Too few", "sparks": [n["gym"]]}],
+                "gaps": ["A study of cues outside the lab"]}, 0.02
+    res = cmp.health("essays", ask=ask)
+    assert res["merged"] == 1 and "Habit cues (habits; sources: On triggers)" in asked[0]
+    files = git(repo, "ls-files", "wiki").split("\n")
+    assert "wiki/concepts/Habit cues.md" not in files and "wiki/concepts/Cues.md" in files
+    cues = head(repo, "wiki/concepts/Cues.md")
+    assert cues.startswith('---\naliases: ["Habit cues"]\n') and "> Cues start habits." in cues  # the kept page's summary
+    assert "[[wiki/sources/On triggers|On triggers]]\n> Habit cues are triggers." in cues
+    willpower = head(repo, "wiki/concepts/Willpower.md")
+    assert willpower.count("- [[wiki/concepts/Cues|Cues]]") == 1 and "Habit cues" not in willpower
+    assert "- [[wiki/concepts/Cues|Cues]]" in head(repo, "wiki/sources/On triggers.md")
+    assert "Habit cues" not in head(repo, "wiki/index.md")
+    opened = head(repo, "wiki/open.md")
+    for line in ("## Concepts that may need splitting\n\n- Willpower: effort and self-control are two ideas",
+                 "## Concepts that contradict each other\n\n- Cues and Willpower disagree on what starts a habit",
+                 "## A concept these sparks may share\n\n- Tiredness: “I skip the gym when tired.”; “I skip reading when tired.”; “Tired",
+                 "## Worth looking up (nothing is fetched until you say go)\n\n- A study of cues outside the lab"):
+        assert line in opened
+    assert "Too few" not in opened and "## Links that go nowhere" not in opened
+    s3 = intake.add(st, "note", "Cues compound.", title="Compounding")
+    r = cmp.compile_item("essays", s3.id, ask=replies({"summary": [{"text": "Cues compound.", "quote": "Cues compound."}],
+                                                       "concepts": [{"name": "Habit cues", "quote": "Cues compound.",
+                                                                     "position": "Cues compound."}]}))
+    assert r["pages"] == ["wiki/concepts/Cues.md", "wiki/sources/Compounding.md"]  # the alias finds the kept page
+
+
+def test_a_published_draft_s_links_follow_its_move_with_no_model_call(area, tmp_path):
+    from engram import compile as cmp, setup
+    setup.setup(area, tmp_path / "LaunchAgents", load=False)
+    s1 = intake.add(store.Store(area), "note", HABITS, by="Ada Lane", title="A habits study")
+    cmp.compile_item("essays", s1.id, ask=replies(FIRST))
+    cmp.compile_item("essays", "drafts/streaks.md", ask=replies({"concepts": [{"name": "Cues", "line": "Streaks follow cues."}]}))
+    git(area, "mv", "drafts/streaks.md", "posts/streaks.md")
+    (area / "posts/streaks.md").write_text("title: Streaks\n___\nA streak is a story we tell.\n\nPublished.\n")
+    git(area, "add", "-A")
+    git(area, "commit", "-qm", "publish streaks")  # the pre-commit records the move
+    assert '"path": "posts/streaks.md"' in head(area, "events/docs.jsonl")
+    out = cmp.run("essays", ask=replies({"concepts": [{"name": "Cues", "line": "Streaks follow cues, now published."}]},
+                                        {"concepts": []}))
+    log = git(area, "log", "--format=%s", "-4")
+    assert "engram: links repointed to moved posts (1)" in log
+    cues = head(area, "wiki/concepts/Cues.md")
+    assert "- [[posts/streaks|Streaks]]: Streaks follow cues, now published." in cues and "drafts/streaks" not in cues
+    assert len(out["compiled"]) == 2  # the published post at once, and the other post

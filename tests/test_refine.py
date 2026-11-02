@@ -317,3 +317,52 @@ def test_the_detached_pass_inherits_the_lock_and_runs_without_taking_it(served, 
     calls = []
     monkeypatch.setattr(refine, "_lock", lambda **kw: (_ for _ in ()).throw(AssertionError("took the lock")))
     refine.run(only="med", show=True, attached=True)
+
+
+def _sweeps_med(served):
+    """med takes the made-up area's pack, whose words include `sweep`."""
+    from conftest import NOTES_PACK
+    cfg, head = served["tmp"] / "config.toml", f'[domains.med]\nrepo = "{served["med"]}"\n'
+    cfg.write_text(cfg.read_text().replace(head, head + f'pack = "{NOTES_PACK}"\n'))
+
+
+def test_the_evidence_sweep_runs_before_the_passes_once_a_week_and_is_told_in_health(served, monkeypatch):
+    from engram import relink
+    _sweeps_med(served)
+    swept, order = [], []
+    results = iter([{"usd": 4.0, "confirmed": [1, 2], "stopped": True}])
+
+    def sweep(repo, cap):
+        swept.append((repo, cap))
+        order.append("sweep")
+        return next(results)
+    monkeypatch.setattr(relink, "sweep", sweep)
+
+    def runner(cmd, **kw):
+        order.append("pass")
+        return type("P", (), {"returncode": 0, "stdout": json.dumps({"total_cost_usd": 10.0, "result": "ok"}), "stderr": ""})()
+    assert refine.run(dry_run=served["tmp"] / "plans", show=True)[0] == "med: would sweep the evidence, up to $10.00"
+    assert not swept and not (served["data"] / "refine/ledger.jsonl").exists()  # a dry run runs and writes nothing
+    lines = refine.run(runner=runner)
+    assert order[0] == "sweep" and swept == [(served["med"], relink.SWEEP_CAP)]
+    assert lines[0] == "med: evidence sweep stopped at its cap, 2 filed, $4.00; the next run picks up"
+    assert lines[2] == "med: ok, $10.00; week $24.00 of $50"  # the money left counts the sweep; its row isn't the pass's
+    rows = refine.ledger()
+    assert [(r["repo"], r.get("job"), r["cost_usd"]) for r in rows] == [("med", "sweep", 4.0), ("engram", None, 10.0), ("med", None, 10.0)]
+    assert "evidence sweep on med: stopped at its $10 cap, $4.00; the next run picks up" in refine.status()
+    assert "weekly pass on med: ok, $10.00" in refine.status()
+    refine.run("med", show=True)
+    assert len(swept) == 1  # its own weekly mark: a --repo run or a catch-up doesn't repeat it
+    (served["med"] / ".engram/engram.toml").write_text("[refine]\npaused = true\n")
+    assert refine.run(show=True)[0] == "med: evidence sweep paused with the repo; skipped"
+
+
+def test_a_failed_sweep_is_told_in_health_and_counts_its_cap(served, monkeypatch):
+    from engram import relink
+    _sweeps_med(served)
+
+    def sweep(repo, cap):
+        raise RuntimeError("usage limit")
+    monkeypatch.setattr(relink, "sweep", sweep)
+    refine.run(runner=lambda cmd, **kw: type("P", (), {"returncode": 0, "stdout": json.dumps({"total_cost_usd": 1.0}), "stderr": ""})())
+    assert "evidence sweep on med: FAILED (RuntimeError: usage limit), $10.00" in refine.status()

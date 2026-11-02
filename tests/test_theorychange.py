@@ -149,6 +149,8 @@ def test_the_sweep_files_only_what_the_guards_keep_and_the_second_call_confirms(
     (rec / "evidence/D01-cold.md").write_text("---\nid: D01\ntitle: Cold mornings stiffen the knee\n---\n# D01\n\nCold stiffens it.\n")
     store.Store(rec).add({"id": "j1", "title": "a low week", "date": "2026-03-02", "kind": "journal", "about": ["series/_journal"]},
                          "- felt low\n")
+    store.Store(rec).add({"id": "r1", "title": "still on the brace", "date": "2026-03-03", "kind": "renewal",
+                          "about": ["series/_observations"]}, "- still wearing the brace\n")
     reads, checks = [], []
 
     def ask(prompt):
@@ -167,7 +169,7 @@ def test_the_sweep_files_only_what_the_guards_keep_and_the_second_call_confirms(
         checks.append(prompt)
         return ("Yes." if "Loop 1" in prompt else "no"), 0.1
     out = relink.sweep(rec, ask=ask, confirm=confirm, dry_run=True)
-    assert "felt low" not in reads[0] and "Cold stiffens it." in reads[0] and "path: stiffness → knee → ankle → stiffness" in reads[0]
+    assert "felt low" not in reads[0] and "still wearing the brace" not in reads[0] and "Cold stiffens it." in reads[0] and "path: stiffness → knee → ankle → stiffness" in reads[0]
     assert out["proposed"] == 7 and len(out["links"]) == 2 and sorted(d["why"] for d in out["dropped"]) == [
         "already linked", "not a record of this batch", "passage not in the record", "target node/A isn't a loop or Discovery",
         "unknown rel causes"]
@@ -317,3 +319,18 @@ def test_a_dated_index_row_counts_as_the_entry_it_heads_or_links(rec):
             {"record": "complaints/knee.md", "to": "loop/1", "rel": "strengthens", "passage": "2026-03-05 — knee locks on the stairs…"}]}), 0.5
     out = relink.sweep(rec, ask=ask, confirm=lambda p: ("yes", 0.1), dry_run=True)
     assert [x["from"] for x in out["confirmed"]] == ["e2"] and [d["why"] for d in out["dropped"]] == ["already linked"]
+
+
+def test_a_replay_lands_exactly_the_approved_links_through_every_guard_with_no_calls(rec):
+    (rec / "evidence").mkdir()
+    (rec / "evidence/D01-cold.md").write_text("---\nid: D01\ntitle: Cold mornings stiffen the knee\n---\n# D01\n\nCold stiffens it.\n")
+    replay = {"proposals": [
+        {"record": "consults/visit.md", "to": "loop/1", "rel": "weakens", "passage": "the knee scan shows mild wear"},
+        {"record": "consults/visit.md", "to": "discovery/D01", "rel": "strengthens", "passage": "The knee scan shows"},
+        {"record": "e1", "to": "loop/1", "rel": "weakens", "passage": "knee sore"},  # held already: the guard drops it
+        {"record": "consults/visit.md", "to": "loop/1", "rel": "strengthens", "passage": "a scan that isn't there"}],
+        "approved": [["the knee scan shows mild wear", "loop/1", "weakens"], ["a scan that isn't there", "loop/1", "strengthens"]]}
+    no_call = lambda prompt: (_ for _ in ()).throw(AssertionError("a replay calls no model"))
+    out = relink.sweep(rec, ask=no_call, confirm=no_call, replay=replay)
+    assert [(x["from"], x["to"]) for x in out["confirmed"]] == [("consults/visit.md", "loop/1")] and out["usd"] == 0
+    assert sorted(d["why"] for d in out["dropped"]) == ["already linked", "passage not in the record"] and len(out["rejected"]) == 1

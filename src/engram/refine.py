@@ -24,6 +24,7 @@ DEFAULTS = {"weekly_cap": 100.0, "pass_cap": 40.0, "hours": 4.0, "model": "opus"
 SKILL = "skills/engram-refine/SKILL.md"  # in engram's own repo, so an edit there steers the next pass
 TRAILER = "Refinement"
 REVERTS = "This reverts commit "  # git revert's line
+SWEEP = "sweep"  # the job of the evidence sweep's ledger rows: they count toward the week, never as a pass
 LABEL = "engram.refine"
 # Saturday 04:00, with catch-ups on Sunday and Monday for a box asleep then; a repo whose pass this week landed, is
 # running, or cost something is skipped, and one whose pass failed for nothing is tried again
@@ -115,6 +116,11 @@ def status() -> list[str]:
     except ValueError as e:
         return [f"weekly pass: the ledger doesn't read ({e}); no pass runs until it's fixed"]
     out = []
+    for r in [r for r in rows if r.get("job") == SWEEP]:
+        out.append(f"evidence sweep on {r['repo']}: " + ("running" if r.get("running") else f"FAILED ({r.get('error', '')})"
+                   if not r["ok"] else "stopped at its $10 cap" if r.get("stopped") else "ok") + f", ${r['cost_usd']:.2f}"
+                   + ("; the next run picks up" if r["ok"] and r.get("stopped") else ""))
+    rows = [r for r in rows if r.get("job") != SWEEP]
     for name in repos():
         last = [r for r in rows if r["repo"] == name][-1:]
         if not last:
@@ -194,6 +200,7 @@ def run(only: str | None = None, dry_run: Path | None = None, show: bool = False
     # the schedule waits out a pass on request; a pass `start` launched holds the lock it inherited
     with contextlib.nullcontext() if attached else _lock(wait=not (only or show or dry_run)):
         rows = ledger()
+        out += _sweeps(rows, wk, s, only, bool(dry_run or show))
         for name, repo in targets.items():
             left = s["weekly_cap"] - spent(rows, wk)
             if only and name != only:
@@ -201,7 +208,7 @@ def run(only: str | None = None, dry_run: Path | None = None, show: bool = False
             if paused(repo):
                 out.append(f"{name}: paused in its rules; skipped")
                 continue
-            done = [r for r in rows if r["week"] == wk and r["repo"] == name and not r["dry_run"]]
+            done = [r for r in rows if r["week"] == wk and r["repo"] == name and not r["dry_run"] and r.get("job") != SWEEP]
             if not (only or dry_run) and done and (done[-1]["ok"] or done[-1].get("running") or done[-1]["cost_usd"] >= 1):
                 out.append(f"{name}: already ran this week" + ("" if done[-1]["ok"] else ", stopped mid-run"
                            if done[-1].get("running") else ", and failed"))  # --repo runs it again
@@ -257,6 +264,45 @@ def run(only: str | None = None, dry_run: Path | None = None, show: bool = False
             _write(rows)
             out.append(f"{name}: {'ok' if row['ok'] else 'failed'}, ${cost:.2f}; week ${spent(rows, wk):.2f} of "
                        f"${s['weekly_cap']:.0f}" + (f"; {page}" if page else ""))
+    return out
+
+
+def _sweeps(rows: list[dict], wk: str, s: dict, only: str | None, dry: bool) -> list[str]:
+    """The evidence sweep of each domain whose pack has `sweep` words, before the passes (docs/technical.md, "The
+    evidence sweep"): once a week, by its own mark, so a `--repo` run or a catch-up doesn't repeat it; skipped when the
+    repo is paused; a dry run says what would run and runs nothing. Its rows count toward the week's spend, so the
+    passes' money left is recomputed after it; an unknown cost (a failure) is its whole cap."""
+    from engram import relink
+    out = []
+    for name, d in config.load().items():
+        if not d.repo or (only and name != only) or not pack.load(name).prompts.get("sweep"):
+            continue
+        if paused(d.repo):
+            out.append(f"{name}: evidence sweep paused with the repo; skipped")
+            continue
+        if any(r["week"] == wk and r["repo"] == name and r.get("job") == SWEEP and not r["dry_run"] for r in rows):
+            continue
+        left = s["weekly_cap"] - spent(rows, wk)
+        if left < 1:
+            out.append(f"{name}: the weekly cap of ${s['weekly_cap']:.0f} is reached; no evidence sweep")
+            continue
+        cap = min(left, relink.SWEEP_CAP)
+        if dry:
+            out.append(f"{name}: would sweep the evidence, up to ${cap:.2f}")
+            continue
+        head = {"week": wk, "repo": name, "job": SWEEP, "started": datetime.now().isoformat(timespec="seconds"), "dry_run": False}
+        rows.append(head | {"cost_usd": cap, "ok": False, "running": True})
+        _write(rows)
+        try:
+            res = relink.sweep(d.repo, cap=cap)
+            rows[-1] = head | {"cost_usd": round(res["usd"], 4), "ok": True, "filed": len(res["confirmed"])} | \
+                ({"stopped": True} if res["stopped"] else {})
+            out.append(f"{name}: evidence sweep " + ("stopped at its cap" if res["stopped"] else "ok") +
+                       f", {len(res['confirmed'])} filed, ${res['usd']:.2f}" + ("; the next run picks up" if res["stopped"] else ""))
+        except Exception as e:
+            rows[-1] = head | {"cost_usd": cap, "ok": False, "error": f"{type(e).__name__}: {e}"[:200]}
+            out.append(f"{name}: evidence sweep failed: {rows[-1]['error']}")
+        _write(rows)
     return out
 
 

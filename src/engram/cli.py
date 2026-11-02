@@ -227,7 +227,7 @@ def cmd_theory(a):
                 return
             if a.action == "sweep":
                 from engram import relink
-                r = relink.sweep(repo, dry_run=a.dry_run)
+                r = relink.sweep(repo, dry_run=a.dry_run, replay=json.loads(Path(a.replay).read_text()) if a.replay else None)
                 if a.out:
                     Path(a.out).write_text(json.dumps(r, ensure_ascii=False, indent=1))
                 print(json.dumps({k: len(v) if isinstance(v, list) else v for k, v in r.items()}))
@@ -885,6 +885,8 @@ def main(argv=None):
     s.add_argument("--change", help="for relink: the change id")
     s.add_argument("--force", action="store_true", help="for relink: restart one left running")
     s.add_argument("--out", help="for sweep: write every proposed, dropped, confirmed and rejected link to this file")
+    s.add_argument("--replay", help="for sweep: land an approved set (its proposals and approved verdicts, as JSON) with no "
+                   "model calls, every guard run against the record as it stands")
     s.add_argument("--dry-run", action="store_true")
     s.set_defaults(fn=cmd_theory)
 

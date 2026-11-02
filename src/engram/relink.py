@@ -377,7 +377,8 @@ def _progress(st: Store, dry_run: bool) -> Path:
     return data_path("sweep") / f"{st.config.get('domain', {}).get('name', 'domain')}{'.dry' if dry_run else ''}.json"
 
 
-def sweep(repo: Path, ask=None, confirm=None, dry_run: bool = False, limit: int | None = None, cap: float = SWEEP_CAP) -> dict:
+def sweep(repo: Path, ask=None, confirm=None, dry_run: bool = False, limit: int | None = None, cap: float = SWEEP_CAP,
+          replay: dict | None = None) -> dict:
     """The evidence sweep: every entry but journals and every document the re-check reads, against the theory's loops
     and Discoveries, with the pack's `sweep` words. The re-check's guards hold, with a pair already linked by any
     evidence rel counting as held, and the read must cite the record's own words that bear on it (its `passage`,
@@ -386,7 +387,11 @@ def sweep(repo: Path, ask=None, confirm=None, dry_run: bool = False, limit: int 
 
     A run never starts a call that could take it past `cap`, and picks up where the last one stopped: it confirms the
     links still waiting first, then reads only records not read at their present text (all of them when the targets
-    changed). Returns this run's counts and links, and what's left; a dry run files nothing."""
+    changed). Returns this run's counts and links, and what's left; a dry run files nothing.
+
+    `replay` lands an approved set with no model calls: its "proposals" (record, to, rel, passage) answer each read for
+    the records in that batch, and a link is confirmed only when its (passage, target, rel) is in its "approved"; every
+    guard runs against the record as it stands."""
     p = pack.for_repo(repo)
     if not (p.prompts.get("sweep") and p.prompts.get("sweep_confirm")):
         raise SystemExit(f"engram: {repo}'s pack has no `sweep` and `sweep_confirm` words; its evidence isn't swept")
@@ -412,6 +417,7 @@ def sweep(repo: Path, ask=None, confirm=None, dry_run: bool = False, limit: int 
     recs = [r for r in records(repo, p.relink_skip) if r[0] not in journal]
     text_of = {i: (d, t) for i, d, t in recs}
     owner_of = _entry_of(recs, st)
+    approved = {(_norm(a), b, c) for a, b, c in (replay or {}).get("approved", [])}
     sig = lambda t: hashlib.sha1(t.encode()).hexdigest()[:16]
     if state.get("targets") != sorted(tg):
         state = {"targets": sorted(tg), "read": {}, "pending": state.get("pending", []), "confirmed": state.get("confirmed", [])}
@@ -449,7 +455,8 @@ def sweep(repo: Path, ask=None, confirm=None, dry_run: bool = False, limit: int 
             d, t = text_of[ln["from"]]
             prompt = config.voice(p.prompts["sweep_confirm"]).format(
                 record=f"[{ln['from']}] date {d or 'undated'}\n{t}", passage=ln["why"], target=about(tg[ln["to"]]), rel=ln["rel"])
-            yes = bool(re.match(r"\W*yes\b", call(confirm, prompt)[0], re.I))
+            yes = (_norm(ln["why"]), ln["to"], ln["rel"]) in approved if replay else \
+                bool(re.match(r"\W*yes\b", call(confirm, prompt)[0], re.I))
             state["pending"].pop(0)
             (state["confirmed"] if yes else out["rejected"]).append(ln)
             if yes:
@@ -457,7 +464,9 @@ def sweep(repo: Path, ask=None, confirm=None, dry_run: bool = False, limit: int 
         else:
             b = work.pop(0)
             text = "\n".join(f"[{i}] date {d or 'undated'}\n{t}\n" for i, d, t in b)
-            reply, usd = call(ask, config.voice(p.prompts["sweep"]).format(targets=targets_text, records=text))
+            ids = {i for i, _, _ in b}
+            reply, usd = (json.dumps({"links": [x for x in replay["proposals"] if x["record"] in ids]}), 0.0) if replay else \
+                call(ask, config.voice(p.prompts["sweep"]).format(targets=targets_text, records=text))
             out["read_usd"] += usd
             out["batches"] += 1
             got = {"links": [], "dropped": out["dropped"], "moved": out["moved"]}

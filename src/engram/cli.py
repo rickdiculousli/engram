@@ -570,6 +570,19 @@ def cmd_link(a):
     _write(st, fm, a.why, ends=reg if reg else None)  # ids once the record keeps a registry (engram docs sync)
 
 
+def cmd_source(a):
+    from engram import intake
+    st = _repo(a)
+    text = "" if sys.stdin.isatty() else sys.stdin.read()
+    try:
+        e = intake.add(st, a.kind, text, title=a.title or "", by=a.by or "", url=a.url or "",
+                       file=Path(a.file) if a.file else None, transcribed_by=a.transcribed_by or "",
+                       sparked_by=a.sparked_by or "")
+    except (ValueError, OSError) as err:
+        sys.exit(f"engram source: {err}")
+    print(f"engram: kept {e.id} ({e.fm.get('form') or e.kind}: {e.fm['title']})")
+
+
 def _payload(a) -> dict:
     raw = a.payload if getattr(a, "payload", None) else ("" if sys.stdin.isatty() else sys.stdin.read())
     try:
@@ -937,6 +950,20 @@ def main(argv=None):
     s.add_argument("--author", default="claude")
     s.add_argument("--repo")
     s.set_defaults(fn=cmd_link)
+
+    s = sub.add_parser("source", help="keep what the owner hands over, as saved: a page (fetched from --url), a video, an "
+                                      "image or a scribble (the text read from it on stdin, --transcribed-by the model that "
+                                      "read it, the file kept with --file), a note, a quote, or their own spark")
+    s.add_argument("action", choices=["add"])
+    s.add_argument("--kind", required=True, choices=["page", "video", "image", "note", "quote", "spark"])
+    s.add_argument("--url")
+    s.add_argument("--file")
+    s.add_argument("--title")
+    s.add_argument("--by", help="its author or speaker")
+    s.add_argument("--transcribed-by", dest="transcribed_by", help="the model that read the text from it")
+    s.add_argument("--sparked-by", dest="sparked_by", help="the source that set a spark off without being its point")
+    s.add_argument("--repo")
+    s.set_defaults(fn=cmd_source)
 
     s = sub.add_parser("capture", help="file what the owner says in a repo's sessions: run (the hourly job), check (the "
                                        "session-start health check and repair), status (whether it's running), "

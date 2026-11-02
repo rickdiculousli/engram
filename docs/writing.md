@@ -17,7 +17,7 @@ st.events(kind="observation", about="story/frost")
 | `engram status <thread> <status> --why "..."` | a `status` entry |
 | `engram link <from> <family>:<rel> <to> --why "..."` | a link |
 | `engram source add --kind page\|video\|image\|note\|quote\|spark [--url U] [--file F] [--title T] [--by WHO] [--transcribed-by M] [--sparked-by ID] < text` | what the owner hands over, kept as saved in one transaction, then compiled before it returns |
-| `engram wiki compile\|check` | the compiled wiki: compile every item due, or the health check |
+| `engram wiki compile\|check` | the compiled wiki: compile every item due, or run the health check |
 | `engram search`, `timeline`, `now`, `theory`, `show`, `feedback`, `ingest`, `health`, `lint`, `eval`, `archive`, `rewire`, `fix` | see the other docs |
 
 ## A transaction
@@ -45,10 +45,10 @@ If the commit fails (a refusing pre-commit, say), the transaction's new files ar
 ## Enforcement in each record repo
 
 - **Setup:** `engram setup <repo>`, for a repo whose rewiring is current, installs, idempotently, the session-start check (`engram capture check`), `Bash(engram:*)` in the allow list, the git pre-commit and the hourly job; `engram teardown <repo>` removes exactly those, restoring the settings file byte for byte; `engram capture status` (also in `engram health`) shows them, each session's last filing, the last repair and the job's last run. Every hourly run and session start repairs a missing or stale piece.
-- **Pre-commit:** core.hooksPath points at a tracked `.engram/hooks/` whose pre-commit runs `engram lint --staged` (entry files append-only, links.jsonl and docs.jsonl append-only, the node list may only lose rows; a moved or deleted document, or a renamed or removed heading, that a link points at needs its new home in docs.jsonl) and `engram rewire check --drift` (the commit leaves the jobs the ones `[rewire] at` names, and homes every copy it brings), after any pre-commit the repo had. This hook is the real enforcement.
+- **Pre-commit:** core.hooksPath points at a tracked `.engram/hooks/` whose pre-commit runs `engram lint --staged` (entry files append-only, links.jsonl and docs.jsonl append-only, the node list may only lose rows; a moved or deleted document, or a renamed or removed heading, that a link points at needs its new home in docs.jsonl, and any move git sees of a document with an id is recorded there; `wiki/` changes only in the compiler's commits, and wiki syntax stays out of the folders `[wiki] plain` names) and `engram rewire check --drift` (the commit leaves the jobs the ones `[rewire] at` names, and homes every copy it brings), after any pre-commit the repo had. This hook is the real enforcement.
 
 ## Advisor integration
 
-- **The repo's AGENTS.md gets two sections:** one on search, where the repo's own record comes first, a hit from another domain is a lead, opened before it's stated, and whole documents the owner hands over are saved as their own files, since facts from talk are filed by the hourly job; and the weekly refinement's, from `skills/engram-rewire/agents.md`. A compiled area's search section also says how things are handed over (`engram source add`), and which other domain a post may search, whose hits are leads and never filed into it.
+- **The repo's AGENTS.md gets two sections:** one on search, where the repo's own record comes first, a hit from another domain is a lead, opened before it's stated, and whole documents the owner hands over are saved as their own files, since facts from talk are filed by the hourly job; and the weekly refinement's, from `skills/engram-rewire/agents.md`. A compiled area's section also says how things are handed over (`engram source add`), that `wiki/` is the compiler's and how to put back a hand edit, that a draft's sources live in the wiki's source pages, and which other domain a post may search, whose hits are leads and never filed into it.
 - **Skills keep their judgment; only their finding and write steps change.**
 - **Session start reads local data only.**

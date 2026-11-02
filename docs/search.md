@@ -33,7 +33,7 @@ CREATE TABLE ingest_state (source TEXT, key TEXT, watermark TEXT, prefix_sha256 
   last_ok TEXT, last_error TEXT, rows INTEGER, PRIMARY KEY (source, key));
 ```
 
-- **Records:** markdown is cut at headings of levels 1 to 3; a section over 4,000 characters is cut into chunks with 500 characters of overlap (`ref@n`). Entries are indexed as themselves (`[index] events = true`), one doc under their id. Nothing is deleted except rows moved by session reclassification; superseded rows rank lower.
+- **Records:** markdown is cut at headings of levels 1 to 3; a section over 4,000 characters is cut into chunks with 500 characters of overlap (`ref@n`). Entries are indexed as themselves (`[index] events = true`), one doc under their id. A compiled area's wiki pages are documents like any other, so a search lands on a concept's "What the sources say" or "The case against". Nothing is deleted except rows moved by session reclassification; superseded rows rank lower.
 - **Tokenizer:** Porter stemming over unicode61. It finds `L4/L5`, `20mg`, `Ze-R-XL`, `2026-02-06` and `HbA1c`, and it handles exact phrases. A trigram index waits for logged misses on partial tokens.
 - **Short names:** six characters, hashed from the entry id where the record is an entry (so a renamed heading keeps it), else from its ref; the alphabet has no 0, o, 1, l or i. `engram show <name>` opens it.
 - **Labels:** who said it is stored in full and printed as one of me, wc (worked out with Claude), cs (Claude's suggestion), session, notes, or an outside source named from the record's people list (`[people.<id>]` with `name` and `aliases`). An outside source not on the list prints as written with `?`. Output carries the key once.

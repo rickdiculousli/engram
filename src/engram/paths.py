@@ -23,7 +23,7 @@ DATA = {
     "relink.log": "the evidence re-check's output",
     "summaries": "session summaries, per domain, and the summarizer's vocabulary",
     "record-summaries": "record summaries, per domain",
-    "compile": "which items each compiled wiki has compiled, at which text, and the health check's gaps",
+    "compile": "which items each compiled wiki has compiled, at which text, its parked pages, the health check's findings, and each area's run lock",
     "moved": "each domain's moved refs, old to new",
     "packs": "pinned packs, extracted read-only, per domain and commit",
     "release": "the release clone the hourly job runs",

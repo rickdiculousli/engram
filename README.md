@@ -60,7 +60,7 @@ Claude, through your own Claude Code, proposes facts; code decides what gets in:
 
 How the filer checks each fact: [technical](docs/technical.md#the-filer).
 
-**Hand it over instead:** a link, a video, a screenshot or a scribble is kept as saved (`engram source add`) and compiled into a wiki you read in Obsidian ([data model](docs/data-model.md#sources-and-sparks)).
+**Hand it over instead:** a link, a video, a screenshot or a scribble is kept as saved (`engram source add`) and compiled into a wiki of concept articles you read in Obsidian: what each concept means in your thinking, what the sources say in their own words, the case against, and where your own posts use it, linked whole. Claude keeps it; code checks every quote against its source ([data model](docs/data-model.md#sources-sparks-and-the-wiki)).
 
 ## Find
 

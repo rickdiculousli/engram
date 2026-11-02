@@ -6,7 +6,7 @@ How a record repo engram files for stores its record. A repo engram only reads k
 |---|---|---|---|
 | **Entry** | something that happened or was said | one markdown file in the repo's `events/` | adding entries; never edited or deleted |
 | **Raw source** | outside material: documents, data files, sessions | the repo's reference folders; Claude Code's session files | never changes; a new version is a new row |
-| **Source and spark** | what the owner hands over to be compiled (a page, a video, an image, a scribble, a quote), and their own passing thought | an entry each ([below](#sources-and-sparks)) | adding entries |
+| **Source and spark** | what the owner hands over to be compiled (a page, a video, an image, a scribble, a quote), and their own passing thought | an entry each ([below](#sources-sparks-and-the-wiki)) | adding entries |
 | **Document** | an argument or a real-world item revised as a whole | markdown files | edited in place; its history is git |
 | **Thread** | a small document with an id and a lifecycle: a story, a recurring thing, a series, a question | one markdown file per thread | its definition is edited in place; its status changes by entries |
 | **Status and link** | a thread's state; a relation between two things | `status` entries; lines of `events/links.jsonl` | adding; the latest status wins |
@@ -45,7 +45,7 @@ Each repo names its own entry kinds in its `engram.toml`; `interpretation`, `pla
 
 - **Their history is git.** For each commit, the message and the changed lines can be read; renames are followed.
 - **Consequential changes carry their reasons as entries.** A theory's status change is a `status` entry, with its reason and evidence.
-- **No page is generated from the store.** A page is written by hand, or drafted fresh for a reader.
+- **No page is generated from the store.** A page is written by hand, drafted fresh for a reader, or, in a compiled area, written into `wiki/` by the compiler ([below](#sources-sparks-and-the-wiki)).
 
 ## Links
 
@@ -53,13 +53,18 @@ Every link is one line of `events/links.jsonl` (from, to, family, rel, stories, 
 
 **Link ends:** an entry id, a theory thing (`<kind>/<id>`), a document by its stable id (`doc-k7f2qa`) or one of its sections (`doc-k7f2qa#h3kq`), with `from_hint`/`to_hint` holding the path and heading as they read when the link was written. Ids and anchors live in `events/docs.jsonl`, appended to only ([technical](technical.md#stable-document-ids)). An end written as `path#Heading` stays as written and resolves through the registry.
 
-## Sources and sparks
+## Sources, sparks and the wiki
 
 An area whose knowledge needs ingesting (the owner hands things over rather than reports facts) is compiled: what's handed over is kept as saved, and Claude builds a wiki from it that the owner reads in Obsidian ([technical](technical.md#the-compiled-wiki)).
 
 - **A source** is an entry of kind `source`: `form` (page, video, image, note or quote), `title`, `by` (its author or speaker, `other:<name>`), `url`, `transcribed_by` when a model read its text from a video or an image; its body is the text, no markup. A file handed over is kept beside it as `events/files/<sha256>.<ext>`, named in its `file:`, and is append-only like every event file. `engram source add` writes one.
 - **A spark** is an entry of kind `spark`, `by` the owner, in their words; `sparked_by` names a source that set it off without being its point.
-- **Posts** are documents under the folders `[wiki] posts` names (`{"drafts/" = "draft", "site/posts/" = "published"}`), with stable ids.
+- **Posts** are the `.md` files under the folders `[wiki] posts` names (`{"drafts/" = "draft", "site/posts/" = "published"}`), read as HEAD holds them; each gets a stable id at its first compile, so a move to another folder (publishing) is followed.
+- **The wiki** is `wiki/`, committed, and changed only by the compiler. The owner's own writing is linked whole, never quoted into fragments.
+  - `wiki/concepts/<Name>.md`, a page per concept: properties `aliases`, `tags` (`concept` and its pillar) and `pillar`; a `> [!summary]` callout on what the concept means in the owner's thinking; then, empty ones left out, "What the sources say" (each source's words in a `> [!quote]` callout titled by its page, then its position in one short sentence), "The case against" (each steelman a `> [!warning]` callout, from a source with its words or Claude's own, ending `Answered: “<quote>” (<link>)` or `Unanswered.`), "In your writing" (each draft or post that uses it, with a line on how, then the owner's sparks on it, verbatim) and "Related".
+  - `wiki/sources/<Title>.md`, a page per source: properties `by`, `url`, `kind`, `date`, `tags`; its summary; "Key quotes"; "Concepts", every concept it bears on; "Sparks it set off".
+  - `index.md`, the concepts by pillar, and `open.md`, what's open; both written by code from the other pages.
+- **`[wiki]`** in `engram.toml` holds `posts`, `pillars` (the index's sections, one per concept) and `plain`, the folders published as they are, where the pre-commit refuses wiki syntax.
 
 ## `.engram/engram.toml` (one per record repo)
 
@@ -88,4 +93,4 @@ weights = ["high", "medium", "low", "open"]
 rels = ["strengthens", "weakens", "supersedes"]
 ```
 
-The same file holds the index's settings (`[index]`, `[weights]`, `[lenses.*]`, `[ways.*]`, `[people.*]`, `[asks.*]`, `[synonyms]`, `[folders]`, `[timeline]`, `[nodes]`, `[review]`; see [search](search.md)), and what the last rewiring settled ([shape](shape.md#rewiring-a-repo)): `[rewire]` with the jobs it answers (`at`, the id of the names and quotes in `.engram/README.md`'s Jobs section), its kinds of ask (`[[rewire.asks]]`: `kind`, `axis`, `piece`, `jobs`, `turns`) and each copy's one home (`[rewire.homes]`, a folder or file and why), and `[departures]`, each canon anchor the repo departs from with its reason. A compiled area adds `[wiki]`. `[refine] paused` stops the weekly pass in the repo. `examples/notes/.engram/engram.toml` is the smallest working one. A schema change is additive; a breaking change gets a new kind.
+The same file holds the index's settings (`[index]`, `[weights]`, `[lenses.*]`, `[ways.*]`, `[people.*]`, `[asks.*]`, `[synonyms]`, `[folders]`, `[timeline]`, `[nodes]`, `[review]`; see [search](search.md)), and what the last rewiring settled ([shape](shape.md#rewiring-a-repo)): `[rewire]` with the jobs it answers (`at`, the id of the names and quotes in `.engram/README.md`'s Jobs section), its kinds of ask (`[[rewire.asks]]`: `kind`, `axis`, `piece`, `jobs`, `turns`) and each copy's one home (`[rewire.homes]`, a folder or file and why), and `[departures]`, each canon anchor the repo departs from with its reason. A compiled area adds `[wiki]` ([above](#sources-sparks-and-the-wiki)). `[refine] paused` stops the weekly pass in the repo. `examples/notes/.engram/engram.toml` is the smallest working one. A schema change is additive; a breaking change gets a new kind.

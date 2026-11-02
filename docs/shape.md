@@ -27,7 +27,7 @@ The layout every record takes in engram, and the lessons learned getting real re
 
 ## What gets stored
 
-- **Only what's worth keeping.** The record, plus checked session summaries. Never raw transcripts, tool output, Claude's notes files, sensor dumps or generated pages. ("DO NOT STORE GARBAGE.")
+- **Only what's worth keeping.** The record, plus checked session summaries. Never raw transcripts, tool output, Claude's notes files, sensor dumps or pages generated from the store; a compiled area's wiki is Claude's written work, kept in git. ("DO NOT STORE GARBAGE.")
 - **One real-world thing is one item.** Decide each file kind's natural unit by reading real files, before any count.
 - **Who said it** travels with every claim: the owner, an outside source, worked out with Claude, or a Claude suggestion the owner hasn't adopted. Only the owner adopts or drops a suggestion.
 - **Exact values come from the source,** never a summary: amounts, numbers, dates, someone's words. Quotes are verbatim; paraphrase is marked.
@@ -48,7 +48,7 @@ The layout every record takes in engram, and the lessons learned getting real re
 - **Who files is the repo's choice.** Engram files facts from talk (below), unless the repo keeps its own schema-checked store and filer: then a pack reads it and engram never files for it.
 - **One filer for facts from talk:** an hourly job reads each session that's been idle an hour, whole and cleaned, and files only what a good advisor would note. Most sessions file nothing.
 - **Code guards, not prompt hopes:** quotes word for word in the owner's messages; numbers in their words or the question they answered; full dates from the day they spoke; repeats checked against the record using the fact's own wording; a new occurrence of a known thing always filed; a session marked only after a successful run.
-- **Knowledge that needs ingesting is compiled:** what the owner hands over is kept as saved (`engram source add`), and compiled into a wiki. A spark is filed when the owner asks, and the hourly job catches the rest. Nothing is fetched from outside until the owner says go.
+- **Knowledge that needs ingesting is compiled:** what the owner hands over is kept as saved (`engram source add`), and each source, spark and settled post is compiled into the wiki by one checked call whose edits code splices into its pages. A spark is filed when the owner asks, and the hourly job catches the rest. Nothing is fetched from outside until the owner says go; the health check lists gaps worth it in `open.md`.
 - **Theory revisions happen in the conversation** when the owner agrees, shown redrawn in the reply; a whole-record re-check then re-links the evidence.
 - **Emotional talk stays out** unless the owner asks for it kept.
 - **Filings are committed and pushed;** any failure is shown in one line at the next session start until fixed.
@@ -82,7 +82,7 @@ Everything engram and its weekly pass keep in a repo, and nothing else, except t
 ## A pack
 
 What makes engram speak an area's language, kept in the area's own repo in `.engram/` with its `engram.toml`, so it's versioned and pushed with the record it describes. `engram.toml` is the record's data (kinds, link families, nodes, lenses, ways in, people); the pack is the area's words and a few small functions ([technical](technical.md#packs)):
-- **What's worth writing down,** in the words of each model call engram makes there: the filer, the repeat check, the theory revision and the evidence re-check, the record summaries, the compiler and the wiki's health check; and the entry kinds the filer may write. An area with no filing words is searched, never filed for.
+- **What's worth writing down,** in the words of each model call engram makes there: the filer, the repeat check, the theory revision and the evidence re-check, the record summaries, the compiler (for a source, a post and a spark) and the wiki's health check; and the entry kinds the filer may write. An area with no filing words is searched, never filed for.
 - **What "where things stand" follows:** which entries change a thing and which threads have a status, the sections they show in, what counts as upcoming, the people seen, and how the area's names are said.
 - **What engram can't read itself,** read by the pack: rows the area's own tools keep, or text outside git, given to engram as records with their links and ways in.
 - **Its own tests,** which drive engram with the pack, so a change in engram that breaks the area shows before it lands.

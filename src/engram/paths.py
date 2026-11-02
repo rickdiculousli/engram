@@ -21,6 +21,7 @@ DATA = {
     "sessions-last.txt": "when sessions were last read",
     "theory.sqlite": "theory changes proposed and applied",
     "relink.log": "the evidence re-check's output",
+    "sweep": "the evidence sweep's progress per domain: each record read and at which text, the links still to confirm or file; a dry run's apart",
     "summaries": "session summaries, per domain, and the summarizer's vocabulary",
     "record-summaries": "record summaries, per domain",
     "compile": "which items each compiled wiki has compiled, at which text, its parked pages, the health check's findings, and each area's run lock",

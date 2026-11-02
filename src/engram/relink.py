@@ -12,6 +12,7 @@ says which records bear on what changed:
 Code checks every record id and target against the batch and the change, and drops repeats of links already held.
 Links are filed by=claude, as placement, never as the owner's claims. The timeline and the stories don't change. Each
 change runs once; its outcome is one line in the next session's `engram now` (theorychange.notices)."""
+import hashlib
 import json
 import re
 import subprocess
@@ -20,6 +21,7 @@ from datetime import datetime
 from pathlib import Path
 
 from engram import commitmsg, config, docreg, claude_env, frontmatter, pack, recsum, theory, theorychange
+from engram.paths import data_path
 from engram.store import Store
 from engram.now import RENEWAL
 
@@ -220,16 +222,26 @@ def _file(st: Store, g: theory.Graph, reg, links: list[dict], message: str, sour
 
 SWEPT, SWEEP_CAP = "engram-sweep", 10.0  # the sweep's author, and what one run may spend
 SWEEP_BUDGET, SWEEP_EFFORT = 30_000, "medium"  # the read's batches and effort: denser or lower missed most of what bears
+SWEEP_CONFIRMS = 2  # independent confirming calls; a link is filed only when every one says yes
+
+
+def _progress(st: Store, dry_run: bool) -> Path:
+    """The sweep's progress for a record: each record read, at which text, and the links still to confirm or file. A
+    dry run keeps its own, so dry runs chain without touching a real one's."""
+    return data_path("sweep") / f"{st.config.get('domain', {}).get('name', 'domain')}{'.dry' if dry_run else ''}.json"
 
 
 def sweep(repo: Path, ask=None, confirm=None, dry_run: bool = False, limit: int | None = None, cap: float = SWEEP_CAP) -> dict:
-    """The evidence sweep: every entry but journals and every document the re-check reads, in its batches, against the
-    theory's loops and Discoveries, with the pack's `sweep` words. The re-check's guards hold, with a pair already
-    linked by any evidence rel counting as held, and the read must cite the record's own words that bear on it (its
-    `passage`, checked word for word); then each surviving link goes to a second call (`sweep_confirm`), which sees
-    only the record, that passage, the target and the rel, never the read's reasoning, and only a yes is filed,
-    by=claude. It stops calling once a run
-    has spent `cap`. Returns counts and the links, for a dry run too, which files nothing."""
+    """The evidence sweep: every entry but journals and every document the re-check reads, against the theory's loops
+    and Discoveries, with the pack's `sweep` words. The re-check's guards hold, with a pair already linked by any
+    evidence rel counting as held, and the read must cite the record's own words that bear on it (its `passage`,
+    checked word for word). Each surviving link then goes to `SWEEP_CONFIRMS` fresh calls (`sweep_confirm`), each
+    seeing only the record, that passage, the target and the rel, never the read's reasoning or another call's answer;
+    a link is filed, by=claude, only when every one says yes.
+
+    A run never starts a call that could take it past `cap`, and picks up where the last one stopped: it confirms the
+    links still waiting first, then reads only records not read at their present text (all of them when the targets
+    changed). Returns this run's counts and links, and what's left; a dry run files nothing."""
     p = pack.for_repo(repo)
     if not (p.prompts.get("sweep") and p.prompts.get("sweep_confirm")):
         raise SystemExit(f"engram: {repo}'s pack has no `sweep` and `sweep_confirm` words; its evidence isn't swept")
@@ -256,33 +268,71 @@ def sweep(repo: Path, ask=None, confirm=None, dry_run: bool = False, limit: int 
     journal = {e.id for e in st.events(kind="journal")}
     recs = [r for r in records(repo, p.relink_skip) if r[0] not in journal]
     text_of = {i: (d, t) for i, d, t in recs}
+    sig = lambda t: hashlib.sha1(t.encode()).hexdigest()[:16]
+    path = _progress(st, dry_run)
+    state = json.loads(path.read_text()) if path.exists() else {}
+    if state.get("targets") != sorted(tg):
+        state = {"targets": sorted(tg), "read": {}, "pending": state.get("pending", []), "confirmed": state.get("confirmed", [])}
+    have |= {(x["from"], x["to"], rel) for x in state["pending"] + state["confirmed"] for rel in RELS}
+    unread = [r for r in recs if state["read"].get(r[0]) != sig(r[2])]
+    work = batches(unread, SWEEP_BUDGET)[:limit]
     targets_text = "\n".join(about(t) for t in tg.values())
-    out = {"records": len(recs), "targets": len(tg), "batches": 0, "proposed": 0, "links": [], "dropped": [], "confirmed": [],
-           "rejected": [], "usd": 0.0, "read_usd": 0.0, "stopped": False}
-    for b in batches(recs, SWEEP_BUDGET)[:limit]:
-        if out["usd"] >= cap:
-            out["stopped"] = True
-            break
-        text = "\n".join(f"[{i}] date {d or 'undated'}\n{t}\n" for i, d, t in b)
-        reply, usd = ask(config.voice(p.prompts["sweep"]).format(targets=targets_text, records=text))
-        out["usd"] += usd
-        out["batches"] += 1
-        _check(reply, {i: d for i, d, _ in b}, set(tg), have, out, off="isn't a loop or Discovery", texts={i: t for i, _, t in b})
-    out["read_usd"] = out["usd"]
-    out["proposed"] = len(out["links"]) + len(out["dropped"])
-    for ln in out["links"]:
-        if out["usd"] >= cap:
-            out["stopped"] = True
-            break
-        d, t = text_of[ln["from"]]
-        reply, usd = confirm(config.voice(p.prompts["sweep_confirm"]).format(
-            record=f"[{ln['from']}] date {d or 'undated'}\n{t}", passage=ln["why"], target=about(tg[ln["to"]]), rel=ln["rel"]))
-        out["usd"] += usd
-        (out["confirmed"] if re.match(r"\W*yes\b", reply, re.I) else out["rejected"]).append(ln)
-    if out["confirmed"] and not dry_run:
-        _file(st, g, reg, out["confirmed"], commitmsg.message("sweep", n=len(out["confirmed"])), "evidence sweep", SWEPT)
-    return out
+    out = {"records": len(recs), "unread": len(unread), "targets": len(tg), "batches": 0, "proposed": 0, "links": [],
+           "dropped": [], "confirmed": [], "rejected": [], "usd": 0.0, "read_usd": 0.0, "stopped": False}
+    biggest = 0.0  # the dearest call so far: no call starts unless the run could pay that much more
 
+    def call(fn, prompt):
+        nonlocal biggest
+        reply, usd = fn(prompt)
+        out["usd"] += usd
+        biggest = max(biggest, usd)
+        return reply, usd
+
+    def save():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(state, ensure_ascii=False))
+    while state["pending"] or work:
+        if out["usd"] + biggest > cap:
+            out["stopped"] = True
+            break
+        if state["pending"]:
+            ln = state["pending"][0]
+            if ln["from"] not in text_of or ln["to"] not in tg:  # the record or target is gone
+                state["pending"].pop(0)
+                save()
+                continue
+            d, t = text_of[ln["from"]]
+            prompt = config.voice(p.prompts["sweep_confirm"]).format(
+                record=f"[{ln['from']}] date {d or 'undated'}\n{t}", passage=ln["why"], target=about(tg[ln["to"]]), rel=ln["rel"])
+            votes = []
+            while len(votes) < SWEEP_CONFIRMS and all(votes) and out["usd"] + biggest <= cap:
+                votes.append(bool(re.match(r"\W*yes\b", call(confirm, prompt)[0], re.I)))
+            if len(votes) < SWEEP_CONFIRMS and all(votes):  # the cap came mid-link: it waits for the next run, asked afresh
+                out["stopped"] = True
+                break
+            state["pending"].pop(0)
+            (state["confirmed"] if all(votes) else out["rejected"]).append(ln)
+            if all(votes):
+                out["confirmed"].append(ln)
+        else:
+            b = work.pop(0)
+            text = "\n".join(f"[{i}] date {d or 'undated'}\n{t}\n" for i, d, t in b)
+            reply, usd = call(ask, config.voice(p.prompts["sweep"]).format(targets=targets_text, records=text))
+            out["read_usd"] += usd
+            out["batches"] += 1
+            got = {"links": [], "dropped": out["dropped"]}
+            _check(reply, {i: d for i, d, _ in b}, set(tg), have, got, off="isn't a loop or Discovery", texts={i: t for i, _, t in b})
+            out["links"] += got["links"]
+            state["pending"] += got["links"]
+            state["read"].update({i: sig(t) for i, _, t in b})
+        save()
+    out["proposed"] = len(out["links"]) + len(out["dropped"])
+    out["left"] = {"unread": sum(len(b) for b in work), "pending": len(state["pending"])}
+    if state["confirmed"] and not dry_run:
+        _file(st, g, reg, state["confirmed"], commitmsg.message("sweep", n=len(state["confirmed"])), "evidence sweep", SWEPT)
+    state["confirmed"] = []
+    save()
+    return out
 
 def pending(older_than_minutes: int = 10) -> list[str]:
     """Changes still queued (the background start didn't run) or left running for over three hours by a crash, for the

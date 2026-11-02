@@ -945,8 +945,9 @@ def _naming(names: list[set[str]], name: str) -> re.Pattern | None:
 def renew(domain: str, root: Path, path: Path, upto: int, ask=None, dry_run: bool = False) -> dict:
     """The renewal step, after the filer and apart from it: when the owner, or Claude's message he's answering, names a
     thing marked "last mentioned" (engram.now) as of that day, one call asks whether he said he's still on it. Code files
-    a renewal only for a thing marked that day, on an exchange that names it, with his quote word for word (and the
-    question he answered in Claude's words); one a thing. A session naming no marked thing makes no call."""
+    a renewal only for a thing marked that day, on an exchange that names it, with his quote word for word; one a thing,
+    and none for a thing this session already renewed (a refile rereads it). The question he answered is kept only when
+    it's word for word in Claude's message before his. A session naming no marked thing makes no call."""
     p = pack.load(domain)
     res = {"session": path.stem[:8], "called": False, "renewed": 0, "would_renew": [], "dropped": [], "usd": 0.0}
     if not p.prompts.get("renew"):
@@ -965,7 +966,9 @@ def renew(domain: str, root: Path, path: Path, upto: int, ask=None, dry_run: boo
     named = {t: [l for l, words in later.items() if rx and rx.search(f"{before.get(l, '')}\n{words}")
                  and now_mod.mark(marked[t], date.fromisoformat(when.get(l, day.isoformat())))]
              for t, rx in naming.items()}
-    named = {t: ls for t, ls in named.items() if ls}
+    mine = f"said in session {path.stem[:8]} "  # a refile rereads the session: what it renewed stays renewed
+    done = {str(e.fm.get("thing")) for e in st.events(kind=now_mod.RENEWAL) if str(e.fm.get("source", "")).startswith(mine)}
+    named = {t: ls for t, ls in named.items() if ls and t not in done}
     if not named:
         return res
     lines = sorted({l for ls in named.values() for l in ls})
@@ -983,6 +986,8 @@ def renew(domain: str, root: Path, path: Path, upto: int, ask=None, dry_run: boo
             line = int(r.get("line"))
         except (TypeError, ValueError, AttributeError):
             line = -1
+        if isinstance(r, dict) and r.get("answering") and recsum._norm(str(r["answering"])) not in recsum._norm(before.get(line, "")):
+            r = {k: v for k, v in r.items() if k != "answering"}  # a question not in Claude's message before his isn't kept
         why = ("not a thing marked as not mentioned for a while" if t not in named else
                "not an exchange that names it" if line not in named[t] else
                "already renewed in this session" if t in {fm["thing"] for fm, _ in out} else _his(r, later, claude))

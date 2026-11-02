@@ -21,6 +21,7 @@ from pathlib import Path
 
 from engram import commitmsg, config, docreg, claude_env, pack, recsum, theory, theorychange
 from engram.store import Store
+from engram.now import RENEWAL
 
 BUDGET = 90_000  # characters of records per call; a record is never cut, and one bigger than this goes alone
 SKIP_FILES = ("AGENTS.md", "CLAUDE.md", "README.md")
@@ -50,7 +51,7 @@ def records(repo: Path, skip: tuple[str, ...] = ()) -> list[tuple[str, str, str]
     skip_re = re.compile("|".join(f"(?:{x})" for x in (re.escape(st.events_dir + "/"), r"\.", *skip)))
     out = []
     for e in st.events():
-        if e.kind in ("link", "status", "capture"):
+        if e.kind in ("link", "status", "capture", RENEWAL):  # a renewal says only "still on it": no evidence
             continue
         body = " ".join(e.body.split())
         out.append((e.id, str(e.date), f"{e.fm.get('title') or e.fm.get('heading', '')}: {body}"))

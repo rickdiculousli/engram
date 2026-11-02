@@ -123,3 +123,35 @@ def test_the_renewal_step_files_only_his_word_on_a_marked_thing(quiet, tmp_path)
     assert renewal.fm["thing"] == "med/zinc-picolinate" and renewal.fm["date"] == "2026-10-18" and "“yes”" in renewal.body
     assert "last mentioned" not in _line(repo, "Zinc picolinate", date(2026, 10, 19))
     assert not capture.renew("notes", repo, s2, 0, _asking([yes], calls))["called"]  # renewed: no longer marked
+
+
+def _renewal(repo, date_, source="said in session s0 on 2026-10-18"):
+    return Store(repo).add({"kind": now.RENEWAL, "thing": "med/zinc-picolinate", "title": "Zinc picolinate: still on it",
+                            "date": date_, "by": "sam", "about": ["series/meds"], "source": source}, "- still on it\n")
+
+
+def test_a_renewal_is_never_offered_to_the_filer_nor_to_the_evidence_recheck(quiet):
+    from engram import relink
+    repo = quiet["repo"]
+    r = _renewal(repo, "2026-10-18")
+    assert now.RENEWAL not in capture.shape(Store(repo))[0]  # the record holds one; the filer's kinds still leave it out
+    assert r.id not in [i for i, *_ in relink.records(repo)]
+
+
+def test_a_refile_never_renews_what_the_session_already_renewed(quiet, tmp_path):
+    repo, calls = quiet["repo"], []
+    _renewal(repo, "2026-03-15", source="said in session s2 on 2026-03-15")  # old enough that the thing is marked again
+    s2 = _session(tmp_path, "s2", [("user", "hi"), ("assistant", "Are you still taking the zinc picolinate?"), ("user", "yes")])
+    assert "last mentioned 2026-03" in _line(repo, "Zinc picolinate", date(2026, 10, 19))
+    assert not capture.renew("notes", repo, s2, 0, _asking([], calls))["called"] and calls == []
+    s3 = _session(tmp_path, "s3", [("user", "hi"), ("assistant", "Are you still taking the zinc picolinate?"), ("user", "yes")])
+    assert capture.renew("notes", repo, s3, 0, _asking([], calls))["called"]  # another session's word still counts
+
+
+def test_a_question_not_in_claudes_message_before_his_is_left_out(quiet, tmp_path):
+    repo = quiet["repo"]
+    s2 = _session(tmp_path, "s2", [("user", "hi"), ("assistant", "Are you still taking the zinc picolinate?"), ("user", "yes")])
+    made_up = {"thing": "med/zinc-picolinate", "line": 3, "quote": "yes", "answering": "Do you still take zinc picolinate daily?"}
+    assert capture.renew("notes", repo, s2, 0, _asking([made_up], []))["renewed"] == 1
+    renewal = next(e for e in Store(repo).events(kind=now.RENEWAL))
+    assert "answering" not in renewal.body and "Do you still take" not in renewal.body and "“yes”" in renewal.body

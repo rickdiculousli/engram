@@ -84,3 +84,19 @@ def test_a_link_drops_without_paths_and_a_sweep_run_drops_whole_and_leaves_the_w
     assert f"This reverts commit {run}." in git(repo, "log", "-1", "--format=%B") and refine._landed(repo) == []
     with pytest.raises(fix.Refused, match="name event files"):
         fix.apply(Store(repo), [], "x")
+
+
+def test_one_fix_drops_several_sweep_runs_and_the_weekly_page_loses_both_lines(rec):
+    from engram import refine
+    repo = rec[0]
+    runs = []
+    for k in range(2):
+        with open(repo / "events/links.jsonl", "a") as fh:
+            fh.write(json.dumps({"id": f"20261101-0900{k:02d}-link-r{k}", "kind": "link", "from": "notes/x.md", "to": "loop/1",
+                                 "family": "evidence", "rel": "strengthens", "by": "claude", "author": "engram-sweep"}) + "\n")
+        git(repo, "add", "events/links.jsonl")
+        git(repo, "commit", "-qm", f"engram: evidence swept\n\nRefinement: run {k}")
+        runs.append(git(repo, "rev-parse", "HEAD").strip())
+    assert len(refine._landed(repo)) == 2
+    fix.apply(Store(repo), [], "the backlog was wrong", drop_run=runs)
+    assert "engram-sweep" not in (repo / "events/links.jsonl").read_text() and refine._landed(repo) == []

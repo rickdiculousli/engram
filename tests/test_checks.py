@@ -52,8 +52,10 @@ TODAY = [  # medical's messages as engram wrote them before the templates, byte 
 
 
 REVIEW = [("review", dict(id=3, question="data", call="search"), "engram review: finding 3, data, the search call"),  # group 9
-          ("sweep", dict(n=4), "engram: evidence swept, 4 records linked to the theory\n\n"
-                               "Refinement: 4 more records now show for or against the theory's loops and Discoveries")]
+          ("sweep", dict(n=4, records="records"), "engram: evidence swept, 4 records linked to the theory\n\n"
+                               "Refinement: the theory's loops and Discoveries gained evidence from 4 more records"),
+          ("sweep", dict(n=1, records="record"), "engram: evidence swept, 1 record linked to the theory\n\n"
+                               "Refinement: the theory's loops and Discoveries gained evidence from 1 more record")]
 WIKI = [("wiki", dict(item="doc-k7f2qa", n=3), "engram: the wiki from doc-k7f2qa, 3 pages"),
         ("wiki_index", {}, "engram: the wiki's index and open list"),
         ("wiki_merge", dict(n=1), "engram: the wiki's health check merged concepts (1), their links repointed"),

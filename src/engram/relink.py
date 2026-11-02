@@ -140,6 +140,7 @@ def _run(change: str, repo: Path, s: dict, ask, dry_run: bool, limit: int | None
     p = pack.for_repo(repo)
     recs = records(repo, p.relink_skip)
     refused = _refused(st, repo, g, reg)
+    owner_of = _entry_of(recs)
     things = "\n".join(f"{t.id}\t{t.title}" for t in g.things.values() if t.kind in ("node", "state", "loop"))
     why = f"; why: {s['why']}" if s.get("why") else ""
     out = {"change": change, "batches": 0, "records": len(recs), "links": [], "dropped": [], "usd": 0.0}
@@ -150,7 +151,7 @@ def _run(change: str, repo: Path, s: dict, ask, dry_run: bool, limit: int | None
                                        targets=", ".join(tgts + gone), retired_ids=", ".join(gone) or "none", records=text))
         out["usd"] += usd
         out["batches"] += 1
-        _check(reply, {i: d for i, d, _ in b}, allowed, have, out, gone, refused=refused)
+        _check(reply, {i: d for i, d, _ in b}, allowed, have, out, gone, refused=refused, owner_of=owner_of)
     bear: dict[str, int] = {}
     for ln in out["links"]:
         if not ln["to"].startswith("link/") and not ln["moved_from"]:
@@ -181,36 +182,62 @@ def _norm(text: str) -> str:
 
 
 def _check(reply: str, ids: dict[str, str], allowed: set[str], have: set, out: dict, gone=(), off="isn't part of the change",
-           texts: dict[str, str] | None = None, refused: set = frozenset()):
+           texts: dict[str, str] | None = None, refused: set = frozenset(), owner_of=None):
     """The code's guards on one batch's reply, into out["links"] and out["dropped"]: the record is in the batch, the
-    target is allowed, the rel is strengthens or weakens, a move is off a retired step, the link isn't held already
-    (`have`, (record, target, rel), grows with each one kept), it wasn't dropped on re-reading against the target as it
-    stands (`refused`), and, given the records' `texts`, its passage is the record's own words."""
+    target is allowed, the rel is strengthens or weakens, a move is off a retired step, given the records' `texts` its
+    passage is the record's own words, a document's passage that restates one entry is that entry's evidence
+    (`owner_of`; out["moved"]), it wasn't dropped on re-reading against the target as it stands (`refused`), and it
+    isn't held already (`have`, (record, target, rel), grows with each one kept)."""
     start = reply.find("{")
     reply_ = json.JSONDecoder().raw_decode(reply[start:])[0] if start >= 0 else {}  # the first object: text may follow it
     for ln in reply_.get("links", []):
         rec, to, rel = str(ln.get("record", "")), str(ln.get("to", "")), str(ln.get("rel", ""))
         why_ = " ".join(str(ln.get("passage" if texts is not None else "why", "")).split())
         moved = str(ln.get("moved_from") or "")
+        drop = lambda why: out["dropped"].append({"record": rec, "why": why})
         if rec not in ids:
-            out["dropped"].append({"record": rec, "why": "not a record of this batch"})
-        elif to not in allowed:
-            out["dropped"].append({"record": rec, "why": f"target {to} {off}"})
-        elif rel not in RELS:
-            out["dropped"].append({"record": rec, "why": f"unknown rel {rel}"})
-        elif texts is not None and not (_norm(why_) and _norm(why_) in _norm(texts[rec])):
-            out["dropped"].append({"record": rec, "why": "passage not in the record"})
-        elif moved and moved not in gone:
-            out["dropped"].append({"record": rec, "why": f"moved from {moved}, not a retired step"})
-        elif (rec, to, rel) in refused:
-            out["dropped"].append({"record": rec, "why": "dropped on re-reading; its target hasn't changed since"})
+            drop("not a record of this batch")
+            continue
+        if to not in allowed:
+            drop(f"target {to} {off}")
+            continue
+        if rel not in RELS:
+            drop(f"unknown rel {rel}")
+            continue
+        if texts is not None and not (_norm(why_) and _norm(why_) in _norm(texts[rec])):
+            drop("passage not in the record")
+            continue
+        if moved and moved not in gone:
+            drop(f"moved from {moved}, not a retired step")
+            continue
+        date = ids[rec]
+        if owner_of and (entry := owner_of(rec, why_)):
+            out.setdefault("moved", []).append({"record": rec, "entry": entry[0], "to": to})
+            rec, date = entry
+        if (rec, to, rel) in refused:
+            drop("dropped on re-reading; its target hasn't changed since")
         elif (rec, to, rel) in have:
-            out["dropped"].append({"record": rec, "why": "already linked"})
+            drop("already linked")
         else:
             have.add((rec, to, rel))
             out["links"].append({"from": rec, "to": to, "rel": rel, "why": why_ if texts is not None else why_[:200],
-                                 "moved_from": moved, "date": ids[rec]})
+                                 "moved_from": moved, "date": date})
 
+
+def _entry_of(recs: list[tuple[str, str, str]]):
+    """For a document's passage, the one entry whose own words it restates (an index row, a table line), as (id, date);
+    None for an entry's own link, a passage that isn't the document's own words (the re-check's reasons aren't
+    checked), or when no entry or more than one says it."""
+    entries = [(i, d, _norm(t)) for i, d, t in recs if d]
+    docs = {i: _norm(t) for i, d, t in recs if not d}
+
+    def owner_of(rec: str, passage: str):
+        n = _norm(passage)
+        if not n or rec not in docs or n not in docs[rec]:
+            return None
+        hits = [(i, d) for i, d, t in entries if n in t]
+        return hits[0] if len(hits) == 1 else None
+    return owner_of
 
 def _file(st: Store, g: theory.Graph, reg, links: list[dict], message: str, source: str, author: str) -> None:
     """Files the links as evidence, by=claude, in one transaction: Claude's placement, never the owner's claim."""
@@ -312,7 +339,8 @@ def recheck(repo: Path, targets: list[str], confirm=None, cap: float = 10.0, dry
     if drop and not dry_run:
         names = ", ".join(sorted({g.label(t) for _, _, t in drop}))
         fix.apply(st, [], f"engram's placement on {names} didn't hold on re-reading" + (f" after {why}" if why else ""),
-                  [e.id for e, _, _ in drop], line=f"{len(drop)} links engram placed on {names} no longer held on re-reading and were dropped")
+                  [e.id for e, _, _ in drop], line=f"{len(drop)} {'link' if len(drop) == 1 else 'links'} engram placed on {names} "
+                  "no longer held on re-reading and dropped")
         path = _dropped(st)
         old = json.loads(path.read_text()) if path.exists() else []
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -365,6 +393,7 @@ def sweep(repo: Path, ask=None, confirm=None, dry_run: bool = False, limit: int 
     journal = {e.id for e in st.events(kind="journal")}
     recs = [r for r in records(repo, p.relink_skip) if r[0] not in journal]
     text_of = {i: (d, t) for i, d, t in recs}
+    owner_of = _entry_of(recs)
     sig = lambda t: hashlib.sha1(t.encode()).hexdigest()[:16]
     if state.get("targets") != sorted(tg):
         state = {"targets": sorted(tg), "read": {}, "pending": state.get("pending", []), "confirmed": state.get("confirmed", [])}
@@ -373,7 +402,7 @@ def sweep(repo: Path, ask=None, confirm=None, dry_run: bool = False, limit: int 
     work = batches(unread, SWEEP_BUDGET)[:limit]
     targets_text = "\n".join(about(t) for t in tg.values())
     out = {"records": len(recs), "unread": len(unread), "targets": len(tg), "batches": 0, "proposed": 0, "links": [],
-           "dropped": [], "confirmed": [], "rejected": [], "usd": 0.0, "read_usd": 0.0, "stopped": False}
+           "dropped": [], "moved": [], "confirmed": [], "rejected": [], "usd": 0.0, "read_usd": 0.0, "stopped": False}
     if recheck_out:
         out["recheck"], out["usd"], out["stopped"] = recheck_out, recheck_out["usd"], recheck_out["stopped"]
     state["versions"] = {**versions, **({t: seen[t] for t in changed} if out["stopped"] else {})}  # unfinished: next run
@@ -413,9 +442,9 @@ def sweep(repo: Path, ask=None, confirm=None, dry_run: bool = False, limit: int 
             reply, usd = call(ask, config.voice(p.prompts["sweep"]).format(targets=targets_text, records=text))
             out["read_usd"] += usd
             out["batches"] += 1
-            got = {"links": [], "dropped": out["dropped"]}
+            got = {"links": [], "dropped": out["dropped"], "moved": out["moved"]}
             _check(reply, {i: d for i, d, _ in b}, set(tg), have, got, off="isn't a loop or Discovery", texts={i: t for i, _, t in b},
-                   refused=refused)
+                   refused=refused, owner_of=owner_of)
             out["links"] += got["links"]
             state["pending"] += got["links"]
             state["read"].update({i: sig(t) for i, _, t in b})
@@ -423,7 +452,8 @@ def sweep(repo: Path, ask=None, confirm=None, dry_run: bool = False, limit: int 
     out["proposed"] = len(out["links"]) + len(out["dropped"])
     out["left"] = {"unread": sum(len(b) for b in work), "pending": len(state["pending"])}
     if state["confirmed"] and not dry_run:
-        _file(st, g, reg, state["confirmed"], commitmsg.message("sweep", n=len(state["confirmed"])), "evidence sweep", SWEPT)
+        _file(st, g, reg, state["confirmed"], commitmsg.message("sweep", n=len(state["confirmed"]),
+              records="record" if len(state["confirmed"]) == 1 else "records"), "evidence sweep", SWEPT)
     state["confirmed"] = []
     save()
     return out

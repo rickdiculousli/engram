@@ -11,8 +11,8 @@ TEMPLATES = {
     "renewals": "engram: {owner} still on {n} things, said in session {session}",
     "theory": "engram: theory revision {day}",
     "relink": "engram: evidence re-checked after theory change {change}",
-    "sweep": "engram: evidence swept, {n} records linked to the theory\n\n"
-             "Refinement: {n} more records now show for or against the theory's loops and Discoveries",
+    "sweep": "engram: evidence swept, {n} {records} linked to the theory\n\n"
+             "Refinement: the theory's loops and Discoveries gained evidence from {n} more {records}",
     "exclude": "engram: {path} stays out of the index",
     "nodes": "engram: the node list drops {n} rows for files that are gone",
     "ids": "engram: stable ids for {docs} documents and {headings} linked headings",

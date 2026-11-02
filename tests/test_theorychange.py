@@ -266,3 +266,31 @@ def test_a_structural_change_rereads_what_engram_placed_on_the_loop_against_its_
     relink.run(r.change, ask=lambda p: (json.dumps({"links": []}), 0.1), confirm=_no_to_wear(asked))
     assert len(asked) == 1 and "stiffness → knee → hip → ankle → stiffness" in asked[0]
     assert ("consults/visit.md", "loop/1") not in {(e.fm["from"], e.fm["to"]) for e in store.Store(placed).events(kind="link")}
+
+
+def test_a_page_row_restating_an_entry_counts_as_that_entry_not_again(rec):
+    st = store.Store(rec)
+    st.add({"id": "e2", "title": "knee locks on the stairs", "date": "2026-03-05", "kind": "observation",
+            "about": ["series/_observations"]}, "- knee locks on the stairs, worse going down\n")
+    st.add({"id": "e3", "title": "ankle swells after the long drive", "date": "2026-03-06", "kind": "observation",
+            "about": ["series/_observations"]}, "- ankle swells after the long drive\n")
+    (rec / "complaints").mkdir()
+    (rec / "complaints/knee.md").write_text("# Knee\n\n| date | what | entry |\n|---|---|---|\n"
+                                            "| 2026-03-05 | knee locks on the stairs | [e2](../events/e2.md) |\n"
+                                            "| 2026-03-06 | ankle swells after the long drive | [e3](../events/e3.md) |\n"
+                                            "| 2026-03-07 | knee sore | |\n")
+
+    def ask(prompt):
+        return json.dumps({"links": [
+            {"record": "e2", "to": "loop/1", "rel": "strengthens", "passage": "knee locks on the stairs"},
+            {"record": "complaints/knee.md", "to": "loop/1", "rel": "strengthens", "passage": "knee locks on the stairs"},  # a repeat of e2
+            {"record": "complaints/knee.md", "to": "loop/1", "rel": "weakens", "passage": "ankle swells after the long drive"},  # e3's
+            {"record": "complaints/knee.md", "to": "loop/1", "rel": "weakens", "passage": "Knee"}]}), 0.5  # in e1 and e2: unclear
+    out = relink.sweep(rec, ask=ask, confirm=lambda p: ("yes", 0.1), dry_run=True)
+    assert [(m["record"], m["entry"]) for m in out["moved"]] == [("complaints/knee.md", "e2"), ("complaints/knee.md", "e3")]
+    assert [d["why"] for d in out["dropped"]] == ["already linked"]
+    assert sorted((x["from"], x["rel"], x["date"]) for x in out["confirmed"]) == [
+        ("complaints/knee.md", "weakens", ""), ("e2", "strengthens", "2026-03-05"), ("e3", "weakens", "2026-03-06")]
+    owner_of = relink._entry_of(relink.records(rec))
+    assert owner_of("complaints/knee.md", "after the long drive") == ("e3", "2026-03-06")
+    assert owner_of("consults/visit.md", "after the long drive") is None  # a reason that isn't the document's own words

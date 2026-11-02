@@ -1068,7 +1068,8 @@ def main(argv=None):
     s.add_argument("paths", nargs="*")
     s.add_argument("--why", required=True)
     s.add_argument("--drop-link", action="append")
-    s.add_argument("--drop-run", metavar="COMMIT", help="drop every link that run of the evidence sweep filed")
+    s.add_argument("--drop-run", metavar="COMMIT", action="append", help="drop every link that run of the evidence sweep filed; "
+                   "name each run a backlog landed in")
     s.add_argument("--repo")
     s.set_defaults(fn=cmd_fix)
 

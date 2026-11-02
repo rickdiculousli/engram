@@ -52,6 +52,17 @@ def test_turns_keep_only_what_the_owner_typed_in_the_repo(tmp_path):
     assert "### 2026-10-03T10:00 a brief\n" in out and "Thin:" in out
 
 
+def test_a_thin_repo_takes_the_owner_s_turns_from_its_jobs_interview(tmp_path):
+    root, repo = tmp_path / "projects", Path("/home/sam/notes")
+    session(root, "-home-sam-notes", "a", [said("the basil bolted")])
+    session(root, "-home-sam-engram", "interview1", [said("Everything feeds it.", ts="2026-10-02T10:00:00Z", cwd="/home/sam/engram")])
+    session(root, "-home-sam-engram", "other", [said("not the interview", cwd="/home/sam/engram")])
+    session(root, "-home-sam-engram", "interview2", [said("Act as the review sub-agent for this task.\n\nReview",
+                                                          entry="sdk-ts", cwd="/home/sam/engram")])  # an agent's, still out
+    t = rewire.turns(repo, from_roots=[root], also=("interview",))
+    assert [m["text"] for m in t["turns"]] == ["the basil bolted", "Everything feeds it."]
+
+
 def test_units_read_every_dated_unit_as_the_record_writes_it():
     text = textwrap.dedent("""\
         # Tomatoes

@@ -723,7 +723,7 @@ def cmd_rewire(a):
             print(f"engram rewire: {why}", file=sys.stderr)
         sys.exit(1 if found else 0)
     if a.step == "turns":
-        t = rewire.turns(repo, a.before)
+        t = rewire.turns(repo, a.before, also=tuple(a.session or ()))
         path = rewire.write_turns(t, out / "turns.md")
         print(json.dumps({k: v for k, v in t.items() if k != "turns"}), f"\nsaved {path}")
     elif a.step == "analyse":
@@ -1058,6 +1058,8 @@ def main(argv=None):
     s.add_argument("step", choices=["turns", "analyse", "check"])
     s.add_argument("repo")
     s.add_argument("--before", help="only messages before this time (ISO date or datetime)")
+    s.add_argument("--session", action="append", help="turns: also the owner's turns in this session (an id prefix), "
+                   "the jobs interview of a repo with few sessions of its own")
     s.add_argument("--out", help="the run's folder; default the data folder's rewire/<repo>/")
     s.add_argument("--canon", help="check against this shape.md instead of engram's own")
     s.add_argument("--drift", action="store_true", help="check only for drift that what's being committed (the index) "

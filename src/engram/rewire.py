@@ -30,10 +30,13 @@ def _when(t: str) -> datetime:
     return d if d.tzinfo else d.astimezone()
 
 
-def turns(repo: Path | None, before: str | None = None, from_roots: list[Path] | None = None) -> dict:
-    """What the owner typed in the sessions started in a repo, or in every session when it's None: no injected text,
-    subagent, compaction summary or session an agent started (`sessions.by_agent`), and nothing from a harness's folders
-    (`sessions_from`). Pastes collapse to their size; a message seen twice (in a mirror and its source) counts once."""
+def turns(repo: Path | None, before: str | None = None, from_roots: list[Path] | None = None,
+          also: tuple[str, ...] = ()) -> dict:
+    """What the owner typed in the sessions started in a repo, or in every session when it's None, plus the sessions
+    whose ids start with one of `also` (a jobs interview held elsewhere, for a repo with few sessions of its own): no
+    injected text, subagent, compaction summary or session an agent started (`sessions.by_agent`), and nothing from a
+    harness's folders (`sessions_from`). Pastes collapse to their size; a message seen twice (in a mirror and its
+    source) counts once."""
     harness = [m for d in config.load().values() for m in d.sessions_from]
     cut = _when(before) if before else None
     seen, out, sessions_used = set(), [], set()
@@ -43,7 +46,8 @@ def turns(repo: Path | None, before: str | None = None, from_roots: list[Path] |
             if "subagents" in Path(rel).parts or any(m in rel for m in sessions.SKIP_PROJECTS):
                 continue
             s = sessions.parse(p, root)
-            if sessions.by_agent(s) or (repo and not sessions.started_in(s, repo)) \
+            asked = any(s.stem.startswith(x) for x in also)
+            if sessions.by_agent(s) or (repo and not sessions.started_in(s, repo) and not asked) \
                     or any(m in s.project or m in s.cwd for m in harness):
                 continue
             for e in s.exchanges:

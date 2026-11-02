@@ -51,6 +51,7 @@ The layout every record takes in engram, and the lessons learned getting real re
 - **Code guards, not prompt hopes:** quotes word for word in the owner's messages; numbers in their words or the question they answered; full dates from the day they spoke; repeats checked against the record using the fact's own wording; a new occurrence of a known thing always filed; a session marked only after a successful run.
 - **Knowledge that needs ingesting is compiled:** what the owner hands over is kept as saved (`engram source add`), and each source, spark and settled post is compiled into the wiki by one checked call whose edits code splices into its pages. A spark is filed when the owner asks, and the hourly job catches the rest. Nothing is fetched from outside until the owner says go; the health check lists gaps worth it in `open.md`.
 - **Theory revisions happen in the conversation** when the owner agrees, shown redrawn in the reply; a whole-record re-check then re-links the evidence.
+- **Evidence for and against the theory is swept from the whole record,** what engram filed included: a machine read proposes, code checks, and a second, independent call confirms each link before it's filed, as Claude's placement, never the owner's claim.
 - **Emotional talk stays out** unless the owner asks for it kept.
 - **Filings are committed and pushed;** any failure is shown in one line at the next session start until fixed.
 

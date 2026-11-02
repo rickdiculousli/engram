@@ -18,6 +18,7 @@
 | re-read the record files and sessions | inside `engram search`, whenever the last read is over 15 minutes old |
 | the hourly filer, `engram capture run` (a timed job; it also compiles a compiled area's due items into its wiki), plus each set-up repo's session-start check and pre-commit lint and drift check | every hour, at session start, at each commit, all through `~/.local/bin/engram` |
 | the weekly refinement, `engram refine run` (a timed job, `engram refine install`): one pass per repo engram serves, under `[refine] weekly_cap` | Saturday 04:00, or on wake; Sunday and Monday catch-ups skip a repo whose pass this week landed, is running or cost something, and retry one that failed for nothing; `engram refine run --repo NAME` starts one pass on its own and returns |
+| the evidence sweep, `engram theory sweep --domain NAME`: the whole record against the loops and Discoveries, each link confirmed by a second call, stopping at $10 ([technical](technical.md#the-evidence-sweep)) | by hand; `--dry-run` files nothing |
 | rebuild drill: copy the index files first, rebuild from the session mirror, compare counts and scores | after any schema change (changes are additive, so rarely) |
 | the daily copy to a second box, `engram daily run` (a timed job, `engram daily install`): what can't be fetched again goes to `[daily] box`, which archives it at this box's release; the archive's backups come back, the newest 7 kept | 04:00, or on wake; never deletes on the second box |
 

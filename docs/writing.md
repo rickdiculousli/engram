@@ -17,7 +17,7 @@ st.events(kind="observation", about="story/frost")
 | `engram status <thread> <status> --why "..."` | a `status` entry |
 | `engram link <from> <family>:<rel> <to> --why "..."` | a link |
 | `engram source add --kind page\|video\|image\|note\|quote\|spark [--url U] [--file F] [--title T] [--by WHO] [--transcribed-by M] [--sparked-by ID] < text` | what the owner hands over, kept as saved in one transaction, then compiled before it returns |
-| `engram wiki render\|compile\|check` | the compiled wiki: rebuild it, map every item due, or the health check |
+| `engram wiki compile\|check` | the compiled wiki: compile every item due, or the health check |
 | `engram search`, `timeline`, `now`, `theory`, `show`, `feedback`, `ingest`, `health`, `lint`, `eval`, `archive`, `rewire`, `fix` | see the other docs |
 
 ## A transaction

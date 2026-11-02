@@ -15,11 +15,9 @@ TEMPLATES = {
     "ids": "engram: stable ids for {docs} documents and {headings} linked headings",
     "moved": "engram: {old} moved to {new}",
     "fix": "engram fix: {why}\n\nEngram-Fix: {why}",
-    "map": "engram: the map from {item}, {nodes} nodes and {edges} links",
-    "merge": "engram: {n} near-duplicate claims merged",
     "review": "engram review: finding {id}, {question}, the {call} call",  # a value review's fix, in engram's own repo
 }
-HOURLY = {"write", "facts", "theory", "relink", "map"}  # what `engram capture run` commits, directly or through a theory change
+HOURLY = {"write", "facts", "theory", "relink"}  # what `engram capture run` commits, directly or through a theory change
 
 
 class AmountInMessage(ValueError):

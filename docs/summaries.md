@@ -67,6 +67,6 @@ They make what was said findable even when the owner's wording, the advisor's an
 - **Only records over 600 characters get one** (`recsum.py`); a shorter record is cheaper to open whole.
 - **Opus at low effort reads about 20 records per call,** writing one to three sentences per record, each with a quote copied from the record.
 - **Code checks every sentence:** the quote must be in the record word for word, every number in the record as written, and a sentence 40 words or fewer. A failing sentence is dropped, never kept.
-- **A source the compiler maps** gets its one to three sentences from the same call, checked the same way and cached beside these.
+- **A source the compiler takes in** gets its one to three sentences from the same call, checked the same way and cached beside these.
 - **Cached by the record's text** in the data folder (`record-summaries/<domain>/`), never in a repo, so an unchanged record is never summarized twice. Ingest copies them into `rec_summary`.
 - **They show for direct matches only** ([search](search.md#the-one-call-timeline)): summaries for milestones made each history much bigger without cutting what Claude read.

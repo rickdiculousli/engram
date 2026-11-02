@@ -15,7 +15,6 @@ The layout every record takes in engram, and the lessons learned getting real re
 | **Way in** | an index that lights records directly: a person, a tracked thing, a recurring thing in the owner's words, a role word | lights rows without depending on matching words |
 | **Lens** | a named category on an axis the owner asks by: a kind, a sector, a part of the body | picks which rows show; chosen from the question |
 | **Session summary** | what a session said, checked against its quotes | the only form a session takes in an index |
-| **Map** | what's handed over, compiled: claims and themes as entries, linked by what backs, refutes or answers them | Claude's to keep; each node, and each edge resting on an item's words, quotes the item (a steelman Claude built is marked as its own); read as a wiki rendered by code |
 
 ## Identity
 
@@ -27,7 +26,7 @@ The layout every record takes in engram, and the lessons learned getting real re
 
 ## What gets stored
 
-- **Only what's worth keeping.** The record, plus checked session summaries. Never raw transcripts, tool output, Claude's notes files or sensor dumps. A page is written by hand, or rendered by code from the record and never committed. ("DO NOT STORE GARBAGE.")
+- **Only what's worth keeping.** The record, plus checked session summaries. Never raw transcripts, tool output, Claude's notes files, sensor dumps or generated pages. ("DO NOT STORE GARBAGE.")
 - **One real-world thing is one item.** Decide each file kind's natural unit by reading real files, before any count.
 - **Who said it** travels with every claim: the owner, an outside source, worked out with Claude, or a Claude suggestion the owner hasn't adopted. Only the owner adopts or drops a suggestion.
 - **Exact values come from the source,** never a summary: amounts, numbers, dates, someone's words. Quotes are verbatim; paraphrase is marked.
@@ -48,7 +47,7 @@ The layout every record takes in engram, and the lessons learned getting real re
 - **Who files is the repo's choice.** Engram files facts from talk (below), unless the repo keeps its own schema-checked store and filer: then a pack reads it and engram never files for it.
 - **One filer for facts from talk:** an hourly job reads each session that's been idle an hour, whole and cleaned, and files only what a good advisor would note. Most sessions file nothing.
 - **Code guards, not prompt hopes:** quotes word for word in the owner's messages; numbers in their words or the question they answered; full dates from the day they spoke; repeats checked against the record using the fact's own wording; a new occurrence of a known thing always filed; a session marked only after a successful run.
-- **Knowledge that needs ingesting is compiled:** what the owner hands over is kept as saved (`engram source add`), and each new item, and each post whose text changed, is mapped by one checked call; code renders the wiki. A spark is filed when the owner asks, and the hourly job catches the rest. Nothing is fetched from outside until the owner says go.
+- **Knowledge that needs ingesting is compiled:** what the owner hands over is kept as saved (`engram source add`), and compiled into a wiki. A spark is filed when the owner asks, and the hourly job catches the rest. Nothing is fetched from outside until the owner says go.
 - **Theory revisions happen in the conversation** when the owner agrees, shown redrawn in the reply; a whole-record re-check then re-links the evidence.
 - **Emotional talk stays out** unless the owner asks for it kept.
 - **Filings are committed and pushed;** any failure is shown in one line at the next session start until fixed.

@@ -15,8 +15,6 @@ events_dir = "events"
 [index]
 events = true
 exclude = ["events/"]
-[links.map]
-rels = ["supports", "data-for", "refutes", "answers", "steelman-of", "part-of", "relates-to", "sparked-by", "argued-in"]
 [wiki]
 posts = {"drafts/" = "draft", "posts/" = "published"}
 """ + REWIRE
@@ -38,13 +36,9 @@ FILE = """{owner} talks about essays. File each thought of {owner}'s own after l
 
 VERIFY = """Which of these does a record already state? {candidates}"""
 
-COMPILE = """Map this {kind}, {title} ({id}):
-{text}
-Nodes already on the map:
-{nodes}
-Rels: {rels}"""
+COMPILE = "{text}"
 
-HEALTH = """Which of these claims say the same thing, and what is worth looking up? {claims} (sources: {sources})"""
+HEALTH = "{concepts}"
 
 pack = Pack(prompts={"file": FILE, "verify": VERIFY, "record": "{entries}", "compile": COMPILE, "health": HEALTH},
             kinds=("spark",))
@@ -81,8 +75,7 @@ def test_a_page_an_image_and_a_spark_are_kept_and_found_with_who_and_when(area, 
     assert shot.fm["transcribed_by"] == "claude-opus-5-5"
     assert spark.fm["kind"] == "spark" and spark.fm["by"] == "sam"
     assert not git(area, "status", "--porcelain")  # each kept in its own commit, the file with it
-    link = store.Store(area).events(kind="link")[0]
-    assert (link.fm["from"], link.fm["family"], link.fm["rel"], link.fm["to"]) == (spark.id, "map", "sparked-by", page.id)
+    assert spark.fm["sparked_by"] == page.id and not store.Store(area).events(kind="link")
     ingest()
     today = date.today().isoformat()
     for words, e, who in (("median habit days", page, "other:Ada Lane"), ("willpower muscle evening", shot, "other:Ben Ode"),
@@ -125,188 +118,19 @@ def test_the_filer_writes_only_the_kinds_the_pack_offers(area, tmp_path):
     assert res["filed"] == 3 and [e.kind for e in store.Store(area).events()] == ["spark"] * 3
 
 
-def test_compile_keeps_only_what_checks(area):
+def test_entries_compile_once_drafts_after_a_day_and_a_published_post_at_once(area):
     from engram import compile as cmp
     st = store.Store(area)
-    src = intake.add(st, "note", "Cues beat willpower. A study of 96 people found a median of 66 days.", by="Ada Lane")
-    reply = {"nodes": [{"key": "c1", "kind": "claim", "line": "Cues beat willpower", "quote": "Cues beat willpower"},
-                       {"key": "c2", "kind": "claim", "line": "Habits form in a week", "quote": "a habit forms in a week"},
-                       {"key": "s1", "kind": "claim", "line": "Some never need cues", "suggested": True},
-                       {"key": "t1", "kind": "theme", "line": "Habits", "quote": "A study of 96 people"}],
-             "edges": [{"from": "item", "rel": "supports", "to": "c1", "quote": "A study of 96 people found a median of 66 days"},
-                       {"from": "item", "rel": "supports", "to": "c1", "quote": "A study of 96 people found a median of 66 days"},
-                       {"from": "c1", "rel": "part-of", "to": "t1"},
-                       {"from": "s1", "rel": "steelman-of", "to": "c1"},
-                       {"from": "c1", "rel": "causes", "to": "t1"},
-                       {"from": "c1", "rel": "relates-to", "to": "nowhere"},
-                       {"from": "item", "rel": "refutes", "to": "c1"},
-                       {"from": "item", "rel": "data-for", "to": "c1", "quote": "a median of 70 days"}],
-             "summary": [{"text": "A study found 66 days.", "quote": "a median of 66 days"},
-                         {"text": "It found 90 days.", "quote": "a median of 66 days"}]}
-    res = cmp.compile_item("essays", src.id, ask=lambda prompt: (reply, 0.01))
-    whys = sorted(d["why"] for d in res["dropped"])
-    assert whys == sorted(["quote not in the record", "already on the map", "rel causes isn't in [links.map]",
-                           "an end isn't on the map", "evidence with no quote", "quote not in the record",
-                           "number 90 not in the record"])
-    m = cmp.load(area)
-    lines = {n.fm["title"]: n for n in m.nodes.values()}
-    assert sorted(lines) == ["Cues beat willpower", "Habits", "Some never need cues"]
-    assert lines["Some never need cues"].fm["by"] == "claude-suggestion" and lines["Cues beat willpower"].fm["by"] == "other:Ada Lane"
-    assert sorted(e.rel for e in m.edges) == ["part-of", "steelman-of", "supports"]
-    assert next(e for e in m.edges if e.rel == "supports").item == src.id
-    from engram import recsum
-    assert recsum.cached("essays", src.body) == "A study found 66 days."
-    again = cmp.compile_item("essays", src.id, ask=lambda prompt: (reply, 0.01))  # across runs: nothing twice
-    assert again["edges"] == 0 and "already on the map" in [d["why"] for d in again["dropped"]]
-    assert cmp.due("essays", cmp.load(area)) == ["drafts/streaks.md", "posts/cues.md"]  # a source is compiled once
-
-
-def test_a_post_recompiles_only_when_it_changes_and_two_failures_park_it(area):
-    from engram import compile as cmp
-    calls = []
-
-    def ask(prompt):
-        calls.append(prompt)
-        return {"nodes": [], "edges": []}, 0.0
-    cmp.compile_item("essays", "drafts/streaks.md", ask=ask)
-    m = cmp.load(area)
-    doc = next(k for k, it in m.items.items() if it.path == "drafts/streaks.md")
-    assert doc.startswith("doc-") and doc not in cmp.due("essays", m)
-    assert git(area, "log", "-1", "--format=%s").strip() == "engram: the map from a new post, 0 nodes and 0 links"  # never a path
-    (area / "drafts/streaks.md").write_text("title: Streaks\n___\nA streak is a story we tell. Then we keep it.\n")
-    assert doc in cmp.due("essays", cmp.load(area))
-    for _ in range(2):
-        r = cmp.compile_item("essays", doc, ask=lambda prompt: (None, 0.0))
-        assert not r["ok"]
-    m = cmp.load(area)
-    assert doc not in cmp.due("essays", m) and [it.path for it in cmp.parked("essays", m)] == ["drafts/streaks.md"]
-    (area / "drafts/streaks.md").write_text("title: Streaks\n___\nA streak is a story.\n")
-    assert doc in cmp.due("essays", cmp.load(area))
-
-
-@pytest.fixture
-def mapped(area):
-    """A small map: two sources, a spark, a draft and a published post, compiled from fixed replies."""
-    from engram import compile as cmp
-    st = store.Store(area)
-    s1 = intake.add(st, "note", "Cues beat willpower. A study of 96 people found a median of 66 days.", by="Ada Lane",
-                    title="A habits study")
-    s2 = intake.add(st, "video", "[00:12] Willpower can be trained like a muscle.\n[01:30] Cues fade when life changes.",
-                    by="Ben Ode", transcribed_by="claude-opus-5-5", title="A talk on willpower")
-    def run(ref, reply):
-        r = cmp.compile_item("essays", ref, ask=lambda prompt: (reply, 0.0))
-        assert r["ok"] and not r["dropped"], r["dropped"]
-        return r["item"]
-    run(s1.id, {"nodes": [{"key": "c", "kind": "claim", "line": "Cues beat willpower", "quote": "Cues beat willpower"},
-                          {"key": "t", "kind": "theme", "line": "Habits", "quote": "A study of 96 people"},
-                          {"key": "w", "kind": "claim", "line": "Some people need no cues", "suggested": True}],
-                "edges": [{"from": "item", "rel": "supports", "to": "c", "quote": "A study of 96 people found a median of 66 days"},
-                          {"from": "c", "rel": "part-of", "to": "t"}, {"from": "w", "rel": "steelman-of", "to": "c"}]})
-    m = cmp.load(area)
-    ids = {n.fm["title"]: n.id for n in m.nodes.values()}
-    run(s2.id, {"nodes": [{"key": "q", "kind": "claim", "line": "Willpower can be trained", "quote": "Willpower can be trained"}],
-                "edges": [{"from": "q", "rel": "steelman-of", "to": ids["Cues beat willpower"]},
-                          {"from": "item", "rel": "refutes", "to": ids["Cues beat willpower"], "quote": "Cues fade when life changes"}]})
-    ids = {n.fm["title"]: n.id for n in cmp.load(area).nodes.values()}
-    spark = intake.add(st, "spark", "Maybe the reward matters less than the cue.", sparked_by=s1.id)
-    run(spark.id, {"nodes": [], "edges": [{"from": "item", "rel": "relates-to", "to": ids["Habits"]}]})
-    (area / "drafts/streaks.md").write_text("title: Streaks\n___\nA streak is a story we tell. Cues matter more than streaks.\n")
-    draft = run("drafts/streaks.md", {"nodes": [], "edges": [
-        {"from": ids["Cues beat willpower"], "rel": "argued-in", "to": "item"},
-        {"from": "item", "rel": "supports", "to": ids["Cues beat willpower"], "quote": "Cues matter more than streaks"},
-        {"from": "item", "rel": "answers", "to": ids["Willpower can be trained"], "quote": "A streak is a story we tell"}]})
-    post = run("posts/cues.md", {"nodes": [{"key": "d", "kind": "claim", "line": "Cues are stronger than willpower",
-                                            "quote": "Cues beat willpower"}],
-                                 "edges": [{"from": "d", "rel": "argued-in", "to": "item"},
-                                           {"from": "item", "rel": "supports", "to": "d", "quote": "Cues beat willpower"}]})
-    ids = {n.fm["title"]: n.id for n in cmp.load(area).nodes.values()}
-    with st.transaction() as tx:  # the two near-duplicates merged
-        merged = tx.add({"title": "Cues beat willpower over time", "date": "2026-10-20", "kind": "claim", "author": "claude",
-                         "quote": "Cues beat willpower", "quoted_from": s1.id,
-                         "supersedes": [ids["Cues beat willpower"], ids["Cues are stronger than willpower"]]}, "").id
-    return {"repo": area, "s1": s1.id, "s2": s2.id, "draft": draft, "post": post, "merged": merged, "ids": ids, "spark": spark.id}
-
-
-def pages(repo):
-    return {p.relative_to(repo / "wiki").as_posix(): p.read_text() for p in sorted((repo / "wiki").rglob("*.md"))}
-
-
-def page_of(repo):
-    """Each ref's page, as the renderer names it."""
-    from engram import compile as cmp, wiki
-    return {k: f"{v}.md" for k, v in wiki.Wiki(cmp.load(repo), "essays").page.items()}
-
-
-def test_the_wiki_counts_distinct_backing_follows_merges_and_drops_a_cut_quote(mapped):
-    from engram import wiki
-    repo, ids = mapped["repo"], mapped["ids"]
-    wiki.render("essays")
-    got, at = pages(repo), page_of(repo)
-    assert at[mapped["merged"]] == "claims/Cues beat willpower over time.md" and at[mapped["s1"]] == "sources/A habits study.md"
-    merged = got[at[mapped["merged"]]]
-    assert merged.startswith("# Cues beat willpower over time\n")
-    assert ("1 for from sources, 2 for from your own writing, 1 against, 1 steelman (0 unanswered), "
-            "1 steelman by Claude (1 unanswered)") in merged
-    assert "(check against the original, at 01:30)" in merged and "Claude's own, not from a source" in merged
-    assert "claims/Cues beat willpower.md" not in got and ids["Cues beat willpower"] not in at  # superseded: no page
-    steel = got[at[ids["Willpower can be trained"]]]
-    assert "A steelman of [[wiki/claims/Cues beat willpower over time|Cues beat willpower over time]]: answered." in steel
-    assert "## Answered by\n\n- “A streak is a story we tell”" in steel
-    index = got["index.md"]
-    assert "## [[wiki/themes/Habits|Habits]]" in index
-    assert "[[wiki/claims/Cues beat willpower over time|Cues beat willpower over time]]: 1 for from sources" in index
-    draft = got[at[mapped["draft"]]]
-    assert draft.startswith("# Streaks\n") and "## Cues beat willpower over time" in draft
-    assert "## Further reading\n\n- [[wiki/posts/Cues|Cues]]" in draft
-    source = got[at[mapped["s1"]]]
-    assert "- who: Ada Lane" in source and "## Sparks it set off" in source and "Maybe the reward matters" in source
-    assert "Maybe the reward matters" in got[at[ids["Habits"]]]
-    assert "Some people need no cues" in got["open.md"] and "Steelmans not answered" in got["open.md"]
-    wiki.render("essays")
-    assert pages(repo) == got  # a rebuild is byte-identical
-    (repo / "drafts/streaks.md").write_text("title: Streaks\n___\nA streak is a story we tell.\n")
-    wiki.render("essays")
-    assert "1 for from sources, 1 for from your own writing, 1 against" in pages(repo)[at[mapped["merged"]]]
-
-
-def test_the_hourly_job_compiles_what_is_due_and_renders(area, tmp_path, monkeypatch):
-    from engram import compile as cmp, setup
-    setup.setup(area, tmp_path / "LaunchAgents", load=False)
-    src = intake.add(store.Store(area), "quote", "Small cues add up.", by="Ada Lane")
-    asked = []
-
-    def ask(prompt):
-        asked.append(prompt)
-        return {"nodes": [{"key": "c", "kind": "claim", "line": "Small cues add up", "quote": "Small cues add up"}],
-                "edges": [{"from": "item", "rel": "supports", "to": "c", "quote": "Small cues add up"}]}, 0.01
-    monkeypatch.setattr(cmp, "_ask", ask)
-    out = capture.run(summaries=False)
-    assert out["error"] is None and len(asked) == 3  # the quote, the draft and the post
-    assert "Small cues add up" in asked[0] and src.id in asked[0]
-    assert "Small cues add up" in (area / "wiki/index.md").read_text()
-    assert cmp.due("essays", cmp.load(area)) == []
-    capture.run(summaries=False)
-    assert len(asked) == 3  # nothing is compiled twice
-
-
-def test_the_health_check_merges_near_duplicates_and_lists_gaps(mapped):
-    from engram import compile as cmp
-    repo, ids = mapped["repo"], mapped["ids"]
-    s3 = intake.add(store.Store(repo), "note", "Willpower is trainable, a study of students found.", by="Cy Park")
-    cmp.compile_item("essays", s3.id, ask=lambda p: ({"nodes": [{"key": "c", "kind": "claim", "line": "Willpower is trainable",
-                                                                 "quote": "Willpower is trainable"}],
-                                                       "edges": [{"from": "item", "rel": "supports", "to": "c",
-                                                                  "quote": "a study of students found"}]}, 0.0))
-    trainable = next(n for n, e in cmp.load(repo).nodes.items() if e.fm["title"] == "Willpower is trainable")
-    asked = []
-    res = cmp.health("essays", ask=lambda p: (asked.append(p) or {"duplicates": [{"ids": [ids["Willpower can be trained"], trainable]},
-                                                                                {"ids": ["not-a-claim", trainable]}],
-                                                                 "gaps": ["A study on cues outside the lab"]}, 0.02))
-    assert "Willpower is trainable" in asked[0] and res == {"merged": 1, "gaps": 1, "usd": 0.02}
-    m = cmp.load(repo)
-    now = m.current(trainable)
-    assert now == m.current(ids["Willpower can be trained"]) and now != trainable
-    assert m.nodes[now].fm["title"] == "Willpower can be trained"
-    page = (repo / "wiki" / page_of(repo)[now]).read_text()
-    assert "1 for from sources" in page and "A steelman of" in page and "answered." in page
-    assert "A study on cues outside the lab" in (repo / "wiki/open.md").read_text()
+    src = intake.add(st, "quote", "Small cues add up.", by="Ada Lane")
+    its = cmp.items(area)
+    assert {it.path for it in its.values() if it.path} == {"drafts/streaks.md", "posts/cues.md"}
+    now = max(it.since for it in its.values() if it.path)
+    assert cmp.due("essays", its, now) == [src.id, "posts/cues.md"]  # the draft hasn't stood a day
+    assert cmp.due("essays", its, now + cmp.SETTLE) == [src.id, "drafts/streaks.md", "posts/cues.md"]
+    s = cmp.state("essays")
+    s["items"] = {src.id: {"hash": its[src.id].hash, "ok": True, "fails": 0},
+                  "posts/cues.md": {"hash": its["posts/cues.md"].hash, "ok": True, "fails": 0, "path": "posts/cues.md"},
+                  "drafts/streaks.md": {"hash": its["drafts/streaks.md"].hash, "ok": False, "fails": 2}}
+    cmp.save("essays", s)
+    assert cmp.due("essays", its, now + cmp.SETTLE) == []
+    assert [it.path for it in cmp.parked("essays", its)] == ["drafts/streaks.md"]

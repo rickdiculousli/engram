@@ -95,7 +95,7 @@ The domain repo's `engram.toml` holds both:
 - **`[weights]`** apply to every search.
 - **`[lenses.<name>]`** each have an `about` line, a `for` line, and weights that multiply on top. `engram search --lens <name>` applies one, and `engram lenses` lists them. `kinds` names the question kinds it's the default for, which replay uses.
 
-A compiled area weighs `node:claim` and `node:theme` below 1, so what was handed over or thought leads the map built from it. A weight's key says which records it fits: `milestone`; `day-to-day` (a record on a thread that isn't a milestone); `node:<kind>`; `by:<whose claim>`, matched as a prefix; `file:<glob>` and `ref:<glob>`; `class:<class>`. A weight of 0 excludes a kind of record. A record's kind, milestone flag and `by` come from its entry, or from `events/_nodes.jsonl` for a section that isn't one. Surroundings are ranked by query words scaled by the same weights. Each search logs its lens.
+A weight's key says which records it fits: `milestone`; `day-to-day` (a record on a thread that isn't a milestone); `node:<kind>`; `by:<whose claim>`, matched as a prefix; `file:<glob>` and `ref:<glob>`; `class:<class>`. A weight of 0 excludes a kind of record. A record's kind, milestone flag and `by` come from its entry, or from `events/_nodes.jsonl` for a section that isn't one. Surroundings are ranked by query words scaled by the same weights. Each search logs its lens.
 
 ## Scope
 

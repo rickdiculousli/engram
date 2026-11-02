@@ -1,7 +1,8 @@
 """What the owner hands over, kept as saved (docs/data-model.md, "Sources and sparks"): a web page, a video, an image,
 a scribble or a quote is an entry of kind `source`, its body the text (code fetches a page itself; for a video or an
-image the advisor passes the text it got, marked `transcribed_by`); the owner's own thought is a `spark`. A file handed
-over is kept beside it under `events/files/<sha256>.<ext>`, append-only like every event file. One transaction."""
+image the advisor passes the text it got, marked `transcribed_by`); the owner's own thought is a `spark`, with
+`sparked_by` the source that set it off without being its point. A file handed over is kept beside it under
+`events/files/<sha256>.<ext>`, append-only like every event file. One transaction."""
 import hashlib
 import html.parser
 import re
@@ -77,7 +78,7 @@ def keep(st: store.Store, path: Path) -> str:
 
 def add(st: store.Store, kind: str, text: str, title: str = "", by: str = "", url: str = "", file: Path | None = None,
         transcribed_by: str = "", sparked_by: str = "") -> store.Event:
-    """One source or spark in one commit, with its file and its `sparked-by` link."""
+    """One source or spark in one commit, with its file."""
     if kind != "spark" and kind not in FORMS:
         raise ValueError(f"a source is one of {', '.join(FORMS)}, or a spark")
     if kind == "page" and url and not text.strip():
@@ -90,7 +91,7 @@ def add(st: store.Store, kind: str, text: str, title: str = "", by: str = "", ur
     fm = {"title": title or first[:120] or Path(file).name, "date": today, "author": "claude",
           "domain": st.config.get("domain", {}).get("name", "")}
     if kind == "spark":
-        fm.update(kind="spark", by=config.owner_id())
+        fm.update(kind="spark", by=config.owner_id(), sparked_by=sparked_by)
     else:
         fm.update(kind="source", form=kind, by=f"other:{by}" if by else "", url=url, transcribed_by=transcribed_by)
     with st.transaction() as tx:
@@ -98,7 +99,4 @@ def add(st: store.Store, kind: str, text: str, title: str = "", by: str = "", ur
             fm["file"] = keep(st, file)
             tx.extra.append(fm["file"])
         e = tx.add(fm, text.strip() + "\n")
-        if sparked_by:
-            tx.add({"title": f"{e.id} sparked-by {sparked_by}", "date": today, "kind": "link", "from": e.id,
-                    "to": sparked_by, "family": "map", "rel": "sparked-by", "author": "claude", "domain": fm["domain"]}, "")
     return e

@@ -16,8 +16,9 @@ TEMPLATES = {
     "moved": "engram: {old} moved to {new}",
     "fix": "engram fix: {why}\n\nEngram-Fix: {why}",
     "review": "engram review: finding {id}, {question}, the {call} call",  # a value review's fix, in engram's own repo
+    "wiki": "engram: the wiki from {item}, {n} pages",
 }
-HOURLY = {"write", "facts", "theory", "relink"}  # what `engram capture run` commits, directly or through a theory change
+HOURLY = {"write", "facts", "theory", "relink", "wiki"}  # what `engram capture run` commits, directly or through a theory change
 
 
 class AmountInMessage(ValueError):

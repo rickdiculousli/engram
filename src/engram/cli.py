@@ -433,6 +433,20 @@ def cmd_lint(a):
         for b in bad:
             print("  " + b, file=sys.stderr)
         sys.exit(1)
+    from engram.paths import record_conf
+    hand, pasted = lint.staged_wiki_violations(Path(a.repo), (record_conf(Path(a.repo)).get("wiki") or {}).get("plain") or [])
+    if hand:
+        print("engram lint: wiki/ is written only by engram's compiler; this commit changes:", file=sys.stderr)
+        for p in hand:
+            print("  " + p, file=sys.stderr)
+        print("Put them back with: git restore --source=HEAD --staged --worktree -- wiki/", file=sys.stderr)
+    if pasted:
+        print("engram lint: wiki syntax ([[links]], > [!callouts]) stays out of these folders, which are published as "
+              "they are:", file=sys.stderr)
+        for p in pasted:
+            print("  " + p, file=sys.stderr)
+    if hand or pasted:
+        sys.exit(1)
     problems, fixed = docreg.staged_problems(Path(a.repo))
     for f in fixed:
         print(f"engram lint: recorded {f} in events/docs.jsonl, staged with this commit", file=sys.stderr)

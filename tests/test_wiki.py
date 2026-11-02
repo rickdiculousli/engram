@@ -178,3 +178,79 @@ def test_a_post_recompiles_only_when_it_changes_and_two_failures_park_it(area):
     assert doc not in cmp.due("essays", m) and [it.path for it in cmp.parked("essays", m)] == ["drafts/streaks.md"]
     (area / "drafts/streaks.md").write_text("title: Streaks\n___\nA streak is a story.\n")
     assert doc in cmp.due("essays", cmp.load(area))
+
+
+@pytest.fixture
+def mapped(area):
+    """A small map: two sources, a spark, a draft and a published post, compiled from fixed replies."""
+    from engram import compile as cmp
+    st = store.Store(area)
+    s1 = intake.add(st, "note", "Cues beat willpower. A study of 96 people found a median of 66 days.", by="Ada Lane",
+                    title="A habits study")
+    s2 = intake.add(st, "video", "[00:12] Willpower can be trained like a muscle.\n[01:30] Cues fade when life changes.",
+                    by="Ben Ode", transcribed_by="claude-opus-5-5", title="A talk on willpower")
+    def run(ref, reply):
+        r = cmp.compile_item("essays", ref, ask=lambda prompt: (reply, 0.0))
+        assert r["ok"] and not r["dropped"], r["dropped"]
+        return r["item"]
+    run(s1.id, {"nodes": [{"key": "c", "kind": "claim", "line": "Cues beat willpower", "quote": "Cues beat willpower"},
+                          {"key": "t", "kind": "theme", "line": "Habits", "quote": "A study of 96 people"},
+                          {"key": "w", "kind": "claim", "line": "Some people need no cues", "suggested": True}],
+                "edges": [{"from": "item", "rel": "supports", "to": "c", "quote": "A study of 96 people found a median of 66 days"},
+                          {"from": "c", "rel": "part-of", "to": "t"}, {"from": "w", "rel": "steelman-of", "to": "c"}]})
+    m = cmp.load(area)
+    ids = {n.fm["title"]: n.id for n in m.nodes.values()}
+    run(s2.id, {"nodes": [{"key": "q", "kind": "claim", "line": "Willpower can be trained", "quote": "Willpower can be trained"}],
+                "edges": [{"from": "q", "rel": "steelman-of", "to": ids["Cues beat willpower"]},
+                          {"from": "item", "rel": "refutes", "to": ids["Cues beat willpower"], "quote": "Cues fade when life changes"}]})
+    ids = {n.fm["title"]: n.id for n in cmp.load(area).nodes.values()}
+    spark = intake.add(st, "spark", "Maybe the reward matters less than the cue.", sparked_by=s1.id)
+    run(spark.id, {"nodes": [], "edges": [{"from": "item", "rel": "relates-to", "to": ids["Habits"]}]})
+    (area / "drafts/streaks.md").write_text("title: Streaks\n___\nA streak is a story we tell. Cues matter more than streaks.\n")
+    draft = run("drafts/streaks.md", {"nodes": [], "edges": [
+        {"from": ids["Cues beat willpower"], "rel": "argued-in", "to": "item"},
+        {"from": "item", "rel": "supports", "to": ids["Cues beat willpower"], "quote": "Cues matter more than streaks"},
+        {"from": "item", "rel": "answers", "to": ids["Willpower can be trained"], "quote": "A streak is a story we tell"}]})
+    post = run("posts/cues.md", {"nodes": [{"key": "d", "kind": "claim", "line": "Cues are stronger than willpower",
+                                            "quote": "Cues beat willpower"}],
+                                 "edges": [{"from": "d", "rel": "argued-in", "to": "item"},
+                                           {"from": "item", "rel": "supports", "to": "d", "quote": "Cues beat willpower"}]})
+    ids = {n.fm["title"]: n.id for n in cmp.load(area).nodes.values()}
+    with st.transaction() as tx:  # the two near-duplicates merged
+        merged = tx.add({"title": "Cues beat willpower over time", "date": "2026-10-20", "kind": "claim", "author": "claude",
+                         "quote": "Cues beat willpower", "quoted_from": s1.id,
+                         "supersedes": [ids["Cues beat willpower"], ids["Cues are stronger than willpower"]]}, "").id
+    return {"repo": area, "s1": s1.id, "s2": s2.id, "draft": draft, "post": post, "merged": merged, "ids": ids, "spark": spark.id}
+
+
+def pages(repo):
+    return {p.name: p.read_text() for p in sorted((repo / "wiki").glob("*.md"))}
+
+
+def test_the_wiki_counts_distinct_backing_follows_merges_and_drops_a_cut_quote(mapped):
+    from engram import wiki
+    repo, ids = mapped["repo"], mapped["ids"]
+    wiki.render("essays")
+    got = pages(repo)
+    merged = got[f"{mapped['merged']}.md"]
+    assert merged.startswith("# Cues beat willpower over time\n")
+    assert "3 for, 1 against, 1 steelmans (0 unanswered), 1 of Claude's own (1 unanswered)" in merged
+    assert "(check against the original, at 01:30)" in merged and "Claude's own, not from a source" in merged
+    assert f"{ids['Cues beat willpower']}.md" not in got  # a superseded node has no page of its own
+    steel = got[f"{ids['Willpower can be trained']}.md"]
+    assert f"A steelman of [[{mapped['merged']}|Cues beat willpower over time]]: answered." in steel
+    assert "## Answered by\n\n- “A streak is a story we tell”" in steel
+    index = got["index.md"]
+    assert f"## [[{ids['Habits']}|Habits]]" in index and f"[[{mapped['merged']}|Cues beat willpower over time]]: 3 for" in index
+    draft = got[f"{mapped['draft']}.md"]
+    assert draft.startswith("# Streaks\n") and "## Cues beat willpower over time" in draft
+    assert f"## Further reading\n\n- [[{mapped['post']}|Cues]]" in draft
+    source = got[f"{mapped['s1']}.md"]
+    assert "- who: Ada Lane" in source and "## Sparks it set off" in source and "Maybe the reward matters" in source
+    assert "Maybe the reward matters" in got[f"{ids['Habits']}.md"]
+    assert "Some people need no cues" in got["open.md"] and "Steelmans not answered" in got["open.md"]
+    wiki.render("essays")
+    assert pages(repo) == got  # a rebuild is byte-identical
+    (repo / "drafts/streaks.md").write_text("title: Streaks\n___\nA streak is a story we tell.\n")
+    wiki.render("essays")
+    assert "2 for, 1 against" in pages(repo)[f"{mapped['merged']}.md"]

@@ -15,7 +15,7 @@ Every source is a `pull(state) -> Iterable[Row]` with a declared freshness. Each
 | Source | Reads | Index file |
 |---|---|---|
 | a domain's repo | its working tree: entries, threads, documents, minus its excludes; a folder outside git is searched too, every file but hidden ones, with no history | that domain |
-| `events` | each entry as itself, with its links | that domain |
+| `events` | each entry as itself, with its links: a handed-over source by its text, a kept file never | that domain |
 | `sessions` | `~/.claude/projects/*/*.jsonl`, through their checked summaries only | by classification |
 | a pack's sources | what its reader reads: rows the area's own tools keep, or text outside git, some only on request | that domain |
 

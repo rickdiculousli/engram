@@ -219,6 +219,13 @@ def cmd_theory(a):
     for d in resolve(Path.cwd(), config.load(), a.domain):
         repo = config.load()[d].repo
         if repo and (repo / "theory").exists():
+            if a.action == "sweep":
+                from engram import relink
+                r = relink.sweep(repo, dry_run=a.dry_run)
+                if a.out:
+                    Path(a.out).write_text(json.dumps(r, ensure_ascii=False, indent=1))
+                print(json.dumps({k: len(v) if isinstance(v, list) else v for k, v in r.items()}))
+                return
             if a.action == "change":
                 from engram import theorychange
                 try:
@@ -837,8 +844,9 @@ def main(argv=None):
     s.set_defaults(fn=cmd_now)
 
     s = sub.add_parser("theory", help="the whole theory graph (conditions, loops with their paths, joins, statuses); "
-                       "`theory change` revises it when the owner agrees; `theory relink` re-checks the evidence after one")
-    s.add_argument("action", nargs="?", choices=["change", "relink"])
+                       "`theory change` revises it when the owner agrees; `theory relink` re-checks the evidence after one; "
+                       "`theory sweep` links the whole record's evidence to the loops and Discoveries")
+    s.add_argument("action", nargs="?", choices=["change", "relink", "sweep"])
     s.add_argument("--domain")
     s.add_argument("--mermaid", action="store_true", help="as a Mermaid diagram")
     s.add_argument("--as-of", help="the graph as it stood on YYYY-MM-DD")
@@ -868,6 +876,7 @@ def main(argv=None):
     s.add_argument("--date")
     s.add_argument("--change", help="for relink: the change id")
     s.add_argument("--force", action="store_true", help="for relink: restart one left running")
+    s.add_argument("--out", help="for sweep: write every proposed, dropped, confirmed and rejected link to this file")
     s.add_argument("--dry-run", action="store_true")
     s.set_defaults(fn=cmd_theory)
 

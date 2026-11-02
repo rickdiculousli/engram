@@ -19,7 +19,7 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
-from engram import commitmsg, config, docreg, claude_env, pack, recsum, theory, theorychange
+from engram import commitmsg, config, docreg, claude_env, frontmatter, pack, recsum, theory, theorychange
 from engram.store import Store
 from engram.now import RENEWAL
 
@@ -125,10 +125,7 @@ def _run(change: str, repo: Path, s: dict, ask, dry_run: bool, limit: int | None
     tgts, gone = targets(s, g)
     allowed = set(tgts) | set(gone)
     reg = docreg.load(repo)
-
-    def rec_of(x) -> str:  # a document's link end (its id, or an old path) as the record list names it: its path now
-        w = reg.resolve(str(x)) if reg else None
-        return w.path if w and w.heading is None else str(x)
+    rec_of = _rec_of(reg)
     have = {(rec_of(e.fm.get("from")), e.fm.get("to"), e.fm.get("rel")) for e in st.events(kind="link") if e.fm.get("family") == "evidence"}
     held: dict[str, list[str]] = {}  # record -> the targets its evidence points at now, among what changed
     retired_loops = {x["loop"] for x in s.get("retired", []) if x.get("loop")}
@@ -147,25 +144,7 @@ def _run(change: str, repo: Path, s: dict, ask, dry_run: bool, limit: int | None
                                        targets=", ".join(tgts + gone), retired_ids=", ".join(gone) or "none", records=text))
         out["usd"] += usd
         out["batches"] += 1
-        ids = {i: d for i, d, _ in b}
-        m = re.search(r"\{.*\}", reply, re.S)
-        for ln in (json.loads(m.group(0)).get("links", []) if m else []):
-            rec, to, rel = str(ln.get("record", "")), str(ln.get("to", "")), str(ln.get("rel", ""))
-            why_ = " ".join(str(ln.get("why", "")).split())
-            moved = str(ln.get("moved_from") or "")
-            if rec not in ids:
-                out["dropped"].append({"record": rec, "why": "not a record of this batch"})
-            elif to not in allowed:
-                out["dropped"].append({"record": rec, "why": f"target {to} isn't part of the change"})
-            elif rel not in RELS:
-                out["dropped"].append({"record": rec, "why": f"unknown rel {rel}"})
-            elif moved and moved not in gone:
-                out["dropped"].append({"record": rec, "why": f"moved from {moved}, not a retired step"})
-            elif (rec, to, rel) in have:
-                out["dropped"].append({"record": rec, "why": "already linked"})
-            else:
-                have.add((rec, to, rel))
-                out["links"].append({"from": rec, "to": to, "rel": rel, "why": why_[:200], "moved_from": moved, "date": ids[rec]})
+        _check(reply, {i: d for i, d, _ in b}, allowed, have, out, gone)
     bear: dict[str, int] = {}
     for ln in out["links"]:
         if not ln["to"].startswith("link/") and not ln["moved_from"]:
@@ -176,19 +155,119 @@ def _run(change: str, repo: Path, s: dict, ask, dry_run: bool, limit: int | None
     out["result"] = result
     if dry_run:
         return out
+    _file(st, g, reg, out["links"], commitmsg.message("relink", change=change), f"re-check after theory change {change}",
+          "engram-relink")
+    with theorychange.db() as c:
+        c.execute("UPDATE change SET state = 'done', result = ?, usd = ? WHERE id = ?", (json.dumps(result), out["usd"], change))
+    return out
+
+
+def _rec_of(reg):
+    """A document's link end (its id, or an old path) as the record list names it: its path now."""
+    def rec_of(x) -> str:
+        w = reg.resolve(str(x)) if reg else None
+        return w.path if w and w.heading is None else str(x)
+    return rec_of
+
+
+def _check(reply: str, ids: dict[str, str], allowed: set[str], have: set, out: dict, gone=(), off="isn't part of the change"):
+    """The code's guards on one batch's reply, into out["links"] and out["dropped"]: the record is in the batch, the
+    target is allowed, the rel is strengthens or weakens, a move is off a retired step, and the link isn't held
+    already (`have`, (record, target, rel), grows with each one kept)."""
+    m = re.search(r"\{.*\}", reply, re.S)
+    for ln in (json.loads(m.group(0)).get("links", []) if m else []):
+        rec, to, rel = str(ln.get("record", "")), str(ln.get("to", "")), str(ln.get("rel", ""))
+        why_ = " ".join(str(ln.get("why", "")).split())
+        moved = str(ln.get("moved_from") or "")
+        if rec not in ids:
+            out["dropped"].append({"record": rec, "why": "not a record of this batch"})
+        elif to not in allowed:
+            out["dropped"].append({"record": rec, "why": f"target {to} {off}"})
+        elif rel not in RELS:
+            out["dropped"].append({"record": rec, "why": f"unknown rel {rel}"})
+        elif moved and moved not in gone:
+            out["dropped"].append({"record": rec, "why": f"moved from {moved}, not a retired step"})
+        elif (rec, to, rel) in have:
+            out["dropped"].append({"record": rec, "why": "already linked"})
+        else:
+            have.add((rec, to, rel))
+            out["links"].append({"from": rec, "to": to, "rel": rel, "why": why_[:200], "moved_from": moved, "date": ids[rec]})
+
+
+def _file(st: Store, g: theory.Graph, reg, links: list[dict], message: str, source: str, author: str) -> None:
+    """Files the links as evidence, by=claude, in one transaction: Claude's placement, never the owner's claim."""
     day = datetime.now().astimezone().date().isoformat()
     dom = st.config.get("domain", {}).get("name", "")
-    with st.transaction(message=commitmsg.message("relink", change=change)) as tx:
-        for ln in out["links"]:
+    with st.transaction(message=message) as tx:
+        for ln in links:
             note = ln["why"] + (f" (moved off the retired step {ln['moved_from']})" if ln["moved_from"] else "") + \
                    (" (evidence for the old version only)" if ln["to"].startswith("link/") else "")
             fm = {"title": f"{ln['rel']} {g.label(ln['to']) if ln['to'] in g.things else ln['to']}",
                   "date": ln["date"] or day, "domain": dom, "kind": "link", "about": [ln["to"]], "by": "claude",
-                  "source": f"re-check after theory change {change}", "author": "engram-relink",
-                  "from": ln["from"], "to": ln["to"], "family": "evidence", "rel": ln["rel"]}
+                  "source": source, "author": author, "from": ln["from"], "to": ln["to"], "family": "evidence", "rel": ln["rel"]}
             tx.add(docreg.id_ends(reg, st, fm) if reg else fm, note)  # a document by its stable id, its path the hint
-    with theorychange.db() as c:
-        c.execute("UPDATE change SET state = 'done', result = ?, usd = ? WHERE id = ?", (json.dumps(result), out["usd"], change))
+
+
+SWEPT, SWEEP_CAP = "engram-sweep", 10.0  # the sweep's author, and what one run may spend
+
+
+def sweep(repo: Path, ask=None, confirm=None, dry_run: bool = False, limit: int | None = None, cap: float = SWEEP_CAP) -> dict:
+    """The evidence sweep: every entry but journals and every document the re-check reads, in its batches, against the
+    theory's loops and Discoveries, with the pack's `sweep` words. The re-check's guards hold, with a pair already
+    linked by any evidence rel counting as held; then each surviving link goes to a second call (`sweep_confirm`),
+    which sees only the record, the target and the rel, and only a yes is filed, by=claude. It stops calling once a run
+    has spent `cap`. Returns counts and the links, for a dry run too, which files nothing."""
+    p = pack.for_repo(repo)
+    if not (p.prompts.get("sweep") and p.prompts.get("sweep_confirm")):
+        raise SystemExit(f"engram: {repo}'s pack has no `sweep` and `sweep_confirm` words; its evidence isn't swept")
+    ask = ask or _asker(p.prompts.get("relink_system", ""))
+    confirm = confirm or ask
+    st, g, reg = Store(repo), theory.load(repo), docreg.load(repo)
+    rec_of = _rec_of(reg)
+    tg = {t.id: t for t in g.things.values() if t.kind in ("loop", "discovery")}
+    by_file = {t.file: t.id for t in tg.values()}
+
+    def thing_of(x) -> str | None:  # a link's target as a loop or Discovery: its id, its file, a section or its doc id
+        if str(x) in tg:
+            return str(x)
+        w = reg.resolve(str(x)) if reg else None
+        return by_file.get(w.path if w else str(x).split("#", 1)[0])
+    have = {(rec_of(e.fm.get("from")), t, rel) for e in st.events(kind="link")
+            if e.fm.get("family") == "evidence" and (t := thing_of(e.fm.get("to"))) for rel in RELS}
+
+    def about(t) -> str:
+        body = frontmatter.split((repo / t.file).read_text())[1].strip() if t.file and (repo / t.file).exists() else ""
+        status = g.status.get(t.id, ("",))[0]
+        return f"<target id=\"{t.id}\"{f' status=\"{status}\"' if status else ''}>\n" + \
+               (f"path: {g.draw(t.id)}\n" if t.kind == "loop" else "") + f"{body}\n</target>"
+    journal = {e.id for e in st.events(kind="journal")}
+    recs = [r for r in records(repo, p.relink_skip) if r[0] not in journal]
+    text_of = {i: (d, t) for i, d, t in recs}
+    targets_text = "\n".join(about(t) for t in tg.values())
+    out = {"records": len(recs), "targets": len(tg), "batches": 0, "proposed": 0, "links": [], "dropped": [], "confirmed": [],
+           "rejected": [], "usd": 0.0, "read_usd": 0.0, "stopped": False}
+    for b in batches(recs)[:limit]:
+        if out["usd"] >= cap:
+            out["stopped"] = True
+            break
+        text = "\n".join(f"[{i}] date {d or 'undated'}\n{t}\n" for i, d, t in b)
+        reply, usd = ask(config.voice(p.prompts["sweep"]).format(targets=targets_text, records=text))
+        out["usd"] += usd
+        out["batches"] += 1
+        _check(reply, {i: d for i, d, _ in b}, set(tg), have, out, off="isn't a loop or Discovery")
+    out["read_usd"] = out["usd"]
+    out["proposed"] = len(out["links"]) + len(out["dropped"])
+    for ln in out["links"]:
+        if out["usd"] >= cap:
+            out["stopped"] = True
+            break
+        d, t = text_of[ln["from"]]
+        reply, usd = confirm(config.voice(p.prompts["sweep_confirm"]).format(
+            record=f"[{ln['from']}] date {d or 'undated'}\n{t}", target=about(tg[ln["to"]]), rel=ln["rel"]))
+        out["usd"] += usd
+        (out["confirmed"] if re.match(r"\W*yes\b", reply, re.I) else out["rejected"]).append(ln)
+    if out["confirmed"] and not dry_run:
+        _file(st, g, reg, out["confirmed"], commitmsg.message("sweep", n=len(out["confirmed"])), "evidence sweep", SWEPT)
     return out
 
 

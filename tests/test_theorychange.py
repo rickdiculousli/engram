@@ -142,3 +142,40 @@ def test_the_recheck_reads_long_documents_whole_and_an_errored_one_shows_until_r
     assert not any("failed" in l for l in tc.notices(rec, mark=True))
     big = [("a", "", "x" * 60), ("b", "", "y" * 150), ("c", "", "z" * 30)]
     assert [[i for i, _, _ in b] for b in relink.batches(big, budget=100)] == [["a"], ["b"], ["c"]]  # a big one goes alone
+
+
+def test_the_sweep_files_only_what_the_guards_keep_and_the_second_call_confirms(rec):
+    (rec / "evidence").mkdir()
+    (rec / "evidence/D01-cold.md").write_text("---\nid: D01\ntitle: Cold mornings stiffen the knee\n---\n# D01\n\nCold stiffens it.\n")
+    store.Store(rec).add({"id": "j1", "title": "a low week", "date": "2026-03-02", "kind": "journal", "about": ["series/_journal"]},
+                         "- felt low\n")
+    reads, checks = [], []
+
+    def ask(prompt):
+        reads.append(prompt)
+        return json.dumps({"links": [
+            {"record": "consults/visit.md", "to": "loop/1", "rel": "weakens", "why": "wear"},
+            {"record": "consults/visit.md", "to": "discovery/D01", "rel": "strengthens", "why": "cold"},
+            {"record": "e1", "to": "loop/1", "rel": "weakens", "why": "knee sore"},  # the pair is linked already
+            {"record": "j1", "to": "loop/1", "rel": "strengthens", "why": "x"},  # journals aren't read
+            {"record": "e1", "to": "node/A", "rel": "strengthens", "why": "x"},  # a condition isn't a target
+            {"record": "e1", "to": "discovery/D01", "rel": "causes", "why": "x"}]}), 0.5
+
+    def confirm(prompt):
+        checks.append(prompt)
+        return ("Yes." if "Loop 1" in prompt else "no"), 0.1
+    out = relink.sweep(rec, ask=ask, confirm=confirm, dry_run=True)
+    assert "felt low" not in reads[0] and "Cold stiffens it." in reads[0] and "path: stiffness → knee → ankle → stiffness" in reads[0]
+    assert out["proposed"] == 6 and len(out["links"]) == 2 and sorted(d["why"] for d in out["dropped"]) == [
+        "already linked", "not a record of this batch", "target node/A isn't a loop or Discovery", "unknown rel causes"]
+    assert len(checks) == 2 and all("The knee scan shows mild wear." in c and "wear" not in c.split("<record>")[0] for c in checks)
+    assert [(x["from"], x["to"]) for x in out["confirmed"]] == [("consults/visit.md", "loop/1")] and len(out["rejected"]) == 1
+    assert round(out["usd"], 2) == 0.7 and not [e for e in store.Store(rec).events(kind="link") if e.fm.get("author") == relink.SWEPT]
+    relink.sweep(rec, ask=ask, confirm=confirm)
+    [filed] = [e for e in store.Store(rec).events(kind="link") if e.fm.get("author") == relink.SWEPT]
+    assert (filed.fm["from"], filed.fm["to"], filed.fm["rel"], filed.fm["by"]) == ("consults/visit.md", "loop/1", "weakens", "claude")
+    again = relink.sweep(rec, ask=ask, confirm=confirm, dry_run=True)  # what it filed is held now
+    assert [x["to"] for x in again["links"]] == ["discovery/D01"]  # the rejected one is asked again, the filed one isn't
+    assert "already linked" in [d["why"] for d in again["dropped"] if d["record"] == "consults/visit.md"]
+    capped = relink.sweep(rec, ask=ask, confirm=confirm, dry_run=True, cap=0.5)
+    assert capped["stopped"] and not capped["confirmed"]

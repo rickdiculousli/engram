@@ -65,5 +65,24 @@ Reply with JSON only: {{"links": [...]}}
 {records}
 </records>"""
 
+SWEEP = """{owner}'s notes on how the garden works:
+{targets}
+
+Link each note that bears on one of them, for (strengthens) or against (weakens).
+Reply with JSON only: {{"links": [...]}}
+
+<records>
+{records}
+</records>"""
+
+SWEEP_CONFIRM = """Does this note {rel} this idea about the garden? Reply yes or no alone.
+
+{target}
+
+<record>
+{record}
+</record>"""
+
 pack = Pack(prompts={"file": FILE, "verify": VERIFY, "record": RECORD, "theory": THEORY, "structure": STRUCTURE,
-                     "relink": RELINK, "relink_system": "You link garden notes to how the garden works."})
+                     "relink": RELINK, "relink_system": "You link garden notes to how the garden works.",
+                     "sweep": SWEEP, "sweep_confirm": SWEEP_CONFIRM})

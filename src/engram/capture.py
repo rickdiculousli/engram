@@ -150,14 +150,16 @@ def prompt_only(prompt: str) -> tuple[str, float]:
     return '{"facts": []}', 0.0
 
 
-def shape(st: store.Store) -> tuple[list[str], list[str], str]:
-    """The record's event kinds, its about values by use, and its home prefix: the one most events name first, which
-    decides the page an entry renders into (series/<log>)."""
+def shape(st: store.Store, kinds: tuple[str, ...] = ()) -> tuple[list[str], list[str], str]:
+    """The kinds the filer may write, the record's about values by use, and its home prefix: the one most events name
+    first, which decides the page an entry renders into (series/<log>). The kinds are the pack's; a pack that names
+    none offers the kinds the record already holds, most used first."""
     evs = [e for e in st.events() if e.kind != "link"]
-    kinds = [k for k, _ in Counter(e.kind for e in evs).most_common() if k not in ("status", "capture")]
+    if not kinds:
+        kinds = [k for k, _ in Counter(e.kind for e in evs).most_common() if k not in ("status", "capture")] or ["observation"]
     abouts = [a for a, _ in Counter(a for e in evs for a in e.about).most_common(80)]
     home = Counter(e.about[0].split("/")[0] for e in evs if e.about).most_common(1)
-    return kinds or ["observation"], abouts, home[0][0] if home else ""
+    return list(kinds), abouts, home[0][0] if home else ""
 
 
 def on_record(domain: str, said: list[str], per: int = 5) -> list[str]:
@@ -457,12 +459,13 @@ def cut_title(text: str, limit: int = 120) -> str:
 
 
 def entry(fact: dict, said_on: str, stem: str, kinds: list[str], abouts: list[str], home: str,
-          words: str | None = None, cur: pack.Current = pack.NONE.current) -> tuple[dict, str]:
-    """The event front matter and body for a checked fact. A date he never gave is filed as not sure, never guessed."""
+          words: str | None = None, cur: pack.Current = pack.NONE.current, other: str = "observation") -> tuple[dict, str]:
+    """The event front matter and body for a checked fact, in one of the kinds offered, else `other`. A date he never
+    gave is filed as not sure, never guessed."""
     date, approx = full_date(fact, said_on, words)
-    kind = fact.get("kind") if fact.get("kind") in kinds else "observation"
+    kind = fact.get("kind") if fact.get("kind") in kinds else other
     if kind == cur.entity_kind and (not fact.get("entity") or fact.get("status") not in cur.statuses):
-        kind = "observation"
+        kind = other
     about = [a for a in fact.get("about") or [] if a in abouts][:3]
     if home and not any(a.startswith(home + "/") for a in about):
         homes = [a for a in abouts if a.startswith(home + "/")]
@@ -812,7 +815,7 @@ def file_session(domain: str, root: Path, path: Path, ask=None, dry_run: bool = 
     res = {"session": path.stem[:8], "filed": 0, "dropped": [], "kept": [], "would_file": [], "usd": 0.0}
     if later:
         st = store.Store(root)
-        kinds, abouts, home = shape(st)
+        kinds, abouts, home = shape(st, p.kinds)
         th = theory_shape(st, p.prompts.get("theory", ""))
         mine = [e for e in st.events() if e.id in set(ids)]
         already = [f"{e.date} {e.fm.get('title', '')}: {' '.join(e.body.split())[:200]}" for e in mine]
@@ -847,7 +850,8 @@ def file_session(domain: str, root: Path, path: Path, ask=None, dry_run: bool = 
                 res["dropped"].append({"session": path.stem[:8], "line": f.get("line"), "why": why, "text": str(f.get("text", ""))[:120]})
             else:
                 fm, body = entry(f, when[int(f["line"])], path.stem, kinds, abouts, home,
-                                 "\n".join([later[line], str(f.get("answering", "")), before.get(line, "")]), cur)
+                                 "\n".join([later[line], str(f.get("answering", "")), before.get(line, "")]), cur,
+                                 p.kinds[0] if p.kinds else "observation")
                 if thing and fm["kind"] == cur.entity_kind:  # an existing chain: "Pataday" joins "Pataday 0.7%"
                     fm["thing"] = thing
                 where = place(f, fm, st, stories, complaints, rels, p.occurrence_kinds)

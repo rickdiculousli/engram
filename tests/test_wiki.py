@@ -1,13 +1,13 @@
 """The compiled wiki (docs/data-model.md, "Sources and sparks"; docs/technical.md, "The compiled wiki"), on a made-up
 area: a notebook of essays on habits, with its sources, sparks, drafts and a published post."""
-import subprocess
+import json
 from datetime import date
 from pathlib import Path
 
 import pytest
 
 from conftest import PAGE_MD, REWIRE, git, make_repo
-from engram import intake, lint, search, store
+from engram import capture, intake, lint, search, store
 
 TOML = """[domain]
 name = "essays"
@@ -27,12 +27,35 @@ PAGE = """<html><head><title>Habits stick by cue</title><style>p {color: red}</s
 <p>Missing a single day did not reset the habit.</p><script>track()</script></body></html>"""
 
 
+PACK = '''from engram.pack import Pack
+
+FILE = """{owner} talks about essays. File each thought of {owner}'s own after line {upto} as a spark: give "line",
+"text", "quote", "date" and "kind" (one of {kinds}).
+<conversation>
+{conversation}
+</conversation>
+{already} {record}"""
+
+VERIFY = """Which of these does a record already state? {candidates}"""
+
+COMPILE = """Map this {kind}, {title} ({id}):
+{text}
+Nodes already on the map:
+{nodes}
+Rels: {rels}"""
+
+pack = Pack(prompts={"file": FILE, "verify": VERIFY, "record": "{entries}", "compile": COMPILE}, kinds=("spark",))
+'''
+
+
 @pytest.fixture
 def area(env, tmp_path):
+    (tmp_path / "pack").mkdir()
+    (tmp_path / "pack/__init__.py").write_text(PACK)
     repo = make_repo(tmp_path / "essays", {".engram/engram.toml": TOML, ".engram/README.md": PAGE_MD,
                                            "drafts/streaks.md": "title: Streaks\n___\nA streak is a story we tell.\n",
                                            "posts/cues.md": "title: Cues\n___\nCues beat willpower.\n"})
-    env["set_repo"]("essays", repo)
+    env["set_repo"]("essays", repo, pack=tmp_path / "pack")
     return repo
 
 
@@ -76,3 +99,24 @@ def test_a_kept_file_is_never_edited(area, tmp_path):
 def test_nothing_to_keep_is_refused(area):
     with pytest.raises(ValueError):
         intake.add(store.Store(area), "note", "  ")
+
+
+def turn(kind, content, ts="2026-10-18T20:00:00Z"):
+    return json.dumps({"type": kind, "timestamp": ts, "cwd": "/x", "message": {"role": kind, "content": content}})
+
+
+def test_the_filer_writes_only_the_kinds_the_pack_offers(area, tmp_path):
+    path = tmp_path / "projects/-x-essays/s1.jsonl"
+    path.parent.mkdir(parents=True)
+    path.write_text("\n".join([turn("user", "Streaks are a story we tell ourselves after the fact."),
+                               turn("assistant", [{"type": "text", "text": "Noted."}])]) + "\n")
+    facts = [{"line": 1, "text": f"Streaks are a story ({k})", "quote": "Streaks are a story we tell", "date": "2026-10-18",
+              "kind": k} for k in ("spark", "claim", "theme")]
+    asked = []
+
+    def ask(prompt):
+        asked.append(prompt)
+        return json.dumps({"facts": facts, "repeats": []}), 0.0
+    res = capture.file_session("essays", area, path, ask=ask)
+    assert "(one of spark)" in asked[0]
+    assert res["filed"] == 3 and [e.kind for e in store.Store(area).events()] == ["spark"] * 3

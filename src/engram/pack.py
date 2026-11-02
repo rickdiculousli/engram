@@ -97,6 +97,8 @@ class Pack:
     prompts: dict[str, str] = field(default_factory=dict)  # the area's model calls, by name (file, theory, structure,
     # verify, record, relink, relink_system, recsum_system); core fills {owner}, {owner_id} and each call's fields
     current: Current = field(default_factory=Current)
+    kinds: tuple[str, ...] = ()  # the entry kinds the filer may write, the first for anything else; none named, the
+    # kinds the record already holds
     occurrence_kinds: frozenset[str] = frozenset()  # kinds that record one occurrence: a repeat must be the same one
     relink_skip: tuple[str, ...] = ()  # patterns of record paths the evidence re-check never reads, matched at the start
     read: dict[str, Callable[[Path], Source]] = field(default_factory=dict)  # a source's name -> its reader over the repo

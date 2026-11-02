@@ -154,21 +154,25 @@ def test_the_sweep_files_only_what_the_guards_keep_and_the_second_call_confirms(
     def ask(prompt):
         reads.append(prompt)
         return json.dumps({"links": [
-            {"record": "consults/visit.md", "to": "loop/1", "rel": "weakens", "why": "wear"},
-            {"record": "consults/visit.md", "to": "discovery/D01", "rel": "strengthens", "why": "cold"},
-            {"record": "e1", "to": "loop/1", "rel": "weakens", "why": "knee sore"},  # the pair is linked already
-            {"record": "j1", "to": "loop/1", "rel": "strengthens", "why": "x"},  # journals aren't read
-            {"record": "e1", "to": "node/A", "rel": "strengthens", "why": "x"},  # a condition isn't a target
-            {"record": "e1", "to": "discovery/D01", "rel": "causes", "why": "x"}]}), 0.5
+            {"record": "consults/visit.md", "to": "loop/1", "rel": "weakens", "passage": "the knee scan shows mild wear",
+             "why": "a reason the second call never sees"},
+            {"record": "consults/visit.md", "to": "discovery/D01", "rel": "strengthens", "passage": "\"The knee scan shows\""},
+            {"record": "e1", "to": "loop/1", "rel": "weakens", "passage": "knee sore"},  # the pair is linked already
+            {"record": "j1", "to": "loop/1", "rel": "strengthens", "passage": "x"},  # journals aren't read
+            {"record": "e1", "to": "node/A", "rel": "strengthens", "passage": "x"},  # a condition isn't a target
+            {"record": "e1", "to": "discovery/D01", "rel": "causes", "passage": "x"},
+            {"record": "e1", "to": "discovery/D01", "rel": "strengthens", "passage": "sore after a short run"}]}) + "\nDone.", 0.5
 
     def confirm(prompt):
         checks.append(prompt)
         return ("Yes." if "Loop 1" in prompt else "no"), 0.1
     out = relink.sweep(rec, ask=ask, confirm=confirm, dry_run=True)
     assert "felt low" not in reads[0] and "Cold stiffens it." in reads[0] and "path: stiffness → knee → ankle → stiffness" in reads[0]
-    assert out["proposed"] == 6 and len(out["links"]) == 2 and sorted(d["why"] for d in out["dropped"]) == [
-        "already linked", "not a record of this batch", "target node/A isn't a loop or Discovery", "unknown rel causes"]
-    assert len(checks) == 2 and all("The knee scan shows mild wear." in c and "wear" not in c.split("<record>")[0] for c in checks)
+    assert out["proposed"] == 7 and len(out["links"]) == 2 and sorted(d["why"] for d in out["dropped"]) == [
+        "already linked", "not a record of this batch", "passage not in the record", "target node/A isn't a loop or Discovery",
+        "unknown rel causes"]
+    assert len(checks) == 2 and all("The knee scan shows mild wear." in c and "never sees" not in c for c in checks)
+    assert "The passage at issue: the knee scan shows mild wear" in checks[0]
     assert [(x["from"], x["to"]) for x in out["confirmed"]] == [("consults/visit.md", "loop/1")] and len(out["rejected"]) == 1
     assert round(out["usd"], 2) == 0.7 and not [e for e in store.Store(rec).events(kind="link") if e.fm.get("author") == relink.SWEPT]
     relink.sweep(rec, ask=ask, confirm=confirm)

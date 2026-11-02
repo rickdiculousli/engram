@@ -27,13 +27,13 @@ BUDGET = 90_000  # characters of records per call; a record is never cut, and on
 SKIP_FILES = ("AGENTS.md", "CLAUDE.md", "README.md")
 RELS = ("strengthens", "weakens")
 
-def _asker(system: str):
+def _asker(system: str, effort: str = "low"):
     """The re-check's model call, with the pack's `relink_system` words."""
-    return lambda prompt: _ask(prompt, system)
+    return lambda prompt: _ask(prompt, system, effort)
 
 
-def _ask(prompt: str, system: str) -> tuple[str, float]:
-    cmd = ["claude", "-p", "--model", recsum.MODEL, "--effort", "low", "--output-format", "json", "--setting-sources",
+def _ask(prompt: str, system: str, effort: str = "low") -> tuple[str, float]:
+    cmd = ["claude", "-p", "--model", recsum.MODEL, "--effort", effort, "--output-format", "json", "--setting-sources",
            "project", "--strict-mcp-config", "--no-session-persistence", "--tools", "", "--system-prompt", system]
     with tempfile.TemporaryDirectory(prefix="engram-relink-") as cwd:
         r = subprocess.run(cmd, input=prompt, cwd=cwd, env=claude_env.clean(), capture_output=True, text=True, timeout=1800)
@@ -170,14 +170,21 @@ def _rec_of(reg):
     return rec_of
 
 
-def _check(reply: str, ids: dict[str, str], allowed: set[str], have: set, out: dict, gone=(), off="isn't part of the change"):
+def _norm(text: str) -> str:
+    return " ".join(text.lower().split()).strip(" \"'“”.…")
+
+
+def _check(reply: str, ids: dict[str, str], allowed: set[str], have: set, out: dict, gone=(), off="isn't part of the change",
+           texts: dict[str, str] | None = None):
     """The code's guards on one batch's reply, into out["links"] and out["dropped"]: the record is in the batch, the
-    target is allowed, the rel is strengthens or weakens, a move is off a retired step, and the link isn't held
-    already (`have`, (record, target, rel), grows with each one kept)."""
-    m = re.search(r"\{.*\}", reply, re.S)
-    for ln in (json.loads(m.group(0)).get("links", []) if m else []):
+    target is allowed, the rel is strengthens or weakens, a move is off a retired step, the link isn't held already
+    (`have`, (record, target, rel), grows with each one kept), and, given the records' `texts`, its passage is the
+    record's own words."""
+    start = reply.find("{")
+    reply_ = json.JSONDecoder().raw_decode(reply[start:])[0] if start >= 0 else {}  # the first object: text may follow it
+    for ln in reply_.get("links", []):
         rec, to, rel = str(ln.get("record", "")), str(ln.get("to", "")), str(ln.get("rel", ""))
-        why_ = " ".join(str(ln.get("why", "")).split())
+        why_ = " ".join(str(ln.get("passage" if texts is not None else "why", "")).split())
         moved = str(ln.get("moved_from") or "")
         if rec not in ids:
             out["dropped"].append({"record": rec, "why": "not a record of this batch"})
@@ -185,13 +192,16 @@ def _check(reply: str, ids: dict[str, str], allowed: set[str], have: set, out: d
             out["dropped"].append({"record": rec, "why": f"target {to} {off}"})
         elif rel not in RELS:
             out["dropped"].append({"record": rec, "why": f"unknown rel {rel}"})
+        elif texts is not None and not (_norm(why_) and _norm(why_) in _norm(texts[rec])):
+            out["dropped"].append({"record": rec, "why": "passage not in the record"})
         elif moved and moved not in gone:
             out["dropped"].append({"record": rec, "why": f"moved from {moved}, not a retired step"})
         elif (rec, to, rel) in have:
             out["dropped"].append({"record": rec, "why": "already linked"})
         else:
             have.add((rec, to, rel))
-            out["links"].append({"from": rec, "to": to, "rel": rel, "why": why_[:200], "moved_from": moved, "date": ids[rec]})
+            out["links"].append({"from": rec, "to": to, "rel": rel, "why": why_ if texts is not None else why_[:200],
+                                 "moved_from": moved, "date": ids[rec]})
 
 
 def _file(st: Store, g: theory.Graph, reg, links: list[dict], message: str, source: str, author: str) -> None:
@@ -209,19 +219,22 @@ def _file(st: Store, g: theory.Graph, reg, links: list[dict], message: str, sour
 
 
 SWEPT, SWEEP_CAP = "engram-sweep", 10.0  # the sweep's author, and what one run may spend
+SWEEP_BUDGET, SWEEP_EFFORT = 30_000, "medium"  # the read's batches and effort: denser or lower missed most of what bears
 
 
 def sweep(repo: Path, ask=None, confirm=None, dry_run: bool = False, limit: int | None = None, cap: float = SWEEP_CAP) -> dict:
     """The evidence sweep: every entry but journals and every document the re-check reads, in its batches, against the
     theory's loops and Discoveries, with the pack's `sweep` words. The re-check's guards hold, with a pair already
-    linked by any evidence rel counting as held; then each surviving link goes to a second call (`sweep_confirm`),
-    which sees only the record, the target and the rel, and only a yes is filed, by=claude. It stops calling once a run
+    linked by any evidence rel counting as held, and the read must cite the record's own words that bear on it (its
+    `passage`, checked word for word); then each surviving link goes to a second call (`sweep_confirm`), which sees
+    only the record, that passage, the target and the rel, never the read's reasoning, and only a yes is filed,
+    by=claude. It stops calling once a run
     has spent `cap`. Returns counts and the links, for a dry run too, which files nothing."""
     p = pack.for_repo(repo)
     if not (p.prompts.get("sweep") and p.prompts.get("sweep_confirm")):
         raise SystemExit(f"engram: {repo}'s pack has no `sweep` and `sweep_confirm` words; its evidence isn't swept")
-    ask = ask or _asker(p.prompts.get("relink_system", ""))
-    confirm = confirm or ask
+    confirm = confirm or _asker(p.prompts.get("relink_system", ""))
+    ask = ask or _asker(p.prompts.get("relink_system", ""), SWEEP_EFFORT)
     st, g, reg = Store(repo), theory.load(repo), docreg.load(repo)
     rec_of = _rec_of(reg)
     tg = {t.id: t for t in g.things.values() if t.kind in ("loop", "discovery")}
@@ -246,7 +259,7 @@ def sweep(repo: Path, ask=None, confirm=None, dry_run: bool = False, limit: int 
     targets_text = "\n".join(about(t) for t in tg.values())
     out = {"records": len(recs), "targets": len(tg), "batches": 0, "proposed": 0, "links": [], "dropped": [], "confirmed": [],
            "rejected": [], "usd": 0.0, "read_usd": 0.0, "stopped": False}
-    for b in batches(recs)[:limit]:
+    for b in batches(recs, SWEEP_BUDGET)[:limit]:
         if out["usd"] >= cap:
             out["stopped"] = True
             break
@@ -254,7 +267,7 @@ def sweep(repo: Path, ask=None, confirm=None, dry_run: bool = False, limit: int 
         reply, usd = ask(config.voice(p.prompts["sweep"]).format(targets=targets_text, records=text))
         out["usd"] += usd
         out["batches"] += 1
-        _check(reply, {i: d for i, d, _ in b}, set(tg), have, out, off="isn't a loop or Discovery")
+        _check(reply, {i: d for i, d, _ in b}, set(tg), have, out, off="isn't a loop or Discovery", texts={i: t for i, _, t in b})
     out["read_usd"] = out["usd"]
     out["proposed"] = len(out["links"]) + len(out["dropped"])
     for ln in out["links"]:
@@ -263,7 +276,7 @@ def sweep(repo: Path, ask=None, confirm=None, dry_run: bool = False, limit: int 
             break
         d, t = text_of[ln["from"]]
         reply, usd = confirm(config.voice(p.prompts["sweep_confirm"]).format(
-            record=f"[{ln['from']}] date {d or 'undated'}\n{t}", target=about(tg[ln["to"]]), rel=ln["rel"]))
+            record=f"[{ln['from']}] date {d or 'undated'}\n{t}", passage=ln["why"], target=about(tg[ln["to"]]), rel=ln["rel"]))
         out["usd"] += usd
         (out["confirmed"] if re.match(r"\W*yes\b", reply, re.I) else out["rejected"]).append(ln)
     if out["confirmed"] and not dry_run:

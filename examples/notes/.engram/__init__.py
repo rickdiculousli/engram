@@ -68,7 +68,8 @@ Reply with JSON only: {{"links": [...]}}
 SWEEP = """{owner}'s notes on how the garden works:
 {targets}
 
-Link each note that bears on one of them, for (strengthens) or against (weakens).
+Link each note that bears on one of them, for (strengthens) or against (weakens), with the note's own words that
+show it ("passage", copied exactly).
 Reply with JSON only: {{"links": [...]}}
 
 <records>
@@ -78,6 +79,8 @@ Reply with JSON only: {{"links": [...]}}
 SWEEP_CONFIRM = """Does this note {rel} this idea about the garden? Reply yes or no alone.
 
 {target}
+
+The passage at issue: {passage}
 
 <record>
 {record}

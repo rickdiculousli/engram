@@ -1009,7 +1009,8 @@ def main(argv=None):
     s.set_defaults(fn=cmd_rewire)
 
     s = sub.add_parser("refine", help="the weekly refinement: run (one pass per repo engram serves, under the week's "
-                       "cap), surface (its changes and open specs, at a session start), install (its timed job), "
+                       "cap, each leaving a page for the owner), surface (spec files that won't parse, for the agent at a session "
+                       "start), install (its timed job), "
                        "conversations (a repo's week of the owner's messages, for the pass)")
     s.add_argument("action", choices=["run", "surface", "install", "conversations"])
     s.add_argument("repo", nargs="?", help="surface: the repo's folder; conversations: its folder or its name")

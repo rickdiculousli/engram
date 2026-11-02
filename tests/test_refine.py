@@ -54,30 +54,68 @@ def test_a_run_keeps_the_ledger_under_the_weekly_cap_and_skips_a_repo_passed_thi
     assert "--max-budget-usd 5.00" in refine.run("med", show=True)[0]  # what's left of the week
 
 
-def test_surface_shows_each_landed_line_once_and_every_open_spec_from_here_and_engram(served):
-    med, own = served["med"], served["own"]
-    (own / ".engram/specs").mkdir()
-    (own / ".engram/specs/a.md").write_text("---\nstatus: open\n---\n# Fewer docs\n")
-    (own / ".engram/specs/b.md").write_text("---\nstatus: approved\n---\n# Built soon\n")
-    git(own, "add", "-A")
-    git(own, "commit", "-qm", "Fold two docs\n\nRefinement: two of engram's docs are one now")
-    (med / "x.md").write_text("x\n")
+def writer(html="<!DOCTYPE html><html>page</html>", cost=1.5):
+    """A stand-in `claude -p` for the digest: records each call and answers with the page."""
+    calls = []
+
+    def run(cmd, **kw):
+        calls.append((cmd, kw.get("input")))
+        return type("P", (), {"returncode": 0, "stdout": json.dumps({"total_cost_usd": cost, "result": f"```html\n{html}\n```"}),
+                              "stderr": ""})()
+    return run, calls
+
+
+def test_a_digest_brings_waiting_specs_and_each_change_once_then_nothing_when_nothing_waits(served):
+    med = served["med"]
+    (med / ".engram/specs").mkdir()
+    for f, status in (("a", "open"), ("b", "approved"), ("c", "deferred"), ("d", "approved\nblocked: it would rewrite the record")):
+        (med / f".engram/specs/{f}.md").write_text(f"---\nstatus: {status}\n---\n# Spec {f}\n")
     git(med, "add", "-A")
     git(med, "commit", "-qm", "Shorter rules\n\nRefinement: the advisor's rules are shorter\n\nCo-Authored-By: Claude <noreply@anthropic.com>")  # not git's trailer block
     git(med, "commit", "-q", "--allow-empty", "-m", "not the pass's")
-    out = refine.surface(med)
+    run, calls = writer()
+    cost, line = refine.digest("med", med, 3.0, run)
+    page = served["data"] / f"refine/digests/{refine.datetime.now():%Y-%m-%d}-med.html"
+    assert cost == 1.5 and line == f"page {page}" and page.read_text() == "<!DOCTYPE html><html>page</html>"
+    cmd, prompt = calls[0]
+    assert cmd[:2] == ["claude", "-p"] and cmd[cmd.index("--tools") + 1] == "" and "3.00" in cmd
+    assert "# Spec a" in prompt and "# Spec d" in prompt and "# Spec b" not in prompt and "# Spec c" not in prompt
     day = git(med, "log", "-1", "--format=%as").strip()
-    assert out.splitlines() == [
-        "Weekly refinement (open your first reply with these, one line each, in plain words):",
-        "Changed since the last session:",
-        f"- {day}: the advisor's rules are shorter",
-        f"- {day}: two of engram's docs are one now (engram)",
-        "Needs you (the owner answers yes, no or tell me more; set the spec's status to approved or rejected):",
-        f"- Fewer docs ({own / '.engram/specs/a.md'})",
-        refine.REMINDER]
-    assert "Changed" not in refine.surface(served["books"]) and "Fewer docs" in refine.surface(med)
-    (own / ".engram/specs/a.md").write_text("---\nstatus: rejected\n---\n# Fewer docs\n")
-    assert refine.surface(med) == ""
+    assert f"- {day}: the advisor's rules are shorter" in prompt and "in med when you want to deal with it" in prompt
+    assert calls[1:] == [(["open", str(page)], None)] or refine.sys.platform != "darwin"
+    refine.digest("med", med, 3.0, run)
+    assert "# Spec a" in calls[-2][1] and "rules are shorter" not in calls[-2][1]  # a change shows once, a spec until answered
+    for f in "ad":
+        (med / f".engram/specs/{f}.md").write_text("---\nstatus: rejected\n---\n")
+    n = len(calls)
+    assert refine.digest("med", med, 3.0, run) == (0.0, "") and len(calls) == n  # nothing to discuss: no page
+
+
+def test_a_digest_that_fails_marks_nothing_shown_and_one_past_the_cap_waits(served):
+    med = served["med"]
+    git(med, "commit", "-q", "--allow-empty", "-m", "Fold\n\nRefinement: two docs are one")
+    run, calls = writer(html="no page here")
+    assert refine.digest("med", med, 3.0, run) == (1.5, "no page, the writer's answer wasn't one; its items wait for the next")
+    assert refine.digest("med", med, 0.2, run)[1].startswith("no page, the week's cap is spent") and len(calls) == 1
+    run, calls = writer()
+    refine.digest("med", med, 3.0, run)
+    assert "two docs are one" in calls[0][1]
+
+
+def test_a_pass_leaves_its_page_and_pays_for_it_from_the_week(served):
+    med = served["med"]
+    (med / ".engram/specs").mkdir()
+    (med / ".engram/specs/a.md").write_text("---\nstatus: open\n---\n# Fewer docs\n")
+    run, calls = writer()
+
+    def runner(cmd, **kw):
+        if "repo=" in " ".join(cmd):
+            return type("P", (), {"returncode": 0, "stdout": json.dumps({"total_cost_usd": 10.0, "result": "ok"}), "stderr": ""})()
+        return run(cmd, **kw)
+    lines = refine.run("med", runner=runner, attached=True)
+    assert lines[0].startswith("med: ok, $10.00; week $11.50 of $50; page ") and lines[0].endswith("-med.html")
+    assert refine.ledger()[-1]["cost_usd"] == 11.5 and "Fewer docs" in calls[0][1]
+    assert refine.run("med", runner=runner, dry_run=served["tmp"] / "dry", attached=True)[0].endswith("of $50")  # a dry run: no page
 
 
 def test_install_writes_the_weekly_job(served, tmp_path):
@@ -123,59 +161,45 @@ def test_the_cli_takes_a_repo_by_name_and_never_runs_every_repo_for_a_positional
 
 
 
-def test_surface_shows_the_portrait_of_proposed_jobs_until_they_are_confirmed(served):
+def test_a_digest_carries_the_portrait_of_proposed_jobs_until_they_are_confirmed(served):
     med = served["med"]
     page = med / ".engram/README.md"
-    page.parent.mkdir(parents=True, exist_ok=True)
-    page.write_text('---\njobs: proposed\nportrait: "You keep the harvest log so next year is planned. Is that it?"\n---\n# Notes\n\n## Jobs\n')
-    assert "You keep the harvest log so next year is planned. Is that it?" in refine.surface(med)
-    assert "Is that it?" in refine.surface(med)  # every session until answered
-    page.write_text(page.read_text().replace("jobs: proposed", "jobs: confirmed"))
-    assert "Is that it?" not in refine.surface(med)
-
-
-def test_a_portrait_with_quotes_and_colons_shows_and_a_broken_page_hides_nothing_else(served):
-    med, own = served["med"], served["own"]
-    page = med / ".engram/README.md"
-    page.parent.mkdir(parents=True, exist_ok=True)
     portrait = 'You come here for two things: "keep what I tell you" and the plan. #weekly. Is that it?'
     page.write_text(f"---\njobs: proposed\nportrait: >-\n  {portrait}\n---\n# Notes\n\n## Jobs\n")
-    assert portrait in refine.surface(med)
-    git(own, "commit", "-q", "--allow-empty", "-m", "Fold\n\nRefinement: two docs are one")
-    page.write_text('---\njobs: proposed\nportrait: "You said "keep it": Is that it?"\n---\n')  # what a careless rewiring writes
-    out = refine.surface(med)
-    assert "For you, not the owner" in out and "README.md:" in out and "two docs are one" in out  # still shown, and only now marked shown
-    assert "two docs are one" not in refine.surface(med)
+    run, calls = writer()
+    refine.digest("med", med, 3.0, run)
+    refine.digest("med", med, 3.0, run)
+    assert [portrait in c[1] for c in calls if c[1]] == [True, True]  # every page until answered
+    page.write_text(page.read_text().replace("jobs: proposed", "jobs: confirmed"))
+    assert refine.digest("med", med, 3.0, run) == (0.0, "")
 
 
-def test_an_approved_spec_a_pass_couldnt_build_says_why_at_session_start(served):
-    med = served["med"]
-    (med / ".engram/specs").mkdir(parents=True, exist_ok=True)
-    (med / ".engram/specs/s.md").write_text("---\nstatus: approved\nblocked: it would rewrite the record\n---\n# Merge two pages\n")
-    assert "approved but not built: Merge two pages, because it would rewrite the record" in refine.surface(med)
-
-
-
-def test_a_spec_or_page_that_wont_parse_says_so_and_hides_nothing_else(served):
+def test_session_start_shows_only_files_that_wont_parse_and_the_digest_keeps_the_rest(served):
     med, own = served["med"], served["own"]
     (med / ".engram/specs").mkdir(parents=True, exist_ok=True)
     (med / ".engram/specs/a.md").write_text("---\nstatus: approved\nblocked: `engram.toml`: the record\n---\n# A\n")
     (med / ".engram/specs/b.md").write_text("---\nstatus: approved\nblocked: >-\n  it would touch: the record\n---\n# B\n")
-    (med / ".engram/specs/c.md").write_text("---\nstatus: open\n---\n# C\n")
-    (med / ".engram/README.md").write_text('---\njobs: confirmed\nportrait: "a "b": c"\n---\n')
+    (med / ".engram/README.md").write_text('---\njobs: proposed\nportrait: "You said "keep it": Is that it?"\n---\n')  # what a careless rewiring writes
+    git(own, "commit", "-q", "--allow-empty", "-m", "Fold\n\nRefinement: two docs are one")
     out = refine.surface(med)
-    needs, broken = out.split("For you, not the owner")
-    assert "because it would touch: the record" in needs and "- C (" in needs and "a.md" not in needs
-    assert "specs/a.md:" in broken and "README.md:" in broken and "still proposed" not in out
-
+    assert out.startswith("For you, not the owner") and "specs/a.md:" in out and "README.md:" in out
+    assert "B" not in out.replace(str(served["tmp"]), "") and "two docs" not in out
+    run, calls = writer()
+    refine.digest("med", med, 3.0, run)
+    assert "it would touch: the record" in calls[0][1] and "`engram.toml`" not in calls[0][1]
+    (med / ".engram/README.md").write_text("---\njobs: confirmed\n---\n")
+    (med / ".engram/specs/a.md").unlink()
+    assert refine.surface(med) == ""
 
 
 def test_a_half_written_seen_file_shows_changes_again_instead_of_none(served):
-    own = served["own"]
-    git(own, "commit", "-q", "--allow-empty", "-m", "Fold\n\nRefinement: two docs are one")
+    med = served["med"]
+    git(med, "commit", "-q", "--allow-empty", "-m", "Fold\n\nRefinement: two docs are one")
     (served["data"] / "refine").mkdir(parents=True, exist_ok=True)
     (served["data"] / "refine/seen.json").write_text('["abc", ')
-    assert "two docs are one" in refine.surface(served["med"])
+    run, calls = writer()
+    refine.digest("med", med, 3.0, run)
+    assert "two docs are one" in calls[0][1]
 
 
 def test_a_reverted_refinement_is_never_announced(served):
@@ -184,7 +208,7 @@ def test_a_reverted_refinement_is_never_announced(served):
     git(med, "add", "-A")
     git(med, "commit", "-qm", "Shorter rules\n\nRefinement: the advisor's rules are shorter")
     git(med, "revert", "--no-edit", "HEAD")
-    assert refine._landed(med) == [] and "shorter" not in refine.surface(med)
+    assert refine._landed(med) == []
     git(med, "revert", "--no-edit", "HEAD")  # reapplied: the change is back
     assert [line for _, _, line in refine._landed(med)] == ["the advisor's rules are shorter"]
     git(med, "revert", "--no-edit", "HEAD")  # and undone again
@@ -207,7 +231,6 @@ def test_a_failed_pass_is_told_in_health_and_only_a_free_failure_is_retried(serv
     assert refine.status()[:2] == ["weekly pass on engram: FAILED (timed out after 4 hours), $30.00",
                                    "weekly pass on med: FAILED (didn't start: FileNotFoundError: [Errno 2] No such file or "
                                    "directory: 'claude'), $0.00"]
-    assert "failed" not in refine.surface(served["med"]).lower()  # never told to the owner
 
 
 def test_a_pass_stopped_mid_run_keeps_its_cap_spent_and_is_never_rerun_for_free(served):

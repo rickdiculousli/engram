@@ -1123,7 +1123,7 @@ def _root(domain: str) -> Path | None:
 def session_start(payload: dict) -> str:
     """The SessionStart hook: check the install and repair it, saying one line only if something couldn't be fixed;
     then, for a record whose entries are read straight from events, where things stand (`engram now`); then the value
-    review's lines and the weekly refinement's (`engram refine surface`)."""
+    review's lines and, for the agent, any weekly-refinement file that won't parse (`engram refine surface`)."""
     found = repo_of(payload.get("cwd") or os.environ.get("CLAUDE_PROJECT_DIR"))
     if not found:
         return ""

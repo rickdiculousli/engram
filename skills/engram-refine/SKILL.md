@@ -16,7 +16,7 @@ The prompt names `repo=<path>`, `mode=land` or `mode=dry-run <file>`, and `workt
   - its rules section, "How the weekly pass may change this repo": the user's leash. Its limits override everything below. `paused = true` under `[refine]` in `<repo>/.engram/engram.toml` → stop and write nothing.
   - its Jobs section: the yardstick. `jobs: proposed` in the page's front matter → this pass writes specs only (an approved spec is still built).
 - The repo's `AGENTS.md` (or `CLAUDE.md`): its checks and commit rules apply to every change.
-- `<repo>/.engram/specs/*.md` with `status: approved`: the user said yes. Build these first, through Land's steps. Their yes covers what the spec's plan names, even where the rules section would make it a spec, but never the record. Then set `status: built`. One it still can't build stays `approved` with `blocked: >-` in its front matter and the why, one line, indented on the next, which session start shows the owner.
+- `<repo>/.engram/specs/*.md` with `status: approved`: the user said yes. Build these first, through Land's steps. Their yes covers what the spec's plan names, even where the rules section would make it a spec, but never the record. Then set `status: built`. One it still can't build stays `approved` with `blocked: >-` in its front matter and the why, one line, indented on the next, which the owner's page shows.
 - The week's conversations, by script, never a transcript whole:
   `engram refine conversations <repo>`
   (`--session <id>` reads one session). They are the only evidence of use: never a question set, eval or fixture, and never agent-written audits, reviews or notes. When the Jobs section names other repos, read theirs too.
@@ -71,7 +71,7 @@ status: open
 - **Plan:** how it would be built, short enough to build from once approved.
 ```
 
-The session-start hook shows each open spec as one "Needs you" item, and each landed change's trailer once. The user answers yes, no or "tell me more"; the advisor sets `status: approved` or `rejected`.
+After the pass, engram writes the user a page of each open spec and each landed change's trailer; they answer in a later session, where the advisor sets `status: approved`, `rejected` or `deferred`. A deferred spec is the user's to raise again: never build it, rewrite it or spec its idea anew.
 
 ## Report
 

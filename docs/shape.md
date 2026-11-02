@@ -53,9 +53,9 @@ The layout every record takes in engram, and the lessons learned getting real re
 
 ## What reaches the owner
 
-- **A call that needs the owner comes at the start of their next session in the repo it concerns.** In a repo with a "what you missed" note, it's the note's first line, under "Needs you". Otherwise the advisor opens with it. Either way it's one sentence: the call, in plain words, with the advisor's recommendation.
+- **A call that needs the owner comes at the start of their next session in the repo it concerns,** except the weekly pass's, which come as its page in the browser ([technical](technical.md#the-weekly-refinement)) for the owner to bring into a session when they choose. In a repo with a "what you missed" note, it's the note's first line, under "Needs you". Otherwise the advisor opens with it. Either way it's one sentence: the call, in plain words, with the advisor's recommendation.
 - **Nothing changes until the owner answers.** The waiting change stays parked, and the question is asked again each session until they do.
-- **Nothing reaches the owner any other way:** no email, notifications or lists to check.
+- **Nothing else reaches the owner:** no email, notifications or lists to check.
 - **Everything that doesn't need the owner lands on its own** and says what it fixed in its commit message, which they never have to read. A fix that changes what they'll see gets one line in their next note.
 - **Only certain calls are the owner's:** what goes into their record, where their data lives, who can see it, and money.
 
@@ -75,7 +75,7 @@ Everything engram and its weekly pass keep in a repo, and nothing else, except t
 | `engram.toml` | the record's data, its rewiring (`[rewire]`, `[departures]`), `[refine] paused` | rewiring, `engram exclude`, the agent | every command |
 | `__init__.py`, `tests/` | the pack (below) | the agent, in a release | engram at the pinned commit |
 | `hooks/` | git's pre-commit: `engram lint` and the drift check | `engram setup` | git |
-| `specs/` | the weekly pass's proposals, one file each | the weekly pass | session start, the owner |
+| `specs/` | the weekly pass's proposals, one file each | the weekly pass | its page, the owner's sessions |
 
 ## A pack
 
@@ -92,7 +92,7 @@ What makes engram speak an area's language, kept in the area's own repo in `.eng
 Onboarding is the first rewiring. The `engram-rewire` skill (`skills/engram-rewire/SKILL.md`) drives it: the model judges, and `engram rewire` checks what it could get wrong silently.
 
 1. **The owner's words,** typed in the repo's sessions: `engram rewire turns`.
-2. **Their jobs and failures,** each quoting them word for word, in the Jobs section of the repo's `.engram/README.md`, and a short portrait ending "Is that it?", kept as the page's `portrait:` and shown at session start until they answer. Their reply confirms it; silence leaves it proposed.
+2. **Their jobs and failures,** each quoting them word for word, in the Jobs section of the repo's `.engram/README.md`, and a short portrait ending "Is that it?", kept as the page's `portrait:` and shown on each weekly page until they answer. Their reply confirms it; silence leaves it proposed.
 3. **The repo's facts:** `engram rewire analyse`.
 4. **The kinds of ask,** each with the axis it's organised on and the piece that serves it:
 

@@ -373,13 +373,13 @@ def _theory(db, num: dict[str, int], domain: str | None = None, then: str | None
     g = th.load(repo) if repo and record_toml(repo).exists() else th.Graph({}, [], {})
     by_file = {t.file: t for t in g.things.values() if t.file}
     nodes: dict[str, dict] = {}
-    loop_for: dict[str, set] = {}
+    loop_ev: dict[str, dict[str, set]] = {}
     for ref, n in num.items():
         for to, rel in db.execute("SELECT to_ref, rel FROM link WHERE from_ref = ? AND rel IN ('strengthens', 'weakens')", (ref,)):
             file = to.split("#", 1)[0]
             thing = by_file.get(file)
             if thing and thing.kind in ("loop", "node", "state", "treatment"):  # a loop shows below, with its path
-                loop_for.setdefault(thing.id, set()).add(n)
+                loop_ev.setdefault(thing.id, {"for": set(), "against": set()})["for" if rel == "strengthens" else "against"].add(n)
                 continue
             key = file if re.search(r"/D\d+-", file) or file.startswith(("evidence/staging/", "questions/")) else to
             node = nodes.setdefault(key, {"for": set(), "against": set(), "refs": set()})
@@ -429,9 +429,12 @@ def _theory(db, num: dict[str, int], domain: str | None = None, then: str | None
     for l in loops:
         doc = th.node_doc(g, l, refs_of(l))
         nid = db.execute("SELECT nid FROM doc WHERE ref = ? OR parent = ? LIMIT 1", (doc, doc)).fetchone() if doc else None
-        out.append({"theory": g.things[l].short, "status": g.status.get(l, ("",))[0],
-                    "what": f"{g.things[l].title.split(' — ', 1)[-1]}: {g.draw(l)}", "for": len(loop_for.get(l, ())),
-                    "id": nid[0] if nid else "", "_refs": [doc] if doc else []})
+        ev = loop_ev.get(l, {"for": set(), "against": set()})
+        row = {"theory": g.things[l].short, "status": g.status.get(l, ("",))[0],
+               "what": f"{g.things[l].title.split(' — ', 1)[-1]}: {g.draw(l)}", "for": len(ev["for"]),
+               "against": sorted(ev["against"]) if len(ev["against"]) <= 10 else len(ev["against"]),
+               "id": nid[0] if nid else "", "_refs": [doc] if doc else []}
+        out.append({k: v for k, v in row.items() if v != [] or k == "_refs"})
         shown |= {l, *g.path(l)}
     cited = [t for t in cited_order if t.startswith(("discovery/", "pattern/"))]
     focus = set(loops) | named | set(cited[:JOIN_FOCUS])  # the joins on what the answer leans on most

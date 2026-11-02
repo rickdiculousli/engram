@@ -122,6 +122,19 @@ def test_a_timeline_shows_only_the_loops_it_touches_with_their_path(rec):
     assert joins and joins[0]["_refs"] == [rec["join"]] and "D01 → Loop 1, shared-cause" in joins[0]["what"]
 
 
+def test_a_loop_counts_weakening_records_against_it_not_for_it(rec):
+    st = Store(rec["repo"])
+    knee = next(e for e in st.events() if e.fm.get("title") == "Knee tight")
+    cramp = next(e for e in st.events() if e.fm.get("title") == "Cramp flare")
+    st.add({"kind": "link", "family": "evidence", "rel": "strengthens", "from": knee.id, "to": "loop/1", "title": "ev"}, "")
+    st.add({"kind": "link", "family": "evidence", "rel": "weakens", "from": cramp.id, "to": "loop/1", "title": "ev"}, "")
+    main(["ingest", "--domain", "medical"])
+    _, rows = timeline.chain("medical", ["knee", "calf"])
+    [loop] = [r for r in rows if r.get("theory") == "Loop 1"]
+    n = {r["_ref"]: r["n"] for r in rows if "_ref" in r}
+    assert loop["for"] == 1 and loop["against"] == [n[cramp.id]]
+
+
 def _fix(st, to, title, date, recorded, rel="revises", note="- what changed", about=("series/_observations", "story/calf"), body="- fixed.\n"):
     e = st.add({"kind": "observation", "title": title, "date": date, "recorded": recorded, "about": list(about), "by": "sam"}, body)
     st.add({"kind": "link", "family": "evidence", "rel": rel, "from": e.id, "to": to, "title": "fix",

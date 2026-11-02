@@ -95,7 +95,7 @@ class Source:
 @dataclass
 class Pack:
     prompts: dict[str, str] = field(default_factory=dict)  # the area's model calls, by name (file, theory, structure,
-    # verify, record, relink, relink_system, recsum_system); core fills {owner}, {owner_id} and each call's fields
+    # verify, record, renew, relink, relink_system, recsum_system); core fills {owner}, {owner_id} and each call's fields
     current: Current = field(default_factory=Current)
     kinds: tuple[str, ...] = ()  # the entry kinds the filer may write, the first for anything else; none named, the
     # kinds the record already holds

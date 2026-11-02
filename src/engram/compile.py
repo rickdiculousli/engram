@@ -468,12 +468,60 @@ def run(domain: str, ask=None, only: list[str] | None = None) -> dict:
             r = compile_item(domain, ref, ask)
             out["usd"] += r["usd"]
             out["compiled" if r["ok"] else "failed"].append(r)
+        refresh(domain)
     return out
 
 
+# the index and the open list, from the pages
+def label(b: Book, it: Item) -> str:
+    if it.kind == "source":
+        t = b.titles.get(it.key, "")
+        return wiki.link(f"{wiki.SOURCES}/{t}", t) if t in b.sources else wiki.one_line(it.title)
+    if it.path:
+        return wiki.link(it.path.removesuffix(".md"), it.title)
+    words = it.text.split()
+    return f"a spark: “{' '.join(words[:12])}{'…' if len(words) > 12 else ''}”"
+
+
+def loose(b: Book) -> list[wiki.Spark]:
+    """The sparks no concept has taken yet."""
+    taken = {recsum._norm(sp.text) for c in b.concepts.values() for sp in c.sparks}
+    sparks = sorted((it for it in b.its.values() if it.kind == "spark"), key=lambda it: (it.fm.get("date", ""), it.key))
+    return [wiki.Spark(it.fm.get("date", ""), it.text.strip("\n")) for it in sparks if recsum._norm(it.text) not in taken]
+
+
+def index_page(b: Book) -> str:
+    return wiki.render_index(list(b.concepts.values()), list(b.sources.values()), loose(b), b.vault())
+
+
+def open_page(domain: str, b: Book, now: float | None = None) -> str:
+    """What's open: items that couldn't be compiled or haven't been, pages an item couldn't be added to, what code
+    finds wrong with the pages, and what the health check left for the owner."""
+    s = state(domain)
+    by_ref = {it.ref: it for it in b.its.values()} | {k: it for k, it in b.its.items()}
+    def item(ref):
+        return label(b, by_ref[ref]) if ref in by_ref else ref
+    rows = [("Couldn't be compiled (tried twice; tried again when it changes)", [label(b, it) for it in parked(domain, b.its)]),
+            ("Not compiled yet", [item(r) for r in due(domain, b.its, now)]),
+            ("Pages an item couldn't be added to", [f"{wiki.concept_link(x['concept']) if b.concept(x['concept']) else x['concept']}"
+                                                    f" from {item(x['item'])}: {'; '.join(x['why'])}" for x in s["parked"]])]
+    rows += list(wiki.findings(list(b.concepts.values()), list(b.sources.values()), b.vault()).items())
+    rows += [(head, list(found)) for head, found in sorted(s.get("found", {}).items())]
+    return wiki.render_open(rows)
+
+
+def refresh(domain: str, now: float | None = None) -> list[str]:
+    """`wiki/index.md` and `wiki/open.md` rebuilt from the pages at HEAD, committed when they changed."""
+    root = Path(config.load()[domain].repo)
+    b = book(root)
+    pages = {f"{wiki.DIR}/index.md": index_page(b), f"{wiki.DIR}/open.md": open_page(domain, b, now)}
+    pages = {k: v for k, v in pages.items() if at_head(root, k) != v}
+    return write(root, pages, commitmsg.message("wiki_index")) if pages else []
+
+
 def health(domain: str, ask=None) -> dict:
-    """The wiki's health check. It arrives with the index."""
-    return {"usd": 0.0}
+    """The wiki's health check. It arrives with merging."""
+    return {"usd": 0.0, "refreshed": refresh(domain)}
 
 
 def domain_of(root: Path) -> str | None:

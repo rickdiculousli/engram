@@ -425,3 +425,73 @@ def kept(old: Concept | None, new: Concept, summary_may_change: bool, rewrites: 
     if (new.pillar, new.aliases[:len(old.aliases)]) != (old.pillar, old.aliases):
         out.append("the pillar or an alias changed")
     return out
+
+
+# the pages code writes from the others
+def _n(n: int, word: str) -> str:
+    return f"{n} {word}{'' if n == 1 else 's'}"
+
+
+def counts(c: Concept, v: Vault) -> str:
+    """What stands behind a concept: its sources, its steelmans and how many are unanswered, and, while no post uses
+    it, the sparks waiting on it (a post to write)."""
+    out = _n(len({s.source for s in c.sources}), "source")
+    if c.against:
+        out += f", {_n(len(c.against), 'steelman')} ({sum(not v.answered(s) for s in c.against)} unanswered)"
+    if c.sparks and not c.writing:
+        out += f"; {_n(len(c.sparks), 'spark')}, no draft yet"
+    return out
+
+
+def render_index(concepts: list[Concept], sources: list[Source], loose: list[Spark], v: Vault, latest: int = 10) -> str:
+    """A map of contents by pillar, in the order the pillars are named, each concept with its summary's first sentence
+    and what stands behind it; then the sparks no concept has taken yet, and the latest sources."""
+    out = ["# Index", ""]
+    order = v.pillars + sorted({c.pillar for c in concepts} - set(v.pillars))
+    for p in order:
+        cs = sorted((c for c in concepts if c.pillar == p), key=lambda c: c.name.lower())
+        if cs:
+            out += [f"## {p[:1].upper() + p[1:]}", ""]
+            out += [f"- {concept_link(c.name)}: {(sentences(c.summary) or [''])[0]} {counts(c, v)}" for c in cs] + [""]
+    if loose:
+        out += ["## Sparks no concept has taken yet", ""]
+        for s in loose:
+            out += _spark(s) + [""]
+    if sources:
+        out += ["## Latest sources", ""]
+        out += [f"- {link(s.target, s.title)}" + (f" ({s.by}, {s.date})" if s.by else f" ({s.date})")
+                for s in sorted(sources, key=lambda s: (s.date, s.title), reverse=True)[:latest]] + [""]
+    return "\n".join(out).rstrip("\n") + "\n"
+
+
+def findings(concepts: list[Concept], sources: list[Source], v: Vault) -> dict[str, list[str]]:
+    """What code finds wrong with the pages: links that go nowhere, answers whose quote no longer checks (the post
+    changed), and concepts no other page links to."""
+    broken, stale, linked = [], [], set()
+    pages = [(c.path, render_concept(c)) for c in concepts] + [(s.path, render_source(s)) for s in sources]
+    for path, text in pages:
+        for t in _links(text):
+            r = v.resolve(t)
+            if not r:
+                broken.append(f"{link(path.removesuffix('.md'), page_name(path))} links {t}, which isn't there")
+            elif r != path:
+                linked.add(r)
+    for c in concepts:
+        for s in c.against:
+            if s.answer and not v.answered(s):
+                stale.append(f"{concept_link(c.name)}: the answer from {s.answer.label} no longer says "
+                             f"“{s.answer.quote}”; it counts as unanswered")
+    return {"Links that go nowhere": broken, "Answers that no longer check": stale,
+            "Concepts no page links to": [concept_link(c.name) for c in concepts if c.path not in linked]}
+
+
+def page_name(path: str) -> str:
+    return path.rsplit("/", 1)[-1].removesuffix(".md")
+
+
+def render_open(sections: list[tuple[str, list[str]]]) -> str:
+    out = ["# Open", ""]
+    for head, rows in sections:
+        if rows:
+            out += [f"## {head}", "", *[f"- {r}" for r in rows], ""]
+    return "\n".join(out if len(out) > 2 else out + ["Nothing open."]).rstrip("\n") + "\n"

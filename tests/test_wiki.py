@@ -319,3 +319,34 @@ def test_a_run_compiles_what_is_due_one_run_per_area(area):
     assert [r["item"] for r in out["compiled"]][0] == s1.id and len(out["compiled"]) == 2 and out["usd"] == 0.02
     assert "- [[posts/cues|Cues]]: Cues beat willpower, as the post says." in head(area, "wiki/concepts/Cues.md")
     assert cmp.run("essays", ask=ask)["compiled"] == []  # nothing twice
+
+
+def test_the_index_and_open_list_are_written_from_the_pages_and_a_rebuild_is_byte_identical(compiled):
+    from engram import compile as cmp
+    repo = compiled["repo"]
+    cmp.compile_item("essays", "drafts/streaks.md", ask=replies({"concepts": [{"name": "Cues", "line": "Streaks follow cues.",
+                                                                               "answers": [{"steelman": "S1", "quote": "A streak is a story we tell"}]}]}))
+    st = store.Store(repo)
+    placed = intake.add(st, "spark", "Willpower is a story too.")
+    cmp.compile_item("essays", placed.id, ask=replies({"concept": "Willpower"}))
+    intake.add(st, "spark", "Gardens teach patience.")
+    s = cmp.state("essays")
+    s["found"] = {"Worth looking up (nothing is fetched until you say go)": ["A study of cues outside the lab"]}
+    cmp.save("essays", s)
+    assert cmp.refresh("essays") == ["wiki/index.md", "wiki/open.md"]
+    index = head(repo, "wiki/index.md")
+    assert index.startswith("# Index\n\n## Habits\n\n")
+    assert ("- [[wiki/concepts/Cues|Cues]]: Cues start habits. 1 source, 1 steelman (0 unanswered)\n"
+            "- [[wiki/concepts/Willpower|Willpower]]: Willpower is effort. 1 source; 1 spark, no draft yet\n") in index
+    assert "## Sparks no concept has taken yet\n\n> [!quote] Spark, " in index and "Gardens teach patience." in index
+    assert "Willpower is a story too." not in index
+    assert "## Latest sources\n\n- [[wiki/sources/A habits study|A habits study]] (Ada Lane, " in index
+    opened = head(repo, "wiki/open.md")
+    assert "## Not compiled yet\n\n- a spark: “Gardens teach patience.”" in opened
+    assert "## Worth looking up (nothing is fetched until you say go)\n\n- A study of cues outside the lab" in opened
+    assert cmp.refresh("essays") == []  # a rebuild is byte-identical: nothing to commit
+    (repo / "drafts/streaks.md").write_text("title: Streaks\n___\nCues matter more than streaks.\n")
+    git(repo, "commit", "-qam", "the draft changes")
+    assert cmp.refresh("essays") == ["wiki/index.md", "wiki/open.md"]
+    assert "1 steelman (1 unanswered)" in head(repo, "wiki/index.md")
+    assert "## Answers that no longer check\n\n- [[wiki/concepts/Cues|Cues]]: the answer from Streaks no longer says" in head(repo, "wiki/open.md")

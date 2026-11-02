@@ -26,12 +26,13 @@ def _git(root: Path, *args: str, env: dict | None = None) -> subprocess.Complete
     return subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, env=env)
 
 
-def apply(st: store.Store, paths: list[str], why: str, drop_links: list[str] = (), drop_run: str | None = None) -> list[str]:
+def apply(st: store.Store, paths: list[str], why: str, drop_links: list[str] = (), drop_run: str | None = None,
+          line: str | None = None) -> list[str]:
     """Commits the working tree's edits and deletions of `paths` (event files) and drops the `drop_links` lines, and
     every sweep link commit `drop_run` filed that's still there; returns the committed paths. Refuses, changing
     nothing, when a listed file is unchanged or not an event at HEAD, an edit changes an id or doesn't parse, another
     event file is changed, a link id isn't found, a link left behind points at a deleted event, or `drop_run` filed no
-    sweep link that's left."""
+    sweep link that's left. `line`, when given, is the commit's `Refinement:` line, for the weekly page."""
     if not why.strip():
         raise Refused("say why: --why names the mechanical error")
     if not (paths or drop_links or drop_run):
@@ -54,6 +55,8 @@ def apply(st: store.Store, paths: list[str], why: str, drop_links: list[str] = (
         msg = commitmsg.message("fix", why=why.strip())
     except commitmsg.AmountInMessage as e:
         raise Refused(str(e)) from None
+    if line:
+        msg = msg.replace("\n\nEngram-Fix:", f"\n\nRefinement: {commitmsg.check(line)}\n\nEngram-Fix:", 1)
     if run:  # git revert's line: the weekly page treats the run as reverted
         msg = msg.replace("\n\nEngram-Fix:", f"\n\nThis reverts commit {run}.\n\nEngram-Fix:", 1)
     paths = list(dict.fromkeys(Path(p).as_posix() for p in paths))

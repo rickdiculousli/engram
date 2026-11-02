@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from conftest import make_repo
+from conftest import git, make_repo
 from engram import capture, relink, setup, store, theory, theorychange as tc
 from engram.paths import data_path
 
@@ -186,3 +186,83 @@ def test_the_sweep_files_only_what_the_guards_keep_and_the_second_call_confirms(
     (rec / "consults/visit.md").write_text("# Visit\n\nThe knee scan shows mild wear, worse than last year.\n")
     again = relink.sweep(rec, ask=ask, confirm=confirm, dry_run=True)  # only a changed record is read again
     assert again["unread"] == 1 and "already linked" in [d["why"] for d in again["dropped"] if d["record"] == "consults/visit.md"]
+
+
+COMMITTED = TOML.replace('commit = "none"\n', "")
+
+
+@pytest.fixture
+def placed(env, monkeypatch):
+    """A record whose links are committed: on Loop 1, one link the sweep placed and one the owner made; on D01, one the
+    re-check placed."""
+    monkeypatch.setenv("ENGRAM_NO_RELINK", "1")
+    repo = make_repo(env["tmp"] / "repos/med", {
+        ".engram/engram.toml": COMMITTED, "theory/node-A.md": node("node/A", "node", "stiffness", ["stiffness"]),
+        "theory/node-B.md": node("node/B", "node", "knee", ["knee"]), "theory/node-C.md": node("node/C", "node", "ankle", ["ankle"]),
+        "theory/loop-1.md": node("loop/1", "loop", "Loop 1"),
+        "evidence/D01-cold.md": "---\nid: D01\ntitle: Cold mornings stiffen the knee\n---\n# D01\n\nCold stiffens it.\n",
+        "consults/visit.md": "# Visit\n\nThe knee scan shows mild wear.\n", "consults/walk.md": "# Walk\n\nThe ankle ached after the cold walk.\n"})
+    env["set_repo"]("medical", repo)
+    ev = {"date": "2026-03-01", "kind": "link", "family": "evidence"}
+    with store.Store(repo).transaction() as tx:
+        for i, (a, b) in enumerate([("node/A", "node/B"), ("node/B", "node/C"), ("node/C", "node/A")], 1):
+            tx.add(step(a, b, i), f"step {i}")
+        tx.add({**ev, "title": "weakens Loop 1", "about": ["loop/1"], "from": "consults/visit.md", "to": "loop/1", "rel": "weakens",
+                "by": "claude", "author": "engram-sweep"}, "the knee scan shows mild wear")
+        tx.add({**ev, "title": "strengthens Loop 1", "about": ["loop/1"], "from": "consults/walk.md", "to": "loop/1",
+                "rel": "strengthens", "by": "sam"}, "")
+        tx.add({**ev, "title": "strengthens D01", "about": ["discovery/D01"], "from": "consults/walk.md", "to": "discovery/D01",
+                "rel": "strengthens", "by": "claude", "author": "engram-relink"}, "the cold walk")
+    return repo
+
+
+def _no_to_wear(asked):
+    def confirm(prompt):
+        asked.append(prompt)
+        return ("no" if "mild wear" in prompt.split("<record>")[1] else "yes"), 0.1
+    return confirm
+
+
+def test_a_recheck_reads_only_what_engram_placed_drops_a_no_for_the_weekly_page_and_remembers_it(placed, monkeypatch):
+    from engram import refine
+    from engram.cli import main
+    asked = []
+    monkeypatch.setattr(relink, "_asker", lambda system, effort="low": _no_to_wear(asked))
+    main(["theory", "recheck", "loop/1", "--domain", "medical"])  # on request
+    assert len(asked) == 1 and "Cold stiffens it." not in asked[0]  # only engram's link to Loop 1; never the owner's
+    links = [e for e in store.Store(placed).events(kind="link") if e.fm.get("family") == "evidence"]
+    assert {(e.fm["from"], e.fm["to"]) for e in links} == {("consults/walk.md", "loop/1"), ("consults/walk.md", "discovery/D01")}
+    assert "Engram-Fix:" in git(placed, "log", "-1", "--format=%B") and len(refine._landed(placed)) == 1
+    asked.clear()
+    relink.recheck(placed, ["discovery/D01"], confirm=_no_to_wear(asked))
+    assert len(asked) == 1 and len(store.Store(placed).events(kind="link")) == 5  # a yes keeps it
+
+    def ask(prompt):
+        return json.dumps({"links": [{"record": "consults/visit.md", "to": "loop/1", "rel": "weakens",
+                                      "passage": "the knee scan shows mild wear"}]}), 0.5
+    out = relink.sweep(placed, ask=ask, confirm=lambda p: ("yes", 0.1), dry_run=True)
+    assert not out["links"] and [d["why"] for d in out["dropped"]] == ["dropped on re-reading; its target hasn't changed since"]
+    (placed / "theory/loop-1.md").write_text((placed / "theory/loop-1.md").read_text() + "\nThe knee wears first.\n")
+    relink._progress(store.Store(placed), True).unlink()  # read the record afresh against the changed loop
+    assert [x["from"] for x in relink.sweep(placed, ask=ask, confirm=lambda p: ("yes", 0.1), dry_run=True)["links"]] == ["consults/visit.md"]
+
+
+def test_the_weekly_sweep_rereads_what_engram_placed_on_a_target_that_changed(placed):
+    quiet = lambda prompt: (json.dumps({"links": []}), 0.5)
+    asked = []
+    first = relink.sweep(placed, ask=quiet, confirm=_no_to_wear(asked))
+    assert first["batches"] == 1 and not asked  # nothing changed yet: nothing re-read
+    (placed / "theory/loop-1.md").write_text((placed / "theory/loop-1.md").read_text() + "\nThe knee wears first.\n")
+    git(placed, "commit", "-qam", "loop 1 sharpened")
+    out = relink.sweep(placed, ask=quiet, confirm=_no_to_wear(asked))
+    assert len(asked) == 1 and "The knee wears first." in asked[0] and out["recheck"]["dropped"] == 1
+    asked.clear()
+    assert relink.sweep(placed, ask=quiet, confirm=_no_to_wear(asked))["batches"] == 0 and not asked  # read once per change
+
+
+def test_a_structural_change_rereads_what_engram_placed_on_the_loop_against_its_new_path(placed):
+    r = tc.apply(placed, INSERT, why="hip tightness sits between them")
+    asked = []
+    relink.run(r.change, ask=lambda p: (json.dumps({"links": []}), 0.1), confirm=_no_to_wear(asked))
+    assert len(asked) == 1 and "stiffness → knee → hip → ankle → stiffness" in asked[0]
+    assert ("consults/visit.md", "loop/1") not in {(e.fm["from"], e.fm["to"]) for e in store.Store(placed).events(kind="link")}

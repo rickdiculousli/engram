@@ -96,7 +96,7 @@ def targets(s: dict, g: theory.Graph) -> tuple[list[str], list[str]]:
     return [t for t in dict.fromkeys(out) if t in g.things], [f"link/{x['id']}" for x in s.get("retired", [])]
 
 
-def run(change: str, ask=None, dry_run: bool = False, limit: int | None = None, force: bool = False) -> dict:
+def run(change: str, ask=None, dry_run: bool = False, limit: int | None = None, force: bool = False, confirm=None) -> dict:
     """Re-check one change; returns counts (and, for a dry run, the links it would file). Runs once per change; `force`
     restarts one left running by a crash."""
     with theorychange.db() as c:
@@ -113,7 +113,7 @@ def run(change: str, ask=None, dry_run: bool = False, limit: int | None = None, 
         raise SystemExit(f"engram: {repo}'s pack has no `relink` words; its evidence isn't re-checked")
     ask = ask or _asker(words.get("relink_system", ""))
     try:
-        return _run(change, repo, s, ask, dry_run, limit)
+        return _run(change, repo, s, ask, dry_run, limit, confirm)
     except Exception as e:
         if not dry_run:
             with theorychange.db() as c:
@@ -121,7 +121,10 @@ def run(change: str, ask=None, dry_run: bool = False, limit: int | None = None, 
         raise
 
 
-def _run(change: str, repo: Path, s: dict, ask, dry_run: bool, limit: int | None) -> dict:
+def _run(change: str, repo: Path, s: dict, ask, dry_run: bool, limit: int | None, confirm=None) -> dict:
+    loops = [x["id"] for x in s.get("loops", [])]
+    if loops and not dry_run:  # what engram placed on a revised loop is read again against its new path
+        recheck(repo, loops, confirm, why=f"theory change {change}")
     st = Store(repo)
     g = theory.load(repo)
     tgts, gone = targets(s, g)
@@ -136,6 +139,7 @@ def _run(change: str, repo: Path, s: dict, ask, dry_run: bool, limit: int | None
             held.setdefault(rec_of(e.fm.get("from")), []).append(str(e.fm.get("to")))
     p = pack.for_repo(repo)
     recs = records(repo, p.relink_skip)
+    refused = _refused(st, repo, g, reg)
     things = "\n".join(f"{t.id}\t{t.title}" for t in g.things.values() if t.kind in ("node", "state", "loop"))
     why = f"; why: {s['why']}" if s.get("why") else ""
     out = {"change": change, "batches": 0, "records": len(recs), "links": [], "dropped": [], "usd": 0.0}
@@ -146,7 +150,7 @@ def _run(change: str, repo: Path, s: dict, ask, dry_run: bool, limit: int | None
                                        targets=", ".join(tgts + gone), retired_ids=", ".join(gone) or "none", records=text))
         out["usd"] += usd
         out["batches"] += 1
-        _check(reply, {i: d for i, d, _ in b}, allowed, have, out, gone)
+        _check(reply, {i: d for i, d, _ in b}, allowed, have, out, gone, refused=refused)
     bear: dict[str, int] = {}
     for ln in out["links"]:
         if not ln["to"].startswith("link/") and not ln["moved_from"]:
@@ -177,11 +181,11 @@ def _norm(text: str) -> str:
 
 
 def _check(reply: str, ids: dict[str, str], allowed: set[str], have: set, out: dict, gone=(), off="isn't part of the change",
-           texts: dict[str, str] | None = None):
+           texts: dict[str, str] | None = None, refused: set = frozenset()):
     """The code's guards on one batch's reply, into out["links"] and out["dropped"]: the record is in the batch, the
     target is allowed, the rel is strengthens or weakens, a move is off a retired step, the link isn't held already
-    (`have`, (record, target, rel), grows with each one kept), and, given the records' `texts`, its passage is the
-    record's own words."""
+    (`have`, (record, target, rel), grows with each one kept), it wasn't dropped on re-reading against the target as it
+    stands (`refused`), and, given the records' `texts`, its passage is the record's own words."""
     start = reply.find("{")
     reply_ = json.JSONDecoder().raw_decode(reply[start:])[0] if start >= 0 else {}  # the first object: text may follow it
     for ln in reply_.get("links", []):
@@ -198,6 +202,8 @@ def _check(reply: str, ids: dict[str, str], allowed: set[str], have: set, out: d
             out["dropped"].append({"record": rec, "why": "passage not in the record"})
         elif moved and moved not in gone:
             out["dropped"].append({"record": rec, "why": f"moved from {moved}, not a retired step"})
+        elif (rec, to, rel) in refused:
+            out["dropped"].append({"record": rec, "why": "dropped on re-reading; its target hasn't changed since"})
         elif (rec, to, rel) in have:
             out["dropped"].append({"record": rec, "why": "already linked"})
         else:
@@ -218,6 +224,101 @@ def _file(st: Store, g: theory.Graph, reg, links: list[dict], message: str, sour
                   "date": ln["date"] or day, "domain": dom, "kind": "link", "about": [ln["to"]], "by": "claude",
                   "source": source, "author": author, "from": ln["from"], "to": ln["to"], "family": "evidence", "rel": ln["rel"]}
             tx.add(docreg.id_ends(reg, st, fm) if reg else fm, note)  # a document by its stable id, its path the hint
+
+
+PLACED = ("engram-sweep", "engram-relink")  # the authors of the links engram places, by=claude: the only ones read again
+
+
+def _about(repo: Path, g: theory.Graph, t: theory.Thing) -> str:
+    """A loop or Discovery as the sweep's calls see it: its status, a loop's path, its text. Its hash is its version."""
+    body = frontmatter.split((repo / t.file).read_text())[1].strip() if t.file and (repo / t.file).exists() else ""
+    status = g.status.get(t.id, ("",))[0]
+    return f"<target id=\"{t.id}\"{f' status=\"{status}\"' if status else ''}>\n" + \
+           (f"path: {g.draw(t.id)}\n" if t.kind == "loop" else "") + f"{body}\n</target>"
+
+
+def _version(text: str) -> str:
+    return hashlib.sha1(text.encode()).hexdigest()[:16]
+
+
+def _targets(g: theory.Graph, reg):
+    """The loops and Discoveries, and a link end's target among them: its id, its file, a section or its doc id."""
+    tg = {t.id: t for t in g.things.values() if t.kind in ("loop", "discovery")}
+    by_file = {t.file: t.id for t in tg.values()}
+
+    def thing_of(x) -> str | None:
+        if str(x) in tg:
+            return str(x)
+        w = reg.resolve(str(x)) if reg else None
+        return by_file.get(w.path if w else str(x).split("#", 1)[0])
+    return tg, thing_of
+
+
+def _dropped(st: Store) -> Path:
+    """Links dropped on re-reading, each with the version of its target it was dropped against."""
+    return data_path("sweep") / f"{st.config.get('domain', {}).get('name', 'domain')}.dropped.json"
+
+
+def _refused(st: Store, repo: Path, g: theory.Graph, reg) -> set:
+    """(record, target, rel) of each link dropped on re-reading whose target hasn't changed since."""
+    path = _dropped(st)
+    if not path.exists():
+        return set()
+    tg, _ = _targets(g, reg)
+    now = {t: _version(_about(repo, g, tg[t])) for t in tg}
+    return {(x["from"], x["to"], x["rel"]) for x in json.loads(path.read_text()) if now.get(x["to"]) == x["version"]}
+
+
+def recheck(repo: Path, targets: list[str], confirm=None, cap: float = 10.0, dry_run: bool = False,
+            why: str = "") -> dict:
+    """Reads again each link engram placed (`PLACED`, by=claude) on these loops and Discoveries, never the owner's, with
+    the confirming call (`sweep_confirm`) against the target as it stands now. A no drops it through `engram fix`, in
+    one commit whose `Refinement:` line is the weekly page's, and remembers it against that version of its target, so
+    neither the sweep nor the re-check files it again until the target changes. Never starts a call past `cap`."""
+    from engram import fix
+    p = pack.for_repo(repo)
+    out = {"read": 0, "kept": 0, "dropped": 0, "usd": 0.0, "stopped": False}
+    if not p.prompts.get("sweep_confirm"):
+        return out
+    st, g, reg = Store(repo), theory.load(repo), docreg.load(repo)
+    rec_of = _rec_of(reg)
+    tg, thing_of = _targets(g, reg)
+    links = [(e, t) for e in st.events(kind="link") if e.fm.get("family") == "evidence" and e.fm.get("by") == "claude"
+             and e.fm.get("author") in PLACED and e.fm.get("rel") in RELS and (t := thing_of(e.fm.get("to"))) in targets]
+    if not links:
+        return out
+    confirm = confirm or _asker(p.prompts.get("relink_system", ""))
+    text_of = {i: (d, t) for i, d, t in records(repo, p.relink_skip)}
+    about = {t: _about(repo, g, tg[t]) for t in {t for _, t in links}}
+    drop, biggest = [], 0.0
+    for e, t in links:
+        rec = rec_of(e.fm.get("from"))
+        if rec not in text_of:
+            continue
+        if out["usd"] + biggest > cap:
+            out["stopped"] = True
+            break
+        d, text = text_of[rec]
+        reply, usd = confirm(config.voice(p.prompts["sweep_confirm"]).format(
+            record=f"[{rec}] date {d or 'undated'}\n{text}", passage=" ".join(e.body.split()), target=about[t], rel=e.fm["rel"]))
+        out["usd"] += usd
+        biggest = max(biggest, usd)
+        out["read"] += 1
+        if re.match(r"\W*yes\b", reply, re.I):
+            out["kept"] += 1
+        else:
+            drop.append((e, rec, t))
+    out["dropped"] = len(drop)
+    if drop and not dry_run:
+        names = ", ".join(sorted({g.label(t) for _, _, t in drop}))
+        fix.apply(st, [], f"engram's placement on {names} didn't hold on re-reading" + (f" after {why}" if why else ""),
+                  [e.id for e, _, _ in drop], line=f"{len(drop)} links engram placed on {names} no longer held on re-reading and were dropped")
+        path = _dropped(st)
+        old = json.loads(path.read_text()) if path.exists() else []
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(old + [{"from": rec, "to": t, "rel": e.fm["rel"], "version": _version(about[t])}
+                                          for e, rec, t in drop], ensure_ascii=False))
+    return out
 
 
 SWEPT, SWEEP_CAP = "engram-sweep", 10.0  # the sweep's author, and what one run may spend
@@ -246,29 +347,25 @@ def sweep(repo: Path, ask=None, confirm=None, dry_run: bool = False, limit: int 
     confirm = confirm or _asker(p.prompts.get("relink_system", ""))
     ask = ask or _asker(p.prompts.get("relink_system", ""), SWEEP_EFFORT)
     st, g, reg = Store(repo), theory.load(repo), docreg.load(repo)
+    tg, _ = _targets(g, reg)
+    path = _progress(st, dry_run)
+    state = json.loads(path.read_text()) if path.exists() else {}
+    versions = {t: _version(_about(repo, g, tg[t])) for t in tg}
+    seen = state.get("versions", {})
+    changed = [t for t, v in seen.items() if t in versions and versions[t] != v]
+    recheck_out = recheck(repo, changed, confirm, cap, dry_run, why="its text changed") if changed else None
+    if recheck_out and recheck_out["dropped"] and not dry_run:
+        st, g, reg = Store(repo), theory.load(repo), docreg.load(repo)
     rec_of = _rec_of(reg)
-    tg = {t.id: t for t in g.things.values() if t.kind in ("loop", "discovery")}
-    by_file = {t.file: t.id for t in tg.values()}
-
-    def thing_of(x) -> str | None:  # a link's target as a loop or Discovery: its id, its file, a section or its doc id
-        if str(x) in tg:
-            return str(x)
-        w = reg.resolve(str(x)) if reg else None
-        return by_file.get(w.path if w else str(x).split("#", 1)[0])
+    tg, thing_of = _targets(g, reg)
+    about = lambda t: _about(repo, g, t)
     have = {(rec_of(e.fm.get("from")), t, rel) for e in st.events(kind="link")
             if e.fm.get("family") == "evidence" and (t := thing_of(e.fm.get("to"))) for rel in RELS}
-
-    def about(t) -> str:
-        body = frontmatter.split((repo / t.file).read_text())[1].strip() if t.file and (repo / t.file).exists() else ""
-        status = g.status.get(t.id, ("",))[0]
-        return f"<target id=\"{t.id}\"{f' status=\"{status}\"' if status else ''}>\n" + \
-               (f"path: {g.draw(t.id)}\n" if t.kind == "loop" else "") + f"{body}\n</target>"
+    refused = _refused(st, repo, g, reg)
     journal = {e.id for e in st.events(kind="journal")}
     recs = [r for r in records(repo, p.relink_skip) if r[0] not in journal]
     text_of = {i: (d, t) for i, d, t in recs}
     sig = lambda t: hashlib.sha1(t.encode()).hexdigest()[:16]
-    path = _progress(st, dry_run)
-    state = json.loads(path.read_text()) if path.exists() else {}
     if state.get("targets") != sorted(tg):
         state = {"targets": sorted(tg), "read": {}, "pending": state.get("pending", []), "confirmed": state.get("confirmed", [])}
     have |= {(x["from"], x["to"], rel) for x in state["pending"] + state["confirmed"] for rel in RELS}
@@ -277,6 +374,9 @@ def sweep(repo: Path, ask=None, confirm=None, dry_run: bool = False, limit: int 
     targets_text = "\n".join(about(t) for t in tg.values())
     out = {"records": len(recs), "unread": len(unread), "targets": len(tg), "batches": 0, "proposed": 0, "links": [],
            "dropped": [], "confirmed": [], "rejected": [], "usd": 0.0, "read_usd": 0.0, "stopped": False}
+    if recheck_out:
+        out["recheck"], out["usd"], out["stopped"] = recheck_out, recheck_out["usd"], recheck_out["stopped"]
+    state["versions"] = {**versions, **({t: seen[t] for t in changed} if out["stopped"] else {})}  # unfinished: next run
     biggest = 0.0  # the dearest call so far: no call starts unless the run could pay that much more
 
     def call(fn, prompt):
@@ -289,7 +389,7 @@ def sweep(repo: Path, ask=None, confirm=None, dry_run: bool = False, limit: int 
     def save():
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(state, ensure_ascii=False))
-    while state["pending"] or work:
+    while (state["pending"] or work) and not out["stopped"]:
         if out["usd"] + biggest > cap:
             out["stopped"] = True
             break
@@ -314,7 +414,8 @@ def sweep(repo: Path, ask=None, confirm=None, dry_run: bool = False, limit: int 
             out["read_usd"] += usd
             out["batches"] += 1
             got = {"links": [], "dropped": out["dropped"]}
-            _check(reply, {i: d for i, d, _ in b}, set(tg), have, got, off="isn't a loop or Discovery", texts={i: t for i, _, t in b})
+            _check(reply, {i: d for i, d, _ in b}, set(tg), have, got, off="isn't a loop or Discovery", texts={i: t for i, _, t in b},
+                   refused=refused)
             out["links"] += got["links"]
             state["pending"] += got["links"]
             state["read"].update({i: sig(t) for i, _, t in b})

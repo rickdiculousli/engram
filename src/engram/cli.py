@@ -219,6 +219,12 @@ def cmd_theory(a):
     for d in resolve(Path.cwd(), config.load(), a.domain):
         repo = config.load()[d].repo
         if repo and (repo / "theory").exists():
+            if a.action == "recheck":
+                from engram import relink
+                if not a.target:
+                    sys.exit("engram: theory recheck needs a loop or Discovery, as loop/<id> or discovery/<id>")
+                print(json.dumps(relink.recheck(repo, [a.target], dry_run=a.dry_run, why="a request")))
+                return
             if a.action == "sweep":
                 from engram import relink
                 r = relink.sweep(repo, dry_run=a.dry_run)
@@ -845,8 +851,10 @@ def main(argv=None):
 
     s = sub.add_parser("theory", help="the whole theory graph (conditions, loops with their paths, joins, statuses); "
                        "`theory change` revises it when the owner agrees; `theory relink` re-checks the evidence after one; "
-                       "`theory sweep` links the whole record's evidence to the loops and Discoveries")
-    s.add_argument("action", nargs="?", choices=["change", "relink", "sweep"])
+                       "`theory sweep` links the whole record's evidence to the loops and Discoveries; `theory recheck <target>` reads "
+                       "again the links engram placed on one")
+    s.add_argument("action", nargs="?", choices=["change", "relink", "sweep", "recheck"])
+    s.add_argument("target", nargs="?", help="for recheck: the loop or Discovery whose links engram placed are read again")
     s.add_argument("--domain")
     s.add_argument("--mermaid", action="store_true", help="as a Mermaid diagram")
     s.add_argument("--as-of", help="the graph as it stood on YYYY-MM-DD")

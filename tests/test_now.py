@@ -1,4 +1,4 @@
-"""Where things stand: the "last mentioned" mark, which only the printed picture carries."""
+"""Where things stand: the "last mentioned" mark, which only the printed picture carries, and the renewal that clears it."""
 import json
 from datetime import date
 
@@ -14,6 +14,7 @@ from engram.pack import Current
 pack.current = Current(entity_kind="med-change", entity_prefix="med", detail="dose", statuses=("taking", "stopped"),
                        repeats={"taking": {"taking"}, "stopped": {"stopped"}}, groups={"supplement": "supplements"},
                        group="medications", sections=("medications", "supplements", "stopped"))
+pack.prompts["renew"] = "Did {owner} say he's still on these?\\n{things}\\n{exchanges}"
 """
 TOML = '[domain]\nname = "notes"\nevents_dir = "events"\n[about]\nprefixes = ["series", "story"]\n'
 
@@ -69,3 +70,54 @@ def test_search_rows_and_the_filers_input_leave_the_mark_out(quiet, tmp_path):
         return '{"facts": [], "theory": []}', 0.0
     capture.file_session("notes", repo, session, ask=ask, dry_run=True)
     assert "Zinc picolinate: taking since 2026-03-01; 30mg\n" in prompts[0] and "last mentioned" not in prompts[0]
+
+
+def _session(tmp_path, name, turns, ts="2026-10-18T20:00:00Z"):
+    path = tmp_path / f"{name}.jsonl"
+    path.write_text("\n".join(json.dumps({"type": k, "timestamp": ts, "cwd": "/x", "message": {"role": k, "content": t if k == "user" else [
+        {"type": "text", "text": t}]}}) for k, t in turns) + "\n")
+    return path
+
+
+def _asking(renewals, calls):
+    def ask(prompt):
+        calls.append(prompt)
+        return json.dumps({"renewals": renewals}), 0.01
+    return ask
+
+
+def test_a_renewal_clears_the_mark_and_moves_nothing_else_in_the_line(quiet):
+    repo = quiet["repo"]
+    day = date(2026, 10, 19)
+    before, rows = _line(repo, "Zinc picolinate", day), now.docs_for(repo, day)
+    Store(repo).add({"kind": now.RENEWAL, "thing": "med/zinc-picolinate", "title": "Zinc picolinate: still on it",
+                     "date": "2026-10-18", "by": "sam", "about": ["series/meds"]}, "- still on it\n")
+    after = _line(repo, "Zinc picolinate", day)
+    assert "last mentioned 2026-03" in before and "last mentioned" not in after
+    assert after.split(" [")[0] == before.split("; last mentioned")[0]  # status, dose, since, name: as they were
+    assert [vars(d) for d in now.docs_for(repo, day)] == [vars(d) for d in rows]  # search's rows don't move
+    assert [c.thing for c in now.build(repo, day)["supplements"]] == ["med/zinc-picolinate"]  # nor its section
+
+
+def test_the_renewal_step_files_only_his_word_on_a_marked_thing(quiet, tmp_path):
+    repo = quiet["repo"]
+    calls = []
+    quiet_one = _session(tmp_path, "s1", [("user", "the drops are fine"), ("assistant", "Good.")])
+    assert not capture.renew("notes", repo, quiet_one, 0, _asking([], calls))["called"] and calls == []  # names no marked thing
+    early = _session(tmp_path, "s0", [("assistant", "Still on the zinc?"), ("user", "yes")], ts="2026-05-15T20:00:00Z")
+    assert not capture.renew("notes", repo, early, 0, _asking([], calls))["called"]  # not marked yet that day
+    s2 = _session(tmp_path, "s2", [("user", "quick check in"), ("assistant", "Are you still taking the zinc picolinate?"),
+                                   ("user", "yes"), ("assistant", "And the drops?"), ("user", "those too")])
+    yes = {"thing": "med/zinc-picolinate", "line": 3, "quote": "yes", "answering": "Are you still taking the zinc picolinate?"}
+    said = [{**yes, "quote": "yes, every day"},  # not his words
+            {"thing": "med/drop-x", "line": 5, "quote": "those too"},  # not marked
+            yes, {**yes}]  # one a thing
+    res = capture.renew("notes", repo, s2, 0, _asking(said, calls))
+    assert res["called"] and len(calls) == 1 and res["renewed"] == 1
+    assert "med/zinc-picolinate: Zinc picolinate (last mentioned 2026-03)" in calls[0] and "med/drop-x" not in calls[0]
+    assert [d["why"] for d in res["dropped"]] == ["quote not in Sam's words", "not a thing marked as not mentioned for a while",
+                                                  "already renewed in this session"]
+    renewal = next(e for e in Store(repo).events(kind=now.RENEWAL))
+    assert renewal.fm["thing"] == "med/zinc-picolinate" and renewal.fm["date"] == "2026-10-18" and "“yes”" in renewal.body
+    assert "last mentioned" not in _line(repo, "Zinc picolinate", date(2026, 10, 19))
+    assert not capture.renew("notes", repo, s2, 0, _asking([yes], calls))["called"]  # renewed: no longer marked

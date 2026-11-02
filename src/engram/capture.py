@@ -156,7 +156,8 @@ def shape(st: store.Store, kinds: tuple[str, ...] = ()) -> tuple[list[str], list
     none offers the kinds the record already holds, most used first."""
     evs = [e for e in st.events() if e.kind != "link"]
     if not kinds:
-        kinds = [k for k, _ in Counter(e.kind for e in evs).most_common() if k not in ("status", "capture")] or ["observation"]
+        kinds = [k for k, _ in Counter(e.kind for e in evs).most_common()
+                 if k not in ("status", "capture", now_mod.RENEWAL)] or ["observation"]
     abouts = [a for a, _ in Counter(a for e in evs for a in e.about).most_common(80)]
     home = Counter(e.about[0].split("/")[0] for e in evs if e.about).most_common(1)
     return list(kinds), abouts, home[0][0] if home else ""
@@ -832,10 +833,7 @@ def file_session(domain: str, root: Path, path: Path, ask=None, dry_run: bool = 
                                               record=record_context(domain, st, later, when, stands, p.prompts.get("record", ""))))
         parsed = reply_json(reply)
         claude = "\n".join(r for x in s.exchanges for r in x.replies)
-        before, last = {}, ""  # Claude's message just before each of the owner's: the context he was answering
-        for x in s.exchanges:
-            before[x.line] = last
-            last = x.replies[-1] if x.replies else last
+        before = answered(s)
         entries, lines, places = [], [], []
         for f in parsed.get("facts") or []:
             try:
@@ -923,6 +921,93 @@ def file_session(domain: str, root: Path, path: Path, ask=None, dry_run: bool = 
     return res
 
 
+def answered(s: sessions.Session) -> dict[int, str]:
+    """line -> Claude's message just before each of the owner's: the context he was answering."""
+    before, last = {}, ""
+    for x in s.exchanges:
+        before[x.line] = last
+        last = x.replies[-1] if x.replies else last
+    return before
+
+
+RENEW_CONTEXT = 4000  # the end of Claude's message before his that the renewal call sees: where a question sits
+
+
+def _naming(names: list[set[str]], name: str) -> re.Pattern | None:
+    """What names a thing in talk, generously: every form of every name it goes by, and each word of four letters or
+    more in their barest forms. The call and the quote check do the deciding."""
+    from engram.sources import waysin
+    words = {f for forms in names for f in forms} | {w for f in names[-1] for w in f.split() if len(w) >= 4}
+    words = {w for w in words | set(waysin.entity_phrases(name)) if len(w) >= 3}
+    return re.compile(r"\b(" + "|".join(sorted(map(re.escape, words), key=len, reverse=True)) + r")\b", re.I) if words else None
+
+
+def renew(domain: str, root: Path, path: Path, upto: int, ask=None, dry_run: bool = False) -> dict:
+    """The renewal step, after the filer and apart from it: when the owner, or Claude's message he's answering, names a
+    thing marked "last mentioned" (engram.now) as of that day, one call asks whether he said he's still on it. Code files
+    a renewal only for a thing marked that day, on an exchange that names it, with his quote word for word (and the
+    question he answered in Claude's words); one a thing. A session naming no marked thing makes no call."""
+    p = pack.load(domain)
+    res = {"session": path.stem[:8], "called": False, "renewed": 0, "would_renew": [], "dropped": [], "usd": 0.0}
+    if not p.prompts.get("renew"):
+        return res
+    s = _parse(path)
+    later = owners(s, upto)
+    if not later:
+        return res
+    when = {x.line: sessions._local_date(x.ts) or _now().date().isoformat() for x in s.exchanges}
+    before = answered(s)
+    st = store.Store(root)
+    day = date.fromisoformat(max([when[l] for l in later if l in when] or [_now().date().isoformat()]))
+    forms = now_mod.names(st)
+    marked = {c.thing: c for c in now_mod._chain(st, day) if now_mod.mark(c, day)}
+    naming = {t: _naming(forms.get(t, [set(), set(), set()]), c.name) for t, c in marked.items()}
+    named = {t: [l for l, words in later.items() if rx and rx.search(f"{before.get(l, '')}\n{words}")
+                 and now_mod.mark(marked[t], date.fromisoformat(when.get(l, day.isoformat())))]
+             for t, rx in naming.items()}
+    named = {t: ls for t, ls in named.items() if ls}
+    if not named:
+        return res
+    lines = sorted({l for ls in named.values() for l in ls})
+    me = config.owner()
+    exchanges = "\n\n".join(f"[line {l}]\nClaude: {' '.join(before.get(l, '').split())[-RENEW_CONTEXT:] or '(nothing)'}\n{me}: {later[l]}"
+                             for l in lines)
+    things = "\n".join(f"- {t}: {marked[t].name} ({now_mod.mark(marked[t], day)})" for t in named)
+    reply, res["usd"] = (ask or _ask)(config.voice(p.prompts["renew"]).format(domain=domain, things=things, exchanges=exchanges))
+    res["called"] = True
+    claude, out = "\n".join(r for x in s.exchanges for r in x.replies), []
+    said = reply_json(reply).get("renewals", [])
+    for r in said if isinstance(said, list) else []:
+        t = str(r.get("thing")) if isinstance(r, dict) else ""
+        try:
+            line = int(r.get("line"))
+        except (TypeError, ValueError, AttributeError):
+            line = -1
+        why = ("not a thing marked as not mentioned for a while" if t not in named else
+               "not an exchange that names it" if line not in named[t] else
+               "already renewed in this session" if t in {fm["thing"] for fm, _ in out} else _his(r, later, claude))
+        if why:
+            res["dropped"].append({"session": path.stem[:8], "line": r.get("line") if isinstance(r, dict) else None, "why": why})
+            continue
+        c, said_on = marked[t], when.get(line, day.isoformat())
+        title = f"{c.name}: still on it"
+        about = next((e.about for e in st.events() if e.id == c.entry), [])
+        who = f"{me}, answering “{' '.join(str(r['answering']).split())}”" if r.get("answering") else me
+        out.append(({"title": title, "date": said_on, "reported": said_on, "kind": now_mod.RENEWAL, "thing": t, "about": about,
+                     "by": config.owner_id(), "source": f"said in session {path.stem[:8]} on {said_on}", "author": "engram-capture"},
+                    f"- {title}\n- {who}: “{' '.join(str(r['quote']).split())}”\n"))
+    if dry_run:
+        res["would_renew"] = [{"session": path.stem[:8], **fm, "body": body} for fm, body in out]
+        return res
+    if out:
+        with st.transaction(message=commitmsg.message("renewals", n=len(out), session=path.stem[:8])) as tx:
+            dom = st.config.get("domain", {}).get("name", "")
+            for fm, body in out:
+                tx.add({**fm, "domain": dom}, body)
+    res["renewed"] = len(out)
+    return res
+
+
 def refile(prefixes: list[str]) -> dict[str, list[str]]:
     """Clear the filed mark of the sessions whose ids start with each prefix, so the next run reads them whole again.
     Nothing is deleted: the ids of entries already filed from them are kept and shown to the model as already filed."""
@@ -969,7 +1054,7 @@ def lock(wait: bool = False):
 def run(ask=None, dry_run: bool = False, summaries: bool = True, now: datetime | None = None) -> dict:
     """The hourly job: index changed sessions, file every due session of each repo set up, repair the install. A dry
     run files nothing and moves no mark; with `ask` set to `prompt_only` it also spends nothing."""
-    out = {"sessions": 0, "filed": 0, "dropped": [], "kept": [], "would_file": [], "usd": 0.0, "skipped": False, "error": None, "repairs": []}
+    out = {"sessions": 0, "filed": 0, "renewed": 0, "dropped": [], "kept": [], "would_file": [], "usd": 0.0, "skipped": False, "error": None, "repairs": []}
     with lock() as got:
         if not got:
             out["skipped"] = True
@@ -988,11 +1073,19 @@ def run(ask=None, dry_run: bool = False, summaries: bool = True, now: datetime |
         for d, root in repos.items():
             idle = due(d, now)
             for p in idle:
+                with contextlib.closing(db()) as c:
+                    upto = (c.execute("SELECT upto FROM filed WHERE session = ?", (p.stem,)).fetchone() or (0,))[0]
                 try:
                     r = file_session(d, root, p, ask, dry_run)
                 except Exception as e:  # recorded; the session's mark stays, so the next run tries again
                     _error(out, f"{p.stem[:8]}: {type(e).__name__}: {e}")
                     continue
+                try:  # after the filer and apart from it; a failure leaves the mark, which is the safe side
+                    rn = renew(d, root, p, upto, ask, dry_run)
+                    out["renewed"] += rn["renewed"]
+                    out["usd"] += rn["usd"]
+                except Exception as e:
+                    _error(out, f"renew {p.stem[:8]}: {type(e).__name__}: {e}")
                 out["sessions"] += 1
                 out["filed"] += r["filed"]
                 out["dropped"] += r["dropped"]

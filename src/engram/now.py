@@ -12,7 +12,9 @@ In the printed picture only (the one a session starts with), a thing still going
 over QUIET days reads "last mentioned <month>": a fact about the line, never a to-do. The indexed rows, the standing
 lines and the filer's list leave it out, so what the filer reads doesn't move. The owner's last word is the latest date
 on its chain or on one of their own dated entries its way in names; summaries, briefs and these rows don't count, so
-the advisor repeating a line can't clear it. A chain with no date has nothing to measure from.
+the advisor repeating a line can't clear it, and so does a renewal: an entry of its own kind, filed after the filer
+(capture.renew) when the owner says they're still on a marked thing, which nothing else here reads. A chain with no date
+has nothing to measure from.
 
 `engram now` prints it; the session-start hook prints it; it's also indexed (source `current`, one row per thing) so
 a question about the present finds it first."""
@@ -30,6 +32,7 @@ SHOW_STOPPED = timedelta(days=30)
 FINISHED = {"stopped", "done", "concluded", "ruled out", "resolved", "replaced", "inactive"}
 ONGOING = {"taking", "prn", "active"}
 QUIET = timedelta(days=90)
+RENEWAL = "renewal"  # an entry recording only that the owner said they're still on a thing: it moves `said`, nothing else
 
 
 @dataclass
@@ -170,16 +173,16 @@ def _first_session(st: Store, thing: str, corrected: set[str], start: tuple[str,
     return min(days, key=dates.key) if days else ""  # as the record wrote it: a month stays a month
 
 
-def _said(evs: list, own: list, today: date) -> str:
-    """The day of the owner's last word on an entity's chain, up to today: its entries' dates and those of the owner's
-    own dated entries its way in names. "" when its chain has no date."""
+def _said(evs: list, own: list, today: date, renewed: list[str] = ()) -> str:
+    """The day of the owner's last word on an entity's chain, up to today: its entries' dates, its renewals' and those
+    of the owner's own dated entries its way in names. "" when its chain has no date."""
     from engram.sources import waysin
     if not any(_day(e) for e in evs):
         return ""
     phrases = {p for e in evs for p in waysin.entity_phrases(str(e.fm["entity"]))}
     names = re.compile(r"\b(" + "|".join(sorted(map(re.escape, phrases), key=len, reverse=True)) + r")\b", re.I) if phrases else None
     chain = {e.id for e in evs}
-    days = [_day(e) for e in evs if _day(e)]
+    days = [_day(e) for e in evs if _day(e)] + list(renewed)
     days += [_day(e) for e in own if names and e.id not in chain and names.search(f"{e.fm.get('title', '')}\n{e.body}")]
     return max((dates.key(d) for d in days if dates.key(d) <= today.isoformat()), default="")
 
@@ -203,6 +206,10 @@ def _chain(st: Store, today: date | None = None) -> list[Current]:
             if a.split("/")[0] in cur.threads:
                 chains.setdefault(a, []).append(e)
     own = [e for e in st.events() if e.kind != "link" and str(e.fm.get("by", "")) == config.owner_id() and _day(e)]
+    renewed: dict[str, list[str]] = {}
+    for e in st.events(kind=RENEWAL):
+        if _day(e):
+            renewed.setdefault(str(e.fm.get("thing", "")), []).append(_day(e))
     out = []
     for thing, evs in chains.items():
         evs.sort(key=lambda e: str(e.fm.get("recorded", "")))
@@ -219,7 +226,7 @@ def _chain(st: Store, today: date | None = None) -> list[Current]:
                 shown = next((d for e in reversed(evs[:-1]) if (d := detail(e, cur.detail))), "")
             group = cur.groups.get(str(last.fm.get("group", "")), cur.group)
             started, changed = _run_start(evs, cur.detail) if status in ONGOING else ("", "")
-            said = _said(evs, own, today)
+            said = _said(evs, own, today, renewed.get(thing, []))
         else:
             prefix = thing.split("/")[0]
             name = str(last.fm.get(prefix) or thing.split("/", 1)[1].replace("-", " "))

@@ -56,11 +56,12 @@ WIKI = [("wiki", dict(item="doc-k7f2qa", n=3), "engram: the wiki from doc-k7f2qa
         ("wiki_index", {}, "engram: the wiki's index and open list"),
         ("wiki_merge", dict(n=1), "engram: the wiki's health check merged concepts (1), their links repointed"),
         ("wiki_moved", dict(n=1), "engram: links repointed to moved posts (1)")]
+RENEWALS = [("renewals", dict(n=2, session="ab12cd34"), "engram: Sam still on 2 things, said in session ab12cd34")]
 
 
 def test_each_template_writes_medicals_message_byte_for_byte():
-    assert {name for name, *_ in TODAY + REVIEW + WIKI} == set(commitmsg.TEMPLATES)
-    for name, fields, want in TODAY + REVIEW + WIKI:
+    assert {name for name, *_ in TODAY + REVIEW + WIKI + RENEWALS} == set(commitmsg.TEMPLATES)
+    for name, fields, want in TODAY + REVIEW + WIKI + RENEWALS:
         assert commitmsg.message(name, **fields) == want
     assert commitmsg.message("write", "rec: {kind} on {date}", kind="lab", date="2026-10-03") == "rec: lab on 2026-10-03"
 

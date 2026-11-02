@@ -104,7 +104,9 @@ def test_the_renewal_step_files_only_his_word_on_a_marked_thing(quiet, tmp_path)
     calls = []
     quiet_one = _session(tmp_path, "s1", [("user", "the drops are fine"), ("assistant", "Good.")])
     assert not capture.renew("notes", repo, quiet_one, 0, _asking([], calls))["called"] and calls == []  # names no marked thing
-    early = _session(tmp_path, "s0", [("assistant", "Still on the zinc?"), ("user", "yes")], ts="2026-05-15T20:00:00Z")
+    early = _session(tmp_path, "s0", [("user", "hi"), ("assistant", "Still on the zinc?"), ("user", "yes")], ts="2026-05-15T20:00:00Z")
+    assert capture.renew("notes", repo, _session(tmp_path, "s9", [("user", "hi"), ("assistant", "Still on the zinc?"), ("user", "yes")]), 0,
+                         _asking([], []), dry_run=True)["called"]  # the same words on a day it's marked do call
     assert not capture.renew("notes", repo, early, 0, _asking([], calls))["called"]  # not marked yet that day
     s2 = _session(tmp_path, "s2", [("user", "quick check in"), ("assistant", "Are you still taking the zinc picolinate?"),
                                    ("user", "yes"), ("assistant", "And the drops?"), ("user", "those too")])

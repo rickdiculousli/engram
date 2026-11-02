@@ -228,36 +228,45 @@ def mapped(area):
 
 
 def pages(repo):
-    return {p.name: p.read_text() for p in sorted((repo / "wiki").glob("*.md"))}
+    return {p.relative_to(repo / "wiki").as_posix(): p.read_text() for p in sorted((repo / "wiki").rglob("*.md"))}
+
+
+def page_of(repo):
+    """Each ref's page, as the renderer names it."""
+    from engram import compile as cmp, wiki
+    return {k: f"{v}.md" for k, v in wiki.Wiki(cmp.load(repo), "essays").page.items()}
 
 
 def test_the_wiki_counts_distinct_backing_follows_merges_and_drops_a_cut_quote(mapped):
     from engram import wiki
     repo, ids = mapped["repo"], mapped["ids"]
     wiki.render("essays")
-    got = pages(repo)
-    merged = got[f"{mapped['merged']}.md"]
+    got, at = pages(repo), page_of(repo)
+    assert at[mapped["merged"]] == "claims/Cues beat willpower over time.md" and at[mapped["s1"]] == "sources/A habits study.md"
+    merged = got[at[mapped["merged"]]]
     assert merged.startswith("# Cues beat willpower over time\n")
-    assert "3 for, 1 against, 1 steelmans (0 unanswered), 1 of Claude's own (1 unanswered)" in merged
+    assert ("1 for from sources, 2 for from your own writing, 1 against, 1 steelman (0 unanswered), "
+            "1 steelman by Claude (1 unanswered)") in merged
     assert "(check against the original, at 01:30)" in merged and "Claude's own, not from a source" in merged
-    assert f"{ids['Cues beat willpower']}.md" not in got  # a superseded node has no page of its own
-    steel = got[f"{ids['Willpower can be trained']}.md"]
-    assert f"A steelman of [[{mapped['merged']}|Cues beat willpower over time]]: answered." in steel
+    assert "claims/Cues beat willpower.md" not in got and ids["Cues beat willpower"] not in at  # superseded: no page
+    steel = got[at[ids["Willpower can be trained"]]]
+    assert "A steelman of [[wiki/claims/Cues beat willpower over time|Cues beat willpower over time]]: answered." in steel
     assert "## Answered by\n\n- “A streak is a story we tell”" in steel
     index = got["index.md"]
-    assert f"## [[{ids['Habits']}|Habits]]" in index and f"[[{mapped['merged']}|Cues beat willpower over time]]: 3 for" in index
-    draft = got[f"{mapped['draft']}.md"]
+    assert "## [[wiki/themes/Habits|Habits]]" in index
+    assert "[[wiki/claims/Cues beat willpower over time|Cues beat willpower over time]]: 1 for from sources" in index
+    draft = got[at[mapped["draft"]]]
     assert draft.startswith("# Streaks\n") and "## Cues beat willpower over time" in draft
-    assert f"## Further reading\n\n- [[{mapped['post']}|Cues]]" in draft
-    source = got[f"{mapped['s1']}.md"]
+    assert "## Further reading\n\n- [[wiki/posts/Cues|Cues]]" in draft
+    source = got[at[mapped["s1"]]]
     assert "- who: Ada Lane" in source and "## Sparks it set off" in source and "Maybe the reward matters" in source
-    assert "Maybe the reward matters" in got[f"{ids['Habits']}.md"]
+    assert "Maybe the reward matters" in got[at[ids["Habits"]]]
     assert "Some people need no cues" in got["open.md"] and "Steelmans not answered" in got["open.md"]
     wiki.render("essays")
     assert pages(repo) == got  # a rebuild is byte-identical
     (repo / "drafts/streaks.md").write_text("title: Streaks\n___\nA streak is a story we tell.\n")
     wiki.render("essays")
-    assert "2 for, 1 against" in pages(repo)[f"{mapped['merged']}.md"]
+    assert "1 for from sources, 1 for from your own writing, 1 against" in pages(repo)[at[mapped["merged"]]]
 
 
 def test_the_hourly_job_compiles_what_is_due_and_renders(area, tmp_path, monkeypatch):
@@ -298,6 +307,6 @@ def test_the_health_check_merges_near_duplicates_and_lists_gaps(mapped):
     now = m.current(trainable)
     assert now == m.current(ids["Willpower can be trained"]) and now != trainable
     assert m.nodes[now].fm["title"] == "Willpower can be trained"
-    page = (repo / f"wiki/{now}.md").read_text()
-    assert "1 for" in page and "A steelman of" in page and "answered." in page
+    page = (repo / "wiki" / page_of(repo)[now]).read_text()
+    assert "1 for from sources" in page and "A steelman of" in page and "answered." in page
     assert "A study on cues outside the lab" in (repo / "wiki/open.md").read_text()

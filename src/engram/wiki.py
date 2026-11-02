@@ -18,6 +18,8 @@ FOR, AGAINST = ("supports", "data-for"), ("refutes",)
 RIPE = 3  # a theme with this many sparks and no post is ripe
 TIME = re.compile(r"\b(\d{1,2}:\d{2}(?::\d{2})?)\b")
 SPARK_WORDS = 40
+STEM = 80  # longest file name, in characters
+FOLDER = {"claim": "claims", "theme": "themes", "source": "sources"}  # anything else a post is under posts/
 
 
 @dataclass
@@ -38,6 +40,14 @@ class Claim:
 
 def _safe(s: str) -> str:
     return " ".join(str(s).replace("|", "/").replace("[", "(").replace("]", ")").split())
+
+
+def _stem(s: str) -> str:
+    """A page's file name from its title: what Obsidian shows in tabs, the file list and the graph."""
+    s = " ".join(re.sub(r'[\\/:*?"<>|#^\[\]]', "", str(s)).split()).strip(" .")
+    if len(s) > STEM:
+        s = s[:STEM].rsplit(" ", 1)[0].rstrip(" ,;")
+    return s or "untitled"
 
 
 class Wiki:
@@ -74,6 +84,16 @@ class Wiki:
         for c in self.by.values():
             for k in ("steelmans", "own", "sparks", "posts", "related", "themes", "of", "members"):
                 setattr(c, k, sorted(set(getattr(c, k)) - {c.id}))
+        self.page: dict[str, str] = {}  # ref -> its page's path in wiki/, without .md
+        refs = [(n, self.m.nodes[n].kind, self.line(n)) for n in self.by]
+        refs += [(it.id, it.kind if it.kind == "source" else "post", it.title) for it in self.items.values() if it.kind != "spark"]
+        taken: set[str] = set()
+        for ref, kind, title in sorted(refs):
+            name = f"{FOLDER.get(kind, 'posts')}/{_stem(title)}"
+            if name.lower() in taken:
+                name = f"{name} ({ref[-4:]})"
+            taken.add(name.lower())
+            self.page[ref] = name
 
     # pieces
     def line(self, n: str) -> str:
@@ -81,11 +101,11 @@ class Wiki:
 
     def link(self, ref: str) -> str:
         if ref in self.by:
-            return f"[[{ref}|{self.line(ref)}]]"
+            return f"[[{DIR}/{self.page[ref]}|{self.line(ref)}]]"
         it = self.items.get(ref)
         if it and it.kind == "spark":
             return f"a spark ({it.id})"
-        return f"[[{ref}|{_safe(it.title)}]]" if it else ref
+        return f"[[{DIR}/{self.page[ref]}|{_safe(it.title)}]]" if it else ref
 
     def quote(self, q: str, item: str, here: bool = False) -> str:
         """A quote with where it's from (unless it's from the page's own item); a transcribed source's says to check it
@@ -102,11 +122,19 @@ class Wiki:
         return any(self.m.key(e)[1:] == ("answers", s) for e in self.live)
 
     def counts(self, c: Claim) -> str:
-        out = f"{len(c.backing)} for, {len(c.against)} against, {len(c.steelmans)} steelmans " \
-              f"({sum(not self.answered(s) for s in c.steelmans)} unanswered)"
-        if c.own:
-            out += f", {len(c.own)} of Claude's own ({sum(not self.answered(s) for s in c.own)} unanswered)"
-        return out
+        """Only what there is: backing from outside sources apart from the owner's own writing, then against, then
+        steelmans, Claude's own apart; a claim with none of it says so."""
+        outside = sum(1 for b in c.backing if (it := self.items.get(b)) and it.kind == "source")
+        parts = [f"{outside} for from sources"] if outside else []
+        if len(c.backing) > outside:
+            parts.append(f"{len(c.backing) - outside} for from your own writing")
+        if c.against:
+            parts.append(f"{len(c.against)} against")
+        for ss, who in ((c.steelmans, ""), (c.own, " by Claude")):
+            if ss:
+                parts.append(f"{len(ss)} steelman{'s' if len(ss) > 1 else ''}{who} "
+                             f"({sum(not self.answered(s) for s in ss)} unanswered)")
+        return ", ".join(parts) or "nothing behind it yet"
 
     def spark(self, ref: str) -> str:
         it = self.items[ref]
@@ -201,7 +229,7 @@ class Wiki:
         out = [f"# {_safe(it.title)}", "", f"{'Published' if it.kind == 'published' else 'Draft'}: {it.path}", ""]
         for n in argued:
             c = self.by[n]
-            out += [f"## {self.line(n)}", "", f"[[{n}|the claim]]: {self.counts(c)}", ""]
+            out += [f"## {self.line(n)}", "", f"{self.counts(c)} ([[{DIR}/{self.page[n]}|the claim]])", ""]
             for head, rows in (("For", self.evidence(c.backing)), ("Against", self.evidence(c.against)),
                                ("Steelmans", self.steelman_lines(c))):
                 if rows:
@@ -255,12 +283,12 @@ class Wiki:
     def pages(self) -> dict[str, str]:
         out = {"index.md": self.index(), "open.md": self.open()}
         for n in self.by:
-            out[f"{n}.md"] = self.theme_page(n) if self.m.nodes[n].kind == "theme" else self.claim_page(n)
+            out[f"{self.page[n]}.md"] = self.theme_page(n) if self.m.nodes[n].kind == "theme" else self.claim_page(n)
         for it in self.items.values():
             if it.kind == "source":
-                out[f"{it.id}.md"] = self.source_page(it)
+                out[f"{self.page[it.id]}.md"] = self.source_page(it)
             elif it.kind not in ITEMS:
-                out[f"{it.id}.md"] = self.post_page(it)
+                out[f"{self.page[it.id]}.md"] = self.post_page(it)
         return {k: v.rstrip("\n") + "\n" for k, v in out.items()}
 
 
@@ -270,11 +298,15 @@ def render(domain: str) -> Path:
     pages = Wiki(load(root), domain).pages()
     d = Path(root) / DIR
     d.mkdir(exist_ok=True)
-    for p in d.glob("*.md"):
-        if p.name not in pages:
+    for p in d.rglob("*.md"):
+        if p.relative_to(d).as_posix() not in pages:
             p.unlink()
     for name, text in pages.items():
         p = d / name
+        p.parent.mkdir(exist_ok=True)
         if not p.exists() or p.read_text() != text:
             p.write_text(text)
+    for sub in d.iterdir():
+        if sub.is_dir() and not any(sub.iterdir()):
+            sub.rmdir()
     return d

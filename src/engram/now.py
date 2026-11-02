@@ -8,6 +8,12 @@ from. When an earlier-written entry is dated after the latest and says otherwise
 are shown, never one picked silently. A stopped thing shows for a month, marked stopped, then moves to the stopped
 list with its date and reason; a stop with no date is already past.
 
+In the printed picture only (the one a session starts with), a thing still going that the owner hasn't mentioned for
+over QUIET days reads "last mentioned <month>": a fact about the line, never a to-do. The indexed rows, the standing
+lines and the filer's list leave it out, so what the filer reads doesn't move. The owner's last word is the latest date
+on its chain or on one of their own dated entries its way in names; summaries, briefs and these rows don't count, so
+the advisor repeating a line can't clear it. A chain with no date has nothing to measure from.
+
 `engram now` prints it; the session-start hook prints it; it's also indexed (source `current`, one row per thing) so
 a question about the present finds it first."""
 import re
@@ -15,7 +21,7 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from pathlib import Path
 
-from engram import dates, pack
+from engram import config, dates, pack
 from engram.index import Doc
 from engram.store import Store
 
@@ -23,6 +29,7 @@ SOURCE = "current"
 SHOW_STOPPED = timedelta(days=30)
 FINISHED = {"stopped", "done", "concluded", "ruled out", "resolved", "replaced", "inactive"}
 ONGOING = {"taking", "prn", "active"}
+QUIET = timedelta(days=90)
 
 
 @dataclass
@@ -40,6 +47,7 @@ class Current:
     chain: list[str] = field(default_factory=list)  # every entry on the thing's chain, in the order written
     started: str = ""  # when the current run began: an entity's first ongoing date since it last wasn't; a thread's first session
     changed: str = ""  # what the latest entry changed, when it isn't the start ("dose changed")
+    said: str = ""  # the day of the owner's last word on a thing that can be marked (QUIET), as of the day asked
 
 
 REASON = re.compile(r"^\s*[-*]\s*(?:note|reason|why|because)\s*:\s*(.+)$", re.I | re.M)
@@ -162,7 +170,29 @@ def _first_session(st: Store, thing: str, corrected: set[str], start: tuple[str,
     return min(days, key=dates.key) if days else ""  # as the record wrote it: a month stays a month
 
 
-def _chain(st: Store) -> list[Current]:
+def _said(evs: list, own: list, today: date) -> str:
+    """The day of the owner's last word on an entity's chain, up to today: its entries' dates and those of the owner's
+    own dated entries its way in names. "" when its chain has no date."""
+    from engram.sources import waysin
+    if not any(_day(e) for e in evs):
+        return ""
+    phrases = {p for e in evs for p in waysin.entity_phrases(str(e.fm["entity"]))}
+    names = re.compile(r"\b(" + "|".join(sorted(map(re.escape, phrases), key=len, reverse=True)) + r")\b", re.I) if phrases else None
+    chain = {e.id for e in evs}
+    days = [_day(e) for e in evs if _day(e)]
+    days += [_day(e) for e in own if names and e.id not in chain and names.search(f"{e.fm.get('title', '')}\n{e.body}")]
+    return max((dates.key(d) for d in days if dates.key(d) <= today.isoformat()), default="")
+
+
+def mark(c: Current, today: date) -> str:
+    """"last mentioned 2026-06" for a thing still going whose owner last mentioned it over QUIET ago; "" otherwise."""
+    if c.status not in ONGOING or not c.said or date.fromisoformat(c.said) >= today - QUIET:
+        return ""
+    return f"last mentioned {c.said[:7]}"
+
+
+def _chain(st: Store, today: date | None = None) -> list[Current]:
+    today = today or date.today()
     cur = spec(st)
     chains: dict[str, list] = {}
     corrected = {str(e.fm.get("to")) for e in st.events(kind="link") if e.fm.get("rel") in ("revises", "supersedes")}
@@ -172,6 +202,7 @@ def _chain(st: Store) -> list[Current]:
         for a in e.about:
             if a.split("/")[0] in cur.threads:
                 chains.setdefault(a, []).append(e)
+    own = [e for e in st.events() if e.kind != "link" and str(e.fm.get("by", "")) == config.owner_id() and _day(e)]
     out = []
     for thing, evs in chains.items():
         evs.sort(key=lambda e: str(e.fm.get("recorded", "")))
@@ -180,6 +211,7 @@ def _chain(st: Store) -> list[Current]:
         when = _day(last)
         conflict = [e.id for e in evs[:-1] if _day(e) and when and dates.key(_day(e)) > dates.key(when)
                     and str(e.fm.get("status", "")) != status]
+        said = ""
         if last.kind == cur.entity_kind:
             name = str(last.fm["entity"])
             shown = detail(last, cur.detail)
@@ -187,6 +219,7 @@ def _chain(st: Store) -> list[Current]:
                 shown = next((d for e in reversed(evs[:-1]) if (d := detail(e, cur.detail))), "")
             group = cur.groups.get(str(last.fm.get("group", "")), cur.group)
             started, changed = _run_start(evs, cur.detail) if status in ONGOING else ("", "")
+            said = _said(evs, own, today)
         else:
             prefix = thing.split("/")[0]
             name = str(last.fm.get(prefix) or thing.split("/", 1)[1].replace("-", " "))
@@ -196,7 +229,7 @@ def _chain(st: Store) -> list[Current]:
             started, changed = (_first_session(st, thing, corrected, cur.starts[prefix]) if prefix in cur.starts else ""), ""
         history = [f"{e.fm.get('status', '')} {_day(e) or 'date not sure'}" for e in evs]
         out.append(Current(thing, name, status, when, shown, last.id, group, history, conflict,
-                           reason(last) if status in FINISHED else "", [e.id for e in evs], started, changed))
+                           reason(last) if status in FINISHED else "", [e.id for e in evs], started, changed, said))
     return out
 
 
@@ -206,7 +239,7 @@ def build(repo: Path, today: date | None = None) -> dict[str, list[Current]]:
     st = Store(repo)
     hidden = spec(st).hidden
     sections: dict[str, list[Current]] = {}
-    for c in _chain(st):
+    for c in _chain(st, today):
         finished = c.status in FINISHED
         recent = finished and c.when and dates.key(c.when) and date.fromisoformat(dates.key(c.when)) >= today - SHOW_STOPPED
         if c.group in hidden and finished:
@@ -307,7 +340,7 @@ def text(repo: Path, today: date | None = None, mark_shown: bool = False) -> str
             else:
                 since = since_text(c)
             why = f"why: {c.reason}" if c.reason and c.reason not in c.detail else ""
-            bits = [b for b in (label, since, c.detail, why) if b]
+            bits = [b for b in (label, since, c.detail, why, mark(c, today)) if b]
             line = f"- {c.name}: {'; '.join(bits)} [{c.entry}]"
             if c.conflict:
                 line += f" — the record disagrees: also {', '.join(c.conflict)}"

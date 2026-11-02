@@ -45,6 +45,14 @@ def _phrases(*names: str) -> list[str]:
     return list(dict.fromkeys(out))
 
 
+def entity_phrases(entity: str) -> list[str]:
+    """What names a medication in text: its brand, its generic (the bracket's first part), and the first word of a long
+    brand ("olopatadine" of a long name)."""
+    brand, _, generic = entity.partition("(")
+    first = brand.split()[0] if len(brand.split()) > 1 and len(brand.split()[0]) >= 6 else ""
+    return _phrases(brand, generic.split(",")[0], first)
+
+
 def _keys(d: Domain, conf: dict, docs: list[tuple]) -> dict[tuple[str, str], dict]:
     """(kind, key) -> {phrases, refs}: what names each way in, and the records it lights before mentions."""
     repo, ways, out = d.repo, conf.get("ways") or {}, {}
@@ -66,18 +74,13 @@ def _keys(d: Domain, conf: dict, docs: list[tuple]) -> dict[tuple[str, str], dic
             for n, line in enumerate((repo / f).read_text().splitlines() if (repo / f).exists() else [], 1):
                 if line.strip():
                     entity = json.loads(line).get("entity", "")
-                    brand, _, generic = entity.partition("(")
-                    first = brand.split()[0] if len(brand.split()) > 1 and len(brand.split()[0]) >= 6 else ""  # "olopatadine" of a long name
-                    add("treatment", brand.strip().lower(), _phrases(brand, generic.split(",")[0], first), [f"{f}:{n}"])
+                    add("treatment", entity.partition("(")[0].strip().lower(), entity_phrases(entity), [f"{f}:{n}"])
         if t.get("entities"):  # entries naming a medication (a med-change's entity), once log pages are gone
             from engram.store import Store
             for e in Store(repo).events(kind=t["entities"]):
                 entity = str(e.fm.get("entity", ""))
-                if not entity:
-                    continue
-                brand, _, generic = entity.partition("(")
-                first = brand.split()[0] if len(brand.split()) > 1 and len(brand.split()[0]) >= 6 else ""
-                add("treatment", brand.strip().lower(), _phrases(brand, generic.split(",")[0], first), [e.id])
+                if entity:
+                    add("treatment", entity.partition("(")[0].strip().lower(), entity_phrases(entity), [e.id])
         if t.get("series_about"):  # a treatment series: every entry about it
             from engram.store import Store
             for e in Store(repo).events():

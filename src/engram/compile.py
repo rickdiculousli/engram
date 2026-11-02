@@ -311,7 +311,7 @@ def compile_item(domain: str, ref: str, ask=None) -> dict:
     nodes, edges, summary, res["dropped"] = checked(reply, it, m, rels, set(shown))
     today = date.today().isoformat()
     dom = st.config.get("domain", {}).get("name", "")
-    with st.transaction(message=commitmsg.message("map", item=ref[:24], nodes=len(nodes), edges=len(edges))) as tx:
+    with st.transaction(message=commitmsg.message("map", item=it.id or "a new post", nodes=len(nodes), edges=len(edges))) as tx:
         item_id = it.id
         if not item_id:  # a post's first compile gives it its stable id
             reg = docreg.load(d.repo)

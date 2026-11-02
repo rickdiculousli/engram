@@ -172,6 +172,7 @@ def test_a_post_recompiles_only_when_it_changes_and_two_failures_park_it(area):
     m = cmp.load(area)
     doc = next(k for k, it in m.items.items() if it.path == "drafts/streaks.md")
     assert doc.startswith("doc-") and doc not in cmp.due("essays", m)
+    assert git(area, "log", "-1", "--format=%s").strip() == "engram: the map from a new post, 0 nodes and 0 links"  # never a path
     (area / "drafts/streaks.md").write_text("title: Streaks\n___\nA streak is a story we tell. Then we keep it.\n")
     assert doc in cmp.due("essays", cmp.load(area))
     for _ in range(2):

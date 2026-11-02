@@ -349,3 +349,47 @@ def run(domain: str, ask=None, only: list[str] | None = None) -> dict:
         out["compiled" if r["ok"] else "failed"].append(r)
     wiki.render(domain)
     return out
+
+
+def domain_of(root: Path) -> str | None:
+    """The configured domain whose record is `root`."""
+    root = Path(root).expanduser().resolve()
+    return next((n for n, d in config.load().items() if d.repo and Path(d.repo).expanduser().resolve() == root), None)
+
+
+def health(domain: str, ask=None) -> dict:
+    """The wiki's health check: one call names near-duplicate claims, each merged at once by a new node that supersedes
+    them all (the first one's line and quote, so nothing unchecked is written), and gaps worth looking up, kept for
+    open.md until the next check; then the wiki is rendered, which lists what code finds itself."""
+    from engram import wiki
+    d = config.load()[domain]
+    p = pack.load(domain)
+    m = load(d.repo)
+    claims = sorted(n for n in m.nodes if m.is_current(n) and m.nodes[n].kind == "claim")
+    res = {"merged": 0, "gaps": 0, "usd": 0.0}
+    if claims and p.prompts.get("health"):
+        prompt = config.voice(p.prompts["health"]).format(claims=_listing(m, claims),
+                                                           sources=", ".join(sorted(it.title for it in m.items.values()
+                                                                                    if it.kind == "source")) or "none")
+        reply, res["usd"] = (ask or _ask)(prompt)
+        reply = reply if isinstance(reply, dict) else {}
+        merges = []
+        for g in reply.get("duplicates") or []:
+            ids = list(dict.fromkeys(str(x) for x in (g.get("ids") if isinstance(g, dict) else g) or []))
+            ids = [x for x in ids if x in claims and not any(x in y for y in merges)]
+            if len(ids) > 1:
+                merges.append(ids)
+        if merges:
+            st = store.Store(d.repo)
+            with st.transaction(message=commitmsg.message("merge", n=sum(len(x) for x in merges))) as tx:
+                for ids in merges:
+                    keep = m.nodes[ids[0]].fm
+                    tx.add({k: keep[k] for k in ("title", "kind", "by", "quote", "quoted_from", "domain") if keep.get(k)}
+                           | {"date": date.today().isoformat(), "author": "claude", "supersedes": ids},
+                           f"> {keep['quote']}\n" if keep.get("quote") else "")
+        s = state(domain)
+        s["gaps"] = sorted({" ".join(str(x).split())[:300] for x in reply.get("gaps") or [] if str(x).strip()})
+        save(domain, s)
+        res.update(merged=len(merges), gaps=len(s["gaps"]))
+    wiki.render(domain)
+    return res

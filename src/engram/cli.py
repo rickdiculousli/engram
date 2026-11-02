@@ -581,6 +581,28 @@ def cmd_source(a):
     except (ValueError, OSError) as err:
         sys.exit(f"engram source: {err}")
     print(f"engram: kept {e.id} ({e.fm.get('form') or e.kind}: {e.fm['title']})")
+    from engram import compile as compile_mod, pack
+    if (domain := compile_mod.domain_of(st.root)) and pack.load(domain).prompts.get("compile"):
+        r = compile_mod.run(domain, only=[e.id])  # on the wiki in the same session
+        for x in r["compiled"] + r["failed"]:
+            print(f"engram: mapped {x['nodes']} nodes and {x['edges']} links" if x["ok"] else
+                  f"engram: not mapped yet ({x.get('error', 'failed')}); the hourly job tries again")
+
+
+def cmd_wiki(a):
+    from engram import compile as compile_mod, wiki
+    st = _repo(a)
+    domain = compile_mod.domain_of(st.root)
+    if not domain:
+        sys.exit("engram wiki: this repo isn't a configured domain")
+    if a.action == "render":
+        print(f"engram: rendered {wiki.render(domain)}")
+    elif a.action == "compile":
+        r = compile_mod.run(domain)
+        print(json.dumps({"compiled": len(r["compiled"]), "failed": len(r["failed"]), "usd": round(r["usd"], 4),
+                          "dropped": sum(len(x["dropped"]) for x in r["compiled"])}))
+    else:
+        print(json.dumps(compile_mod.health(domain)))
 
 
 def _payload(a) -> dict:
@@ -964,6 +986,13 @@ def main(argv=None):
     s.add_argument("--sparked-by", dest="sparked_by", help="the source that set a spark off without being its point")
     s.add_argument("--repo")
     s.set_defaults(fn=cmd_source)
+
+    s = sub.add_parser("wiki", help="the compiled wiki (wiki/, never committed): render (rebuild it from the map, no model "
+                                    "call), compile (map every item due, then render), check (the health check: near-"
+                                    "duplicate claims merged, gaps for open.md)")
+    s.add_argument("action", choices=["render", "compile", "check"])
+    s.add_argument("--repo")
+    s.set_defaults(fn=cmd_wiki)
 
     s = sub.add_parser("capture", help="file what the owner says in a repo's sessions: run (the hourly job), check (the "
                                        "session-start health check and repair), status (whether it's running), "

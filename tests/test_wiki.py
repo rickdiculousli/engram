@@ -44,7 +44,10 @@ Nodes already on the map:
 {nodes}
 Rels: {rels}"""
 
-pack = Pack(prompts={"file": FILE, "verify": VERIFY, "record": "{entries}", "compile": COMPILE}, kinds=("spark",))
+HEALTH = """Which of these claims say the same thing, and what is worth looking up? {claims} (sources: {sources})"""
+
+pack = Pack(prompts={"file": FILE, "verify": VERIFY, "record": "{entries}", "compile": COMPILE, "health": HEALTH},
+            kinds=("spark",))
 '''
 
 
@@ -254,3 +257,46 @@ def test_the_wiki_counts_distinct_backing_follows_merges_and_drops_a_cut_quote(m
     (repo / "drafts/streaks.md").write_text("title: Streaks\n___\nA streak is a story we tell.\n")
     wiki.render("essays")
     assert "2 for, 1 against" in pages(repo)[f"{mapped['merged']}.md"]
+
+
+def test_the_hourly_job_compiles_what_is_due_and_renders(area, tmp_path, monkeypatch):
+    from engram import compile as cmp, setup
+    setup.setup(area, tmp_path / "LaunchAgents", load=False)
+    src = intake.add(store.Store(area), "quote", "Small cues add up.", by="Ada Lane")
+    asked = []
+
+    def ask(prompt):
+        asked.append(prompt)
+        return {"nodes": [{"key": "c", "kind": "claim", "line": "Small cues add up", "quote": "Small cues add up"}],
+                "edges": [{"from": "item", "rel": "supports", "to": "c", "quote": "Small cues add up"}]}, 0.01
+    monkeypatch.setattr(cmp, "_ask", ask)
+    out = capture.run(summaries=False)
+    assert out["error"] is None and len(asked) == 3  # the quote, the draft and the post
+    assert "Small cues add up" in asked[0] and src.id in asked[0]
+    assert "Small cues add up" in (area / "wiki/index.md").read_text()
+    assert cmp.due("essays", cmp.load(area)) == []
+    capture.run(summaries=False)
+    assert len(asked) == 3  # nothing is compiled twice
+
+
+def test_the_health_check_merges_near_duplicates_and_lists_gaps(mapped):
+    from engram import compile as cmp
+    repo, ids = mapped["repo"], mapped["ids"]
+    s3 = intake.add(store.Store(repo), "note", "Willpower is trainable, a study of students found.", by="Cy Park")
+    cmp.compile_item("essays", s3.id, ask=lambda p: ({"nodes": [{"key": "c", "kind": "claim", "line": "Willpower is trainable",
+                                                                 "quote": "Willpower is trainable"}],
+                                                       "edges": [{"from": "item", "rel": "supports", "to": "c",
+                                                                  "quote": "a study of students found"}]}, 0.0))
+    trainable = next(n for n, e in cmp.load(repo).nodes.items() if e.fm["title"] == "Willpower is trainable")
+    asked = []
+    res = cmp.health("essays", ask=lambda p: (asked.append(p) or {"duplicates": [{"ids": [ids["Willpower can be trained"], trainable]},
+                                                                                {"ids": ["not-a-claim", trainable]}],
+                                                                 "gaps": ["A study on cues outside the lab"]}, 0.02))
+    assert "Willpower is trainable" in asked[0] and res == {"merged": 1, "gaps": 1, "usd": 0.02}
+    m = cmp.load(repo)
+    now = m.current(trainable)
+    assert now == m.current(ids["Willpower can be trained"]) and now != trainable
+    assert m.nodes[now].fm["title"] == "Willpower can be trained"
+    page = (repo / f"wiki/{now}.md").read_text()
+    assert "1 for" in page and "A steelman of" in page and "answered." in page
+    assert "A study on cues outside the lab" in (repo / "wiki/open.md").read_text()

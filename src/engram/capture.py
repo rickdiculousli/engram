@@ -999,6 +999,12 @@ def run(ask=None, dry_run: bool = False, summaries: bool = True, now: datetime |
                 out["kept"] += r["kept"]
                 out["would_file"] += r["would_file"]
                 out["usd"] += r["usd"]
+            if not dry_run and pack.load(d).prompts.get("compile"):  # what was handed over or filed, onto the map
+                from engram import compile as compile_mod
+                try:
+                    out["usd"] += compile_mod.run(d)["usd"]
+                except Exception as e:
+                    _error(out, f"compile {d}: {type(e).__name__}: {e}")
             if not dry_run and review.on(root):  # the value review, behind its switch; off leaves the job as it was
                 try:
                     out["usd"] += (review.hourly(d, root, idle, now) or {}).get("usd", 0.0)

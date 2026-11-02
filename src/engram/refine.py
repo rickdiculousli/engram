@@ -16,7 +16,7 @@ from pathlib import Path
 
 import yaml
 
-from engram import claude_env, config, frontmatter, rewire
+from engram import claude_env, config, frontmatter, pack, rewire
 from engram.paths import PAGE, SPECS, data_path, record_conf
 from engram.sources import sessions
 
@@ -248,6 +248,12 @@ def run(only: str | None = None, dry_run: Path | None = None, show: bool = False
             paid, page = (0.0, "") if dry_run else digest(name, repo, min(DIGEST_CAP, s["weekly_cap"] - spent(rows, wk)),
                                                          runner)
             row["cost_usd"] = round(row["cost_usd"] + paid, 4)  # the page is the pass's
+            if not dry_run and name in config.load() and pack.load(name).prompts.get("compile"):
+                from engram import compile as compile_mod
+                try:  # the compiled wiki's health check runs with the pass, its cost the pass's
+                    row["cost_usd"] = round(row["cost_usd"] + compile_mod.health(name)["usd"], 4)
+                except Exception as e:
+                    out.append(f"{name}: the wiki's health check failed: {type(e).__name__}: {e}")
             _write(rows)
             out.append(f"{name}: {'ok' if row['ok'] else 'failed'}, ${cost:.2f}; week ${spent(rows, wk):.2f} of "
                        f"${s['weekly_cap']:.0f}" + (f"; {page}" if page else ""))

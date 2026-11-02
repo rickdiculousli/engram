@@ -222,7 +222,6 @@ def _file(st: Store, g: theory.Graph, reg, links: list[dict], message: str, sour
 
 SWEPT, SWEEP_CAP = "engram-sweep", 10.0  # the sweep's author, and what one run may spend
 SWEEP_BUDGET, SWEEP_EFFORT = 30_000, "medium"  # the read's batches and effort: denser or lower missed most of what bears
-SWEEP_CONFIRMS = 2  # independent confirming calls; a link is filed only when every one says yes
 
 
 def _progress(st: Store, dry_run: bool) -> Path:
@@ -235,9 +234,8 @@ def sweep(repo: Path, ask=None, confirm=None, dry_run: bool = False, limit: int 
     """The evidence sweep: every entry but journals and every document the re-check reads, against the theory's loops
     and Discoveries, with the pack's `sweep` words. The re-check's guards hold, with a pair already linked by any
     evidence rel counting as held, and the read must cite the record's own words that bear on it (its `passage`,
-    checked word for word). Each surviving link then goes to `SWEEP_CONFIRMS` fresh calls (`sweep_confirm`), each
-    seeing only the record, that passage, the target and the rel, never the read's reasoning or another call's answer;
-    a link is filed, by=claude, only when every one says yes.
+    checked word for word). Each surviving link then goes to a second call (`sweep_confirm`), which sees only the
+    record, that passage, the target and the rel, never the read's reasoning; only a yes is filed, by=claude.
 
     A run never starts a call that could take it past `cap`, and picks up where the last one stopped: it confirms the
     links still waiting first, then reads only records not read at their present text (all of them when the targets
@@ -304,15 +302,10 @@ def sweep(repo: Path, ask=None, confirm=None, dry_run: bool = False, limit: int 
             d, t = text_of[ln["from"]]
             prompt = config.voice(p.prompts["sweep_confirm"]).format(
                 record=f"[{ln['from']}] date {d or 'undated'}\n{t}", passage=ln["why"], target=about(tg[ln["to"]]), rel=ln["rel"])
-            votes = []
-            while len(votes) < SWEEP_CONFIRMS and all(votes) and out["usd"] + biggest <= cap:
-                votes.append(bool(re.match(r"\W*yes\b", call(confirm, prompt)[0], re.I)))
-            if len(votes) < SWEEP_CONFIRMS and all(votes):  # the cap came mid-link: it waits for the next run, asked afresh
-                out["stopped"] = True
-                break
+            yes = bool(re.match(r"\W*yes\b", call(confirm, prompt)[0], re.I))
             state["pending"].pop(0)
-            (state["confirmed"] if all(votes) else out["rejected"]).append(ln)
-            if all(votes):
+            (state["confirmed"] if yes else out["rejected"]).append(ln)
+            if yes:
                 out["confirmed"].append(ln)
         else:
             b = work.pop(0)

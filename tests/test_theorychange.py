@@ -144,12 +144,12 @@ def test_the_recheck_reads_long_documents_whole_and_an_errored_one_shows_until_r
     assert [[i for i, _, _ in b] for b in relink.batches(big, budget=100)] == [["a"], ["b"], ["c"]]  # a big one goes alone
 
 
-def test_the_sweep_files_only_what_the_guards_keep_and_two_fresh_calls_confirm(rec):
+def test_the_sweep_files_only_what_the_guards_keep_and_the_second_call_confirms(rec):
     (rec / "evidence").mkdir()
     (rec / "evidence/D01-cold.md").write_text("---\nid: D01\ntitle: Cold mornings stiffen the knee\n---\n# D01\n\nCold stiffens it.\n")
     store.Store(rec).add({"id": "j1", "title": "a low week", "date": "2026-03-02", "kind": "journal", "about": ["series/_journal"]},
                          "- felt low\n")
-    reads, checks, answers = [], [], {}
+    reads, checks = [], []
 
     def ask(prompt):
         reads.append(prompt)
@@ -163,25 +163,22 @@ def test_the_sweep_files_only_what_the_guards_keep_and_two_fresh_calls_confirm(r
             {"record": "e1", "to": "discovery/D01", "rel": "causes", "passage": "x"},
             {"record": "e1", "to": "discovery/D01", "rel": "strengthens", "passage": "sore after a short run"}]}) + "\nDone.", 0.5
 
-    def confirm(prompt):  # each call answers afresh: Loop 1 gets yes then yes, D01 yes then no
+    def confirm(prompt):
         checks.append(prompt)
-        key = "Loop 1" in prompt
-        answers[key] = answers.get(key, 0) + 1
-        return ("Yes." if key or answers[key] % 2 else "no"), 0.1
+        return ("Yes." if "Loop 1" in prompt else "no"), 0.1
     out = relink.sweep(rec, ask=ask, confirm=confirm, dry_run=True)
     assert "felt low" not in reads[0] and "Cold stiffens it." in reads[0] and "path: stiffness → knee → ankle → stiffness" in reads[0]
     assert out["proposed"] == 7 and len(out["links"]) == 2 and sorted(d["why"] for d in out["dropped"]) == [
         "already linked", "not a record of this batch", "passage not in the record", "target node/A isn't a loop or Discovery",
         "unknown rel causes"]
-    assert len(checks) == 4 and all("The knee scan shows mild wear." in c and "never sees" not in c for c in checks)
-    assert "The passage at issue: the knee scan shows mild wear" in checks[0] and checks[0] == checks[1]
+    assert len(checks) == 2 and all("The knee scan shows mild wear." in c and "never sees" not in c for c in checks)
+    assert "The passage at issue: the knee scan shows mild wear" in checks[0]
     assert [(x["from"], x["to"]) for x in out["confirmed"]] == [("consults/visit.md", "loop/1")] and len(out["rejected"]) == 1
-    assert round(out["usd"], 2) == 0.9 and out["left"] == {"unread": 0, "pending": 0}
+    assert round(out["usd"], 2) == 0.7 and out["left"] == {"unread": 0, "pending": 0}
     assert not [e for e in store.Store(rec).events(kind="link") if e.fm.get("author") == relink.SWEPT]
     assert relink.sweep(rec, ask=ask, confirm=confirm, dry_run=True)["batches"] == 0  # a dry run picks up where the last stopped
     capped = relink.sweep(rec, ask=ask, confirm=confirm, cap=0.5)  # a real run keeps its own progress: it reads, then stops
     assert capped["stopped"] and capped["batches"] == 1 and not capped["confirmed"] and capped["left"] == {"unread": 0, "pending": 2}
-    answers.clear()
     done = relink.sweep(rec, ask=ask, confirm=confirm)  # the next confirms what waits, reading nothing again
     assert done["batches"] == 0 and len(done["confirmed"]) == 1 and len(reads) == 2
     [filed] = [e for e in store.Store(rec).events(kind="link") if e.fm.get("author") == relink.SWEPT]

@@ -752,3 +752,20 @@ def test_a_refiled_session_sees_its_facts_as_already_filed_from_the_store(flare)
     capture.run(ask=fake([], calls), summaries=False, now=NOV5)
     assert "2026-11-05 Knee stiffness is back:" in calls[0]
     assert "2026-11-05 led to:" not in calls[0] and "2026-11-05 Orvexa: still on it:" not in calls[0]
+
+
+def test_a_failed_renewal_leaves_the_mark_so_the_next_run_reads_the_session_again(world, monkeypatch):
+    renew = capture.renew
+
+    def broken(*a, **k):
+        raise RuntimeError("renew broke")
+    monkeypatch.setattr(capture, "renew", broken)
+    calls = []
+    out = run(calls, ACHE)
+    assert out["filed"] == 1 and "renew broke" in out["error"]
+    with capture.db() as c:
+        assert c.execute("SELECT count(*) FROM filed").fetchone() == (0,)  # the mark didn't move
+    monkeypatch.setattr(capture, "renew", renew)
+    assert run(calls)["sessions"] == 1 and len(calls) == 2  # read again
+    with capture.db() as c:
+        assert c.execute("SELECT upto FROM filed").fetchone() == (7,)

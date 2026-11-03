@@ -805,9 +805,9 @@ def filed_from(st: store.Store, stem: str) -> list:
 
 def file_session(domain: str, root: Path, path: Path, ask=None, dry_run: bool = False, ask_structure=None,
                  ask_verify=None) -> dict:
-    """Read one session whole and file what's new since it was last filed; returns counts and, for a dry run, what it
-    would file. The session's mark moves only after a successful run. The domain's pack says what's worth writing down;
-    with no `file` words in it, nothing is filed."""
+    """Read one session whole and file what's new since it was last filed; returns counts, the session's new mark
+    (`mark`), which the caller writes once all its steps on the session have succeeded, and, for a dry run, what it
+    would file. The domain's pack says what's worth writing down; with no `file` words in it, nothing is filed."""
     p = pack.load(domain)
     if not p.prompts.get("file"):
         raise RuntimeError(f"engram files only for an area whose pack says what to write down; {domain}'s has no `file` words")
@@ -820,7 +820,8 @@ def file_session(domain: str, root: Path, path: Path, ask=None, dry_run: bool = 
     size = path.stat().st_size
     s = _parse(path)
     later = owners(s, upto)
-    res = {"session": path.stem[:8], "filed": 0, "dropped": [], "kept": [], "would_file": [], "usd": 0.0}
+    res = {"session": path.stem[:8], "filed": 0, "dropped": [], "kept": [], "would_file": [], "usd": 0.0,
+           "mark": (domain, path, max([upto, *later]), size)}
     if later:
         st = store.Store(root)
         kinds, abouts, home = shape(st, p.kinds)
@@ -917,13 +918,16 @@ def file_session(domain: str, root: Path, path: Path, ask=None, dry_run: bool = 
                     for lfm, note in links_for(eid, fm, w[0], w[1], fm.get("source", ""), st) if w else []:
                         tx.add({**lfm, "domain": dom}, note)
         res["filed"] += len(entries)
-    if not dry_run:
-        with contextlib.closing(db()) as c, c:
-            c.execute("INSERT INTO filed (session, domain, path, upto, bytes, at) VALUES (?, ?, ?, ?, ?, ?) "
-                      "ON CONFLICT(session) DO UPDATE SET upto = excluded.upto, bytes = excluded.bytes, "
-                      "at = excluded.at, path = excluded.path",
-                      (path.stem, domain, str(path), max([upto, *later]), size, _now().isoformat(timespec="seconds")))
     return res
+
+
+def mark(domain: str, path: Path, upto: int, size: int):
+    """Move a session's filed mark: the next run reads it only once it has grown past `size`, from message `upto`."""
+    with contextlib.closing(db()) as c, c:
+        c.execute("INSERT INTO filed (session, domain, path, upto, bytes, at) VALUES (?, ?, ?, ?, ?, ?) "
+                  "ON CONFLICT(session) DO UPDATE SET upto = excluded.upto, bytes = excluded.bytes, "
+                  "at = excluded.at, path = excluded.path",
+                  (path.stem, domain, str(path), upto, size, _now().isoformat(timespec="seconds")))
 
 
 def answered(s: sessions.Session) -> dict[int, str]:
@@ -1090,12 +1094,15 @@ def run(ask=None, dry_run: bool = False, summaries: bool = True, now: datetime |
                 except Exception as e:  # recorded; the session's mark stays, so the next run tries again
                     _error(out, f"{p.stem[:8]}: {type(e).__name__}: {e}")
                     continue
-                try:  # after the filer and apart from it; a failure leaves the mark, which is the safe side
+                try:  # after the filer and apart from it
                     rn = renew(d, root, p, upto, ask, dry_run)
                     out["renewed"] += rn["renewed"]
                     out["usd"] += rn["usd"]
-                except Exception as e:
+                except Exception as e:  # recorded; the mark stays, so the next run reads the session again
                     _error(out, f"renew {p.stem[:8]}: {type(e).__name__}: {e}")
+                else:
+                    if not dry_run:
+                        mark(*r["mark"])
                 out["sessions"] += 1
                 out["filed"] += r["filed"]
                 out["dropped"] += r["dropped"]

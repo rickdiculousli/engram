@@ -1,11 +1,14 @@
 """The public tree names no instance (docs/technical.md, "The instance lives in config"): the owner, their home and each
 configured repo's path and remotes appear on no tracked line of it, and a configured domain's name appears nowhere in
 src/. Docs may say an area generically (a medical record); an area's own words live in its pack."""
+import os
 import subprocess
 import sys
 from pathlib import Path
 
 from engram import config
+
+os.environ.pop("ENGRAM_CONFIG", None)  # the box's own config: a weekly pass fences repos off in an overlay
 
 PUBLIC = ["src", "tests", "docs", "bench", "skills", "examples", "reviews", "README.md"]
 

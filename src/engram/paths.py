@@ -30,7 +30,7 @@ DATA = {
     "release": "the release clone the hourly job runs",
     "releases.jsonl": "each release's tag and pins",
     "review": "the value review's state",
-    "scratch": "throwaway clones: the value review's fixes, migrations' trials",
+    "scratch": "throwaway clones: the value review's fixes, migrations' trials, the weekly pass's worktrees and data copy",
     "gate": "the frozen gate's record, data and runs",
     "eval": "question sets and their results",
     "rewire": "`engram rewire analyse` output, per repo",

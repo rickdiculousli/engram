@@ -48,7 +48,7 @@ def rv(world, monkeypatch):
     monkeypatch.setattr(review, "_draft", draft)
     monkeypatch.setattr(review, "replay", lambda code, calls, root, day, data: " ".join(f"events/{c}.md" for c in "abcdefghij") if surfaced.get(code.name) else "")
     monkeypatch.setattr(review, "CHECKS", [check_tests])
-    monkeypatch.setattr(review, "_copy_data", lambda to: None)
+    monkeypatch.setattr(review.refine, "copy_data", lambda to: None)
     return {**world, "origin": origin, "release": rel, "replies": replies, "prompts": prompts, "surfaced": surfaced, "ok": ok,
             "s2": session(world["path"].parent.parent, "s2")}
 

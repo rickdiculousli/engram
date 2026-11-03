@@ -24,9 +24,9 @@ from collections import Counter
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from engram import claude_env, commitmsg, llm
+from engram import claude_env, commitmsg, llm, refine
 from engram import config as config_mod
-from engram.paths import data_dir, data_path, record_conf
+from engram.paths import data_path, record_conf
 from engram.sources import sessions
 
 QUESTIONS = {"data": "the right data", "path": "a path given up on or missed", "balance": "incomplete or one-sided"}
@@ -463,14 +463,6 @@ def check_measure(base: Path, fixed: Path, domain: str, work: Path) -> tuple[boo
 CHECKS = [check_tests, check_gate, check_measure]
 
 
-def _copy_data(to: Path):
-    to.mkdir(parents=True, exist_ok=True)
-    for f in data_dir().glob("*.sqlite"):
-        shutil.copy2(f, to / f.name)
-    if (data_path("moved")).is_dir():
-        shutil.copytree(data_path("moved"), to / "moved", dirs_exist_ok=True)
-
-
 def fix(f: dict, view: dict, domain: str, root: Path | None, key: str, landing: str, push: bool) -> tuple[str, float]:
     """Draft, replay and check a fix in a scratch clone; land it, or drop it and keep the finding open."""
     work = clones() / f"fix-{f['id']}"
@@ -483,7 +475,7 @@ def fix(f: dict, view: dict, domain: str, root: Path | None, key: str, landing: 
     calls = ([c["args"] for c in made if c["n"] == f["call"]] or [c["args"] for c in made]
              or [["search", t["asked"][:500]] for t in view["turns"]])
     call = shlex.join(calls[0]) if calls else "search"
-    _copy_data(work / "data")
+    refine.copy_data(work / "data")
     if f["ref"] in replay(base, calls, root, view["day"], work / "data"):  # engram already surfaces it: the advisor's to use
         _append(f"proposals-{domain}.jsonl", {"finding": f["id"], "kind": "instructions", "session": view["stem"],
                                               "day": view["day"], "question": f["question"], "ref": f["ref"],

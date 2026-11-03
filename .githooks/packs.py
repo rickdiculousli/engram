@@ -6,6 +6,7 @@ import sys
 
 from engram import config, pack
 
+os.environ.pop("ENGRAM_CONFIG", None)  # the box's own config: a weekly pass fences repos off in an overlay
 bad = []
 for name, d in config.load().items():
     if not d.pack:

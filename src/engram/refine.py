@@ -9,6 +9,8 @@ import json
 import math
 import re
 import shlex
+import shutil
+import sqlite3
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
@@ -17,7 +19,7 @@ from pathlib import Path
 import yaml
 
 from engram import claude_env, config, frontmatter, pack, rewire
-from engram.paths import PAGE, SPECS, data_path, record_conf
+from engram.paths import PAGE, SPECS, data_dir, data_path, record_conf
 from engram.sources import sessions
 
 DEFAULTS = {"weekly_cap": 100.0, "pass_cap": 40.0, "hours": 4.0, "model": "opus", "permission_mode": "auto"}
@@ -145,6 +147,34 @@ def _work() -> Path:
     return data_path("scratch") / "refine"
 
 
+def copy_data(to: Path):
+    """The data folder's SQLite files, each through SQLite's backup (whole, while a writer runs), and its moved refs."""
+    to.mkdir(parents=True, exist_ok=True)
+    for f in data_dir().glob("*.sqlite"):
+        with contextlib.closing(sqlite3.connect(f"file:{f}?mode=ro", uri=True)) as src, \
+                contextlib.closing(sqlite3.connect(to / f.name)) as dst:
+            src.backup(dst)
+    if data_path("moved").is_dir():
+        shutil.copytree(data_path("moved"), to / "moved", dirs_exist_ok=True)
+
+
+def fenced(name: str, repo: Path, wk: str) -> dict:
+    """The env a pass runs engram in: a copy of the data folder, its repo rows dropped so nothing there serves a real
+    repo, cleared at the next pass's start; the real gate folder for the baseline; and a config laid over the box's
+    that keeps a repo only for the domain under pass (none for engram's own), as the gate's freeze writes it."""
+    shutil.rmtree(data_path("scratch") / "refine-data", ignore_errors=True)
+    at = data_path("scratch") / "refine-data" / f"{wk}-{name}"
+    copy_data(at / "data")
+    if (at / "data/capture.sqlite").exists():
+        with contextlib.closing(sqlite3.connect(at / "data/capture.sqlite")) as c:
+            c.execute("DELETE FROM repo")
+            c.commit()
+    (at / "config.toml").write_text("".join(f"[domains.{n}]\nrepo = {json.dumps(str(repo) if n == name else '')}\n"
+                                            for n in config.load()))
+    return {"ENGRAM_DATA": str(at / "data"), "ENGRAM_CONFIG": str(at / "config.toml"),
+            "ENGRAM_GATE": str(data_path("gate"))}
+
+
 def command(name: str, repo: Path, cap: float, dry_run: Path | None = None) -> list[str]:
     """The pass for one repo: the skill handed to `claude -p` by its path, with the repo, its mode and the folder its
     worktrees go in."""
@@ -232,8 +262,8 @@ def run(only: str | None = None, dry_run: Path | None = None, show: bool = False
             rows.append(row)
             _write(rows)
             try:
-                proc = runner(cmd, cwd=_work(), capture_output=True, text=True, env=claude_env.clean(),
-                              timeout=s["hours"] * 3600)
+                proc = runner(cmd, cwd=_work(), capture_output=True, text=True,
+                              env=claude_env.clean(**fenced(name, repo, wk)), timeout=s["hours"] * 3600)
             except subprocess.TimeoutExpired:  # an unknown cost is the whole cap
                 cost, error, said = cap, f"timed out after {s['hours']:g} hours", ""
             except OSError as e:  # never started: nothing spent

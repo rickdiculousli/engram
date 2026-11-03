@@ -1,12 +1,18 @@
+import contextlib
 import json
+import os
 import plistlib
 import shlex
 import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 
 from conftest import git, make_repo
 from engram import refine
+
+HOOKS = Path(__file__).resolve().parents[1] / ".githooks"
 
 
 @pytest.fixture
@@ -60,6 +66,61 @@ def test_a_run_keeps_the_ledger_under_the_weekly_cap_and_skips_a_repo_passed_thi
     assert (served["data"] / f"refine/runs/{refine.week()}/med.md").read_text() == "ok"
     assert refine.run(show=True)[:2] == ["engram: already ran this week", "med: already ran this week"]
     assert "--max-budget-usd 5.00" in refine.run("med", show=True)[0]  # what's left of the week
+
+
+def test_a_pass_runs_engram_on_a_scratch_copy_and_a_config_fenced_to_its_repo(served, monkeypatch):
+    import sqlite3
+    from engram import config
+    data = served["data"]
+    data.mkdir(parents=True, exist_ok=True)
+    with contextlib.closing(sqlite3.connect(data / "capture.sqlite")) as c:
+        c.execute("CREATE TABLE repo (domain TEXT PRIMARY KEY, root TEXT NOT NULL, setup TEXT NOT NULL, at TEXT)")
+        c.execute("INSERT INTO repo VALUES ('med', ?, 'hooks', NULL)", (str(served["med"]),))
+        c.commit()
+    left = data / "scratch/refine-data/2000-01-01-med"  # a killed pass's copy
+    left.mkdir(parents=True)
+    seen = {}
+
+    def runner(cmd, **kw):
+        if "repo=" in cmd[2]:
+            env, name = kw["env"], cmd[2].split("repo=")[1].split(" ")[0]
+            copy = Path(env["ENGRAM_DATA"])
+            with contextlib.closing(sqlite3.connect(copy / "capture.sqlite")) as c:
+                rows = c.execute("SELECT * FROM repo").fetchall()
+            with monkeypatch.context() as m:
+                m.setenv("ENGRAM_CONFIG", env["ENGRAM_CONFIG"])
+                repos = {n: d.repo for n, d in config.load().items()}
+            seen[Path(name).name] = (copy, rows, env["ENGRAM_GATE"], repos, left.exists())
+        return type("P", (), {"returncode": 0, "stdout": json.dumps({"total_cost_usd": 1.0, "result": "ok"}), "stderr": ""})()
+    refine.run(runner=runner)
+    copy, rows, gate, repos, stale = seen["med"]
+    assert copy == data / f"scratch/refine-data/{refine.week()}-med/data" and rows == [] and not stale
+    assert gate == str(data / "gate") and repos == {"med": served["med"], "books": None, "general": None}
+    assert seen["engram"][3] == {"med": None, "books": None, "general": None}  # engram's own pass: every domain fenced
+    with contextlib.closing(sqlite3.connect(data / "capture.sqlite")) as c:
+        assert c.execute("SELECT domain FROM repo").fetchall() == [("med",)]  # the real rows stay
+
+
+def _hook(script, cwd, box, over, data):
+    env = {**os.environ, "XDG_CONFIG_HOME": str(box), "ENGRAM_CONFIG": str(over), "ENGRAM_DATA": str(data)}
+    return subprocess.run([sys.executable, str(HOOKS / script)], cwd=cwd, env=env, capture_output=True, text=True)
+
+
+def test_engrams_hooks_read_the_boxs_own_config_under_a_pass_fence(served):
+    tmp = served["tmp"]
+    box = tmp / "box"
+    (box / "engram").mkdir(parents=True)
+    pack = make_repo(tmp / "packed", {".engram/__init__.py": "", ".engram/tests/test_it.py": "def test_it():\n    assert False\n"})
+    pin = git(pack, "rev-parse", "HEAD").strip()
+    (box / "engram/config.toml").write_text(f'[domains.packed]\nrepo = "{pack}"\npack = "{pin}"\n'
+                                            '[domains.notes]\nrepo = "~/notes-kept-elsewhere"\n')
+    over = tmp / "fence.toml"
+    over.write_text('[domains.packed]\nrepo = ""\n[domains.notes]\nrepo = ""\n')  # as a pass on engram's own repo sets it
+    r = _hook("packs.py", tmp, box, over, tmp / "hook-data")
+    assert r.returncode == 1 and f"packed's pack tests fail at {pin[:12]}" in r.stderr  # found and run, not "has no repo"
+    tree = make_repo(tmp / "tree", {"docs/a.md": "kept in ~/notes-kept-elsewhere\n"})
+    r = _hook("instance.py", tree, box, over, tmp / "hook-data")
+    assert r.returncode == 1 and "docs/a.md:1:" in r.stderr
 
 
 def writer(html="<!DOCTYPE html><html>page</html>", cost=1.5):

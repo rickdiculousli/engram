@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from engram import archive, config, dates, evalset, labels, lint, search, store, summarize, usage
 from engram.index import open_index
 from engram.paths import RECORD_TOML, data_dir, data_path, index_path, record_toml, strays
-from engram.scope import resolve
+from engram.scope import repo_domain, resolve
 from engram.sources import events, said, sections, sessions, storygraph, waysin
 
 STALE = timedelta(minutes=15)
@@ -261,7 +261,8 @@ def cmd_lenses(a):
 
 
 def cmd_show(a):
-    domains = resolve(Path.cwd(), config.load(), a.domain or "all")
+    own = None if a.domain else repo_domain(Path.cwd(), config.load())  # its own repo's record first, then the rest
+    domains = sorted(resolve(Path.cwd(), config.load(), a.domain or "all"), key=lambda d: d != own)
     choices = []
     for d in domains:
         idx = open_index(index_path(d), readonly=True)

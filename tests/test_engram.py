@@ -192,6 +192,19 @@ def test_outside_every_repo_general_is_asked_for_by_name_and_a_ref_still_opens(m
     assert "HbA1c 5.4%" in capsys.readouterr().out
 
 
+def test_show_opens_its_own_repos_record_first_and_anothers_when_only_there(medical, env, tmp_path, monkeypatch, capsys):
+    blog = make_repo(tmp_path / "blog", {"log.md": "# Log\n\n## Lab\nA post about the lab visit.\n"})
+    env["set_repo"]("blog", blog)  # listed after medical
+    main(["ingest", "--domain", "blog"])
+    monkeypatch.chdir(blog)
+    main(["show", "log.md#Lab"])
+    assert "A post about the lab visit" in capsys.readouterr().out
+    main(["show", "log.md#Supplements"])  # only in the medical record, which the blog draws on
+    assert "Zeta-R-XL" in capsys.readouterr().out
+    main(["show", "log.md#Lab", "--domain", "medical"])
+    assert "HbA1c 5.4%" in capsys.readouterr().out
+
+
 def test_search_and_open_are_logged(medical, monkeypatch, capsys):
     monkeypatch.setenv("ENGRAM_TAG", "t1")
     main(["search", "HbA1c", "--domain", "medical"])

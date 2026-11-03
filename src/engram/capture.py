@@ -13,10 +13,10 @@ One timed job runs every hour (`engram capture run`, `engram.jobs`):
 3. It checks the install and repairs what's missing.
 
 No duplicates when a session comes back, enforced in code: each session keeps the message it was filed up to, and the
-entries filed from it are read from the store by their source. A fact is filed only if its quote is found word for word in one of the owner's messages
-after that point (and, for a short answer, the question it answers in Claude's words); every number in it must be in
-those words or Claude's message just before his, and a date may also be the day he said it or follow from his words
-("yesterday", "3 days ago"). A med-change to the status the medication already has is dropped as a repeat.
+entries filed from it are read from the store by their source. A fact is filed only from the owner's own words: its
+quote found word for word in his messages after that point, and every number in it in his words or the question he
+answered (found in Claude's turn just before his message); a date may also be the day he said it or follow from his
+words ("yesterday", "3 days ago"). A med-change to the status the medication already has is dropped as a repeat.
 
 A repeat check follows (a month's window read at low effort still let repeats through, and documents and complaint
 pages were never in it): each checked fact's own text, already in record wording, searches the domain index; its top
@@ -32,7 +32,8 @@ the model said. Interpretations, plans, decisions and beliefs stay repeats on an
 Theory changes: a theory's status changes, and a loop step or join becomes a theory link, only
 when the owner states it or agrees to it in conversation. The model is given the graph's ids and statuses; code files a
 status or link only on an id the graph holds, a status or rel the record knows, and the owner's own words (his agreement,
-with Claude's proposal as the question answered). A Claude suggestion he hasn't agreed to never counts.
+with Claude's proposal, from the turn just before it, as the question answered). A Claude suggestion he hasn't agreed to
+never counts.
 
 Emotional and mental-health talk stays out (the record's handle-mental-health rule): it's filed only with his consent,
 as a journal page the advisor saves, never by this job and never as a symptom or theory entry.
@@ -114,18 +115,39 @@ def last_message(path: Path) -> datetime:
     return datetime.fromtimestamp(path.stat().st_mtime).astimezone()
 
 
+def _mine(s: sessions.Session, x: sessions.Exchange, me: str) -> list[tuple[int, str]]:
+    """The owner's messages in an exchange, each with how many of Claude's replies came before it: what he asked, then
+    what he sent while Claude worked. Text a skill, a program or another session wrote isn't his."""
+    if x.meta or x.summary:
+        return []
+    who, words = summarize.speaker(s, x.asked, me)
+    return ([(0, words)] if who == me else []) + [(k, q) for k, q in x.queued if summarize.speaker(s, q, me)[0] == me]
+
+
 def owners(s: sessions.Session, after: int = 0) -> dict[int, str]:
-    """line -> the owner's own words in each exchange past `after`, with what he sent while Claude worked. Text a skill,
-    a program or another session wrote isn't his; a short reply is, since "yes" to "did you take 10mg?" can be a fact."""
+    """line -> the owner's own words in each exchange past `after`, with what he sent while Claude worked. A short reply
+    is his, since "yes" to "did you take 10mg?" can be a fact."""
     me, out = config.owner(), {}
     for x in s.exchanges:
-        if x.meta or x.summary or x.line <= after:
-            continue
-        who, words = summarize.speaker(s, x.asked, me)
-        said = [words] if who == me else []
-        said += [q for _, q in x.queued if summarize.speaker(s, q, me)[0] == me]
+        said = _mine(s, x, me) if x.line > after else []
         if said:
-            out[x.line] = "\n\n".join(said)
+            out[x.line] = "\n\n".join(w for _, w in said)
+    return out
+
+
+def turn_before(s: sessions.Session) -> dict[int, str]:
+    """line -> Claude's turn just before the owner's words there, where the question he answered must be: all Claude's
+    text since his previous message (a skill's turn, a summary or another speaker in between isn't his, so Claude's text
+    after one still counts), and, as what he sent while Claude worked joins the line, this turn's text before the last of it."""
+    me, out, since = config.owner(), {}, []
+    for x in s.exchanges:
+        said = _mine(s, x, me)
+        if not said:
+            since += x.replies
+            continue
+        k = said[-1][0]
+        out[x.line] = "\n".join(since + x.replies[:k])
+        since = x.replies[k:]
     return out
 
 
@@ -414,29 +436,30 @@ def _date_fits(token: str, days: set[str]) -> bool:
     return False
 
 
-def _his(item: dict, later: dict[int, str], claude: str) -> str | None:
+def _his(item: dict, later: dict[int, str], turns: dict[int, str]) -> str | None:
     """Why an item isn't in the owner's own new words, or None: its quote in one of his messages past the mark, word for word,
-    and the question he answered (or the proposal he agreed to) in Claude's words."""
+    and the question he answered (or the proposal he agreed to) in Claude's turn just before his words (`turn_before`)."""
     try:
-        words = later.get(int(item.get("line")))
+        line = int(item.get("line"))
     except (TypeError, ValueError):
-        words = None
+        line = None
+    words = later.get(line)
     quote, asked = str(item.get("quote", "")), str(item.get("answering", ""))
     if words is None:
         return f"not one of {config.owner()}'s new messages"
     if not quote.strip() or recsum._norm(quote) not in recsum._norm(words):
         return f"quote not in {config.owner()}'s words"
-    if asked and recsum._norm(asked) not in recsum._norm(claude):
+    if asked and recsum._norm(asked) not in recsum._norm(turns.get(line, "")):
         return "question not in Claude's words"
     return None
 
 
-def check(fact: dict, later: dict[int, str], claude: str, said_on: str | None = None, before: str = "") -> str | None:
-    """Why a fact can't be filed as the owner's, or None. Its quote must be in one of his messages after the filed-up-to
-    point, word for word; a fact resting on his answer must name a question found in Claude's words; at most 40 words.
-    Every number must be in his words, the question he answered or Claude's message just before his (the context he
-    was answering); a date may also be the day he said it or follow from his words ("yesterday", "3 days ago")."""
-    why = _his(fact, later, claude)
+def check(fact: dict, later: dict[int, str], turns: dict[int, str], said_on: str | None = None) -> str | None:
+    """Why a fact can't be filed as the owner's, or None. A fact is filed only from the owner's own words: its quote
+    found word for word in his messages after the filed-up-to point, and every number in it in his words or the question
+    he answered, found in Claude's turn just before his; a date may also be the day he said it or follow from his words
+    ("yesterday", "3 days ago"). At most 40 words."""
+    why = _his(fact, later, turns)
     if why:
         return why
     words, asked, text = later[int(fact["line"])], str(fact.get("answering", "")), str(fact.get("text", ""))
@@ -444,7 +467,7 @@ def check(fact: dict, later: dict[int, str], claude: str, said_on: str | None = 
         return "missing text or quote"
     if len(text.split()) > 40:
         return "over 40 words"
-    context = dates.numbers("\n".join([words, asked, before]))
+    context = dates.numbers("\n".join([words, asked]))
     days = dates_said(words, said_on)
     for n in dates.NUMBER.findall(text):
         if n not in context and not _date_fits(n, days):
@@ -509,10 +532,10 @@ def theory_shape(st: store.Store, words: str):
     return g, rels, strengths, text, graph
 
 
-def check_theory(item: dict, later: dict[int, str], claude: str, g, rels: list[str], strengths: list[str]) -> str | None:
+def check_theory(item: dict, later: dict[int, str], turns: dict[int, str], g, rels: list[str], strengths: list[str]) -> str | None:
     """Why a theory change can't be filed, or None: it must be in the owner's own words (his agreement when he agreed to
-    Claude's proposal), on ids the graph holds, with a status or rel the record knows."""
-    why = _his(item, later, claude)
+    Claude's proposal in the turn just before), on ids the graph holds, with a status or rel the record knows."""
+    why = _his(item, later, turns)
     if why:
         return why
     st, ln = item.get("status"), item.get("link")
@@ -569,7 +592,7 @@ def _ask_structure(prompt: str) -> tuple[str, float]:
     return _ask(prompt, effort="medium")  # a revision of the model takes more judgment than drawing out facts
 
 
-def structure(domain: str, st: store.Store, s: sessions.Session, line: int, later: dict[int, str], claude: str, th,
+def structure(domain: str, st: store.Store, s: sessions.Session, line: int, later: dict[int, str], turns: dict[int, str], th,
               ask, words: str) -> tuple[dict | None, str | None, float]:
     """The backstop for a structural theory revision the owner agreed to but the conversation didn't make: one call at
     medium effort writes it as operations; his agreement is checked word for word and the change on the graph it would
@@ -586,7 +609,7 @@ def structure(domain: str, st: store.Store, s: sessions.Session, line: int, late
     item = json.loads(m.group(0)) if m else {}
     if not item.get("ops"):
         return None, "on a closer read, no structural change was agreed", usd
-    why = _his(item, later, claude)
+    why = _his(item, later, turns)
     if why:
         return None, why, usd
     try:
@@ -840,15 +863,14 @@ def file_session(domain: str, root: Path, path: Path, ask=None, dry_run: bool = 
                                               theory=th[3].replace("{upto}", str(upto)) if th else "", already="\n".join(already) or "nothing",
                                               record=record_context(domain, st, later, when, stands, p.prompts.get("record", ""))))
         parsed = reply_json(reply)
-        claude = "\n".join(r for x in s.exchanges for r in x.replies)
-        before = answered(s)
+        turns = turn_before(s)
         entries, lines, places = [], [], []
         for f in parsed.get("facts") or []:
             try:
                 line = int(f.get("line"))
             except (TypeError, ValueError):
                 line = -1
-            why = check(f, later, claude, when.get(line), before.get(line, ""))
+            why = check(f, later, turns, when.get(line))
             thing = now_mod.chain_for(st, str(f.get("entity") or "")) if cur.entity_kind and f.get("kind") == cur.entity_kind else None
             if not why and cur.entity_kind and f.get("kind") == cur.entity_kind:
                 why = entity_repeat(f, stands, cur, thing)
@@ -856,7 +878,7 @@ def file_session(domain: str, root: Path, path: Path, ask=None, dry_run: bool = 
                 res["dropped"].append({"session": path.stem[:8], "line": f.get("line"), "why": why, "text": str(f.get("text", ""))[:120]})
             else:
                 fm, body = entry(f, when[int(f["line"])], path.stem, kinds, abouts, home,
-                                 "\n".join([later[line], str(f.get("answering", "")), before.get(line, "")]), cur,
+                                 "\n".join([later[line], str(f.get("answering", ""))]), cur,
                                  p.kinds[0] if p.kinds else "observation")
                 if thing and fm["kind"] == cur.entity_kind:  # an existing chain: "Pataday" joins "Pataday 0.7%"
                     fm["thing"] = thing
@@ -879,7 +901,7 @@ def file_session(domain: str, root: Path, path: Path, ask=None, dry_run: bool = 
         for t in parsed.get("theory") or []:
             if not isinstance(t, dict):
                 continue
-            why = check_theory(t, later, claude, *th[:3]) if th else "the record has no theory graph"
+            why = check_theory(t, later, turns, *th[:3]) if th else "the record has no theory graph"
             if why:
                 res["dropped"].append({"session": path.stem[:8], "line": t.get("line"), "why": why, "text": str(t.get("quote", ""))[:120]})
             else:
@@ -890,7 +912,7 @@ def file_session(domain: str, root: Path, path: Path, ask=None, dry_run: bool = 
         except (TypeError, ValueError):
             line = None
         if th and line in later and p.prompts.get("structure"):
-            revision, why, usd = structure(domain, st, s, line, later, claude, th, ask_structure, p.prompts.get("structure", ""))
+            revision, why, usd = structure(domain, st, s, line, later, turns, th, ask_structure, p.prompts.get("structure", ""))
             res["usd"] += usd
             if why:
                 res["dropped"].append({"session": path.stem[:8], "line": line, "why": why, "text": "a structural theory change"})
@@ -987,7 +1009,7 @@ def renew(domain: str, root: Path, path: Path, upto: int, ask=None, dry_run: boo
     things = "\n".join(f"- {t}: {marked[t].name} ({now_mod.mark(marked[t], day)})" for t in named)
     reply, res["usd"] = (ask or _ask)(config.voice(p.prompts["renew"]).format(domain=domain, things=things, exchanges=exchanges))
     res["called"] = True
-    claude, out = "\n".join(r for x in s.exchanges for r in x.replies), []
+    turns, out = turn_before(s), []
     said = reply_json(reply).get("renewals", [])
     for r in said if isinstance(said, list) else []:
         t = str(r.get("thing")) if isinstance(r, dict) else ""
@@ -999,7 +1021,7 @@ def renew(domain: str, root: Path, path: Path, upto: int, ask=None, dry_run: boo
             r = {k: v for k, v in r.items() if k != "answering"}  # a question not in Claude's message before his isn't kept
         why = ("not a thing marked as not mentioned for a while" if t not in named else
                "not an exchange that names it" if line not in named[t] else
-               "already renewed in this session" if t in {fm["thing"] for fm, _ in out} else _his(r, later, claude))
+               "already renewed in this session" if t in {fm["thing"] for fm, _ in out} else _his(r, later, turns))
         if why:
             res["dropped"].append({"session": path.stem[:8], "line": r.get("line") if isinstance(r, dict) else None, "why": why})
             continue

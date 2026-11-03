@@ -247,33 +247,60 @@ def test_a_repos_own_pre_commit_keeps_running(world):
     assert (repo / ".engram/hooks/pre-commit").read_text() == "#!/bin/sh\necho mine\n"
 
 
-def test_dates_from_the_day_he_said_it_and_numbers_from_the_message_he_answered():
+def test_dates_from_the_day_he_said_it_and_numbers_from_his_words_and_the_question_he_answered():
     later = {5: "stopped Zentrafen, started Quillmar around then", 7: "my knee felt sore last night", 9: "took it 3 days ago",
-             11: "it was the same as she said"}
-    fact = lambda line, text, quote: {"line": line, "text": text, "quote": quote}
+             11: "it was the same as she said", 13: "ok, go with that", 15: "pain was 7/10 today"}
+    turns = {11: "At the 09-17 visit she measured swelling 4 mm. Was it the same as before?",
+             13: "Revenue was 135B, spreads near 1,600bp. Go with that?"}
+    fact = lambda line, text, quote, asked="": {"line": line, "text": text, "quote": quote, "answering": asked}
     # the day of the message, and what "last night" or "3 days ago" count back from it
     assert capture.check(fact(5, "Sam stopped Zentrafen and started Quillmar on 2026-09-22.", "stopped Zentrafen, started Quillmar"),
-                         later, "", "2026-09-22") is None
-    assert capture.check(fact(7, "Sam's knee felt sore on 2026-09-21.", "my knee felt sore last night"), later, "", "2026-09-22") is None
-    assert capture.check(fact(9, "Sam took it on 09-19.", "took it 3 days ago"), later, "", "2026-09-22") is None
-    assert capture.check(fact(7, "Sam's knee felt sore on 2026-09-15.", "my knee felt sore last night"), later, "", "2026-09-22") \
+                         later, {}, "2026-09-22") is None
+    assert capture.check(fact(7, "Sam's knee felt sore on 2026-09-21.", "my knee felt sore last night"), later, {}, "2026-09-22") is None
+    assert capture.check(fact(9, "Sam took it on 09-19.", "took it 3 days ago"), later, {}, "2026-09-22") is None
+    assert capture.check(fact(7, "Sam's knee felt sore on 2026-09-15.", "my knee felt sore last night"), later, {}, "2026-09-22") \
         == "number 2026-09-15 not in the record"
-    # a date or value in Claude's message just before his: the context he was answering
-    asked = "At the 09-17 visit she measured swelling 4 mm."
-    assert capture.check(fact(11, "Sam says the 09-17 swelling of 4 mm matched what she said.", "it was the same as she said"),
-                         later, "", "2026-09-22", before=asked) is None
+    # a date or value in the question he answered
+    asked = turns[11]
+    assert capture.check(fact(11, "Sam says the 09-17 swelling of 4 mm matched what she said.", "it was the same as she said", asked),
+                         later, turns, "2026-09-22") is None
     # any other value still has to be in his words
-    assert capture.check(fact(11, "Sam's swelling was 6 mm.", "it was the same as she said"), later, "", "2026-09-22",
-                         before=asked) == "number 6 not in the record"
+    assert capture.check(fact(11, "Sam's swelling was 6 mm.", "it was the same as she said", asked), later, turns, "2026-09-22") \
+        == "number 6 not in the record"
+    # Claude's analysis before his "ok" isn't the question he answered: its numbers aren't his
+    assert capture.check(fact(13, "Sam puts spreads near 1,600bp.", "ok, go with that", "Go with that?"), later, turns, "2026-09-22") \
+        == "number 1,600 not in the record"
     # a number counts only whole, never as a piece of a longer one; a fraction's parts count
-    said = {13: "ok, go with that", 15: "pain was 7/10 today"}
-    dense = "Revenue was 135B, spreads near 1,600bp."
-    assert capture.check(fact(13, "Sam puts it at 35.", "ok, go with that"), said, "", "2026-09-22", before=dense) \
+    assert capture.check(fact(13, "Sam puts it at 35.", "ok, go with that", turns[13]), later, turns, "2026-09-22") \
         == "number 35 not in the record"
-    assert capture.check(fact(13, "Sam says spreads near 60.", "ok, go with that"), said, "", "2026-09-22", before=dense) \
+    assert capture.check(fact(13, "Sam says spreads near 60.", "ok, go with that", turns[13]), later, turns, "2026-09-22") \
         == "number 60 not in the record"
-    assert capture.check(fact(15, "Sam's pain was 7 out of 10 on 2026-09-22.", "pain was 7/10 today"), said, "",
-                         "2026-09-22") is None
+    assert capture.check(fact(15, "Sam's pain was 7 out of 10 on 2026-09-22.", "pain was 7/10 today"), later, {}, "2026-09-22") is None
+
+
+def test_the_question_he_answered_is_in_claudes_turn_just_before_his_words(env):
+    path = env["tmp"] / "projects" / "-Users-x-repos-notes" / "s.jsonl"
+    path.parent.mkdir(parents=True)
+    path.write_text("\n".join([
+        said("how is my knee?"),
+        turn("assistant", [{"type": "text", "text": "Did you take 10mg of the tablets?"},
+                           {"type": "text", "text": "I'll check the notes either way."}]),
+        said("yes"),
+        reply("How many tablets a day?"),
+        json.dumps({"type": "attachment", "attachment": {"type": "queued_command", "prompt": "two"}}),
+        reply("Thanks, noted."),
+        turn("user", "Base directory for this skill: ...", meta=True),
+        reply("Shall I log the swelling as 4 mm?"),
+        said("sure"),
+    ]) + "\n")
+    s = capture._parse(path)
+    later, turns = capture.owners(s), capture.turn_before(s)
+    why = lambda line, quote, asked, text: capture.check({"line": line, "quote": quote, "answering": asked, "text": text},
+                                                         later, turns, "2026-10-18")
+    assert why(3, "yes", "Did you take 10mg of the tablets?", "Sam took 10mg of the tablets.") is None  # not the turn's last block
+    assert why(3, "two", "How many tablets a day?", "Sam takes two tablets a day.") is None  # sent while Claude worked: same line
+    assert why(9, "sure", "Shall I log the swelling as 4 mm?", "Sam's swelling was 4 mm.") is None  # asked after a skill's turn
+    assert why(9, "sure", "Did you take 10mg of the tablets?", "Sam took 10mg.") == "question not in Claude's words"  # two turns back
 
 
 THEORY_TOML = TOML + """[links.theory]
@@ -367,6 +394,17 @@ def test_a_link_sam_agrees_to_is_a_theory_link_in_links_jsonl(graph):
     from engram import theory
     [edge] = theory.load(graph["repo"]).joins()
     assert edge.note.startswith("knee tension raises the urge to rest") and edge.since == "2026-10-18"
+
+
+def test_an_agreement_counts_only_for_claudes_turn_just_before_it(graph):
+    link = {"from": "node/B", "to": "node/A", "rel": "amplifier", "mechanism": "knee tension raises the urge to rest",
+            "strength": "medium"}
+    near = {"line": 5, "quote": "ok", "answering": "I think the knee tension amplifies the stiffness.", "link": link}
+    far = {"line": 5, "quote": "ok", "answering": "Should we mark P-01 as provisional now?",
+           "status": {"id": "pattern/P-01", "to": "provisional"}}
+    out = capture.run(ask=ask_theory([near, far]), summaries=False, now=LATER)
+    assert out["filed"] == 1 and [d["why"] for d in out["dropped"]] == ["question not in Claude's words"]
+    assert len(captured(graph["repo"], "link")) == 1 and not captured(graph["repo"], "status")
 
 
 def add_session(world, name, lines, ts):

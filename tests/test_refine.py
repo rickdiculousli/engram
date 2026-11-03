@@ -38,6 +38,14 @@ def test_the_pass_serves_engram_then_each_domain_and_skips_a_paused_one(served):
     assert not (served["data"] / "refine/ledger.jsonl").exists()
 
 
+def test_a_folder_configured_only_for_search_is_never_served(served):
+    notes = make_repo(served["tmp"] / "notes", {"a.md": "a\n"})  # no .engram/README.md: engram doesn't own it
+    served["set_repo"]("notes", notes, pack="")
+    assert list(refine.repos()) == ["engram", "med", "books"]
+    assert not any(line.startswith("notes:") for line in refine.run(show=True))
+    assert not any("notes" in line for line in refine.status())
+
+
 def test_a_run_keeps_the_ledger_under_the_weekly_cap_and_skips_a_repo_passed_this_week(served):
     costs = iter([25.0, 20.0])
 

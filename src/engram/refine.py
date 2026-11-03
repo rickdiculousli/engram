@@ -1,7 +1,7 @@
 """The weekly refinement (docs/operations.md, "The weekly refinement"): `engram refine run` starts one `claude -p` pass
-per repo engram serves, its own repo first and then each configured domain's, under the week's cap. The pass follows
-skills/engram-refine/SKILL.md in engram's own repo; each change it lands carries a `Refinement:` trailer, its one line
-for the owner, and each idea it can't land is a spec in the repo's .engram/specs/. After a pass, `digest` opens a page
+per repo engram owns, its own repo first and then each configured domain's with a page, under the week's cap. The pass
+follows skills/engram-refine/SKILL.md in engram's own repo; each change it lands carries a `Refinement:` trailer, its
+one line for the owner, and each idea it can't land is a spec in the repo's .engram/specs/. After a pass, `digest` opens a page
 of both for the owner, and `install` writes the timed job that runs the week's passes."""
 import contextlib
 import fcntl
@@ -59,8 +59,10 @@ def own() -> Path | None:
 
 
 def repos() -> dict[str, Path]:
-    """The repos the pass serves, by name: engram's own, then each configured domain's."""
-    return ({"engram": own()} if own() else {}) | {n: d.repo for n, d in config.load().items() if d.repo}
+    """The repos the pass serves, by name: engram's own, then each configured domain's that has the one page the pass
+    answers to; a folder configured only for search has none, and gets no specs."""
+    return ({"engram": own()} if own() else {}) | {n: d.repo for n, d in config.load().items()
+                                                   if d.repo and (d.repo / PAGE).exists()}
 
 
 def paused(repo: Path) -> bool:

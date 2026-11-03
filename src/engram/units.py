@@ -157,10 +157,14 @@ def build(db, g: Graph, hit: str, when: str | None = None, hide: bool = False, k
     def superseded(pool: set[str]) -> set[str]:
         return {y for x in pool for y, rel, w, _ in g.edges.get(x, ()) if w == "older" and y in pool}
     pool = set(vis)
+    current = lambda pool: (reach(hit, "newer", pool) | {hit}) - superseded(pool)
     if hit in pool:  # the hit's own current version: its corrections followed forward, the newest not corrected again
-        cand = (reach(hit, "newer", pool) | {hit}) - superseded(pool)
+        cand = current(pool)
     else:  # said after the date: the version it corrects that stood then
         cand = reach(hit, "older", pool) - superseded(pool)
+    if not cand and not hide:  # every version was said after the date: none stood then, so centre as with no date
+        pool = set(ms)
+        cand = current(pool)
     centre = newest(cand) if cand else hit
     for y in peers_of(g, centre, set(ms)):  # the current version's own disagreements, beside it
         if (d := _doc(db, y)) is not None and not (excluded and excluded(d[5], y)):

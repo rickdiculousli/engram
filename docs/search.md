@@ -66,7 +66,7 @@ A record and every version of it come back as one unit that counts as one result
 - **The unit** is the record's revision chain, a line through time: up what it revises or supersedes and down what revises or supersedes it, each recursively, every branch from the record itself, never down from an ancestor into its other branches; plus the record's and its current version's direct `disagrees` links. Why a line, not a component of the graph: a document several entries each correct in part joined dozens of records into one group.
 - **How it shows:** the current version (reached by following corrections forward) in full; every other version on one line (date, who, what changed, cut to 50 characters, its id), six at most, then "N more versions". Versions that disagree sit side by side, headed as such, none marked the answer. A later-ranked version is skipped and the next record fills its place.
 - **An ordinary change isn't a version:** a thing's next entry on its `now` chain (a new dose, say) is a change, and the unit carries one `now:` line saying where the thing stands.
-- **As of a date:** a past period the question names or `--as-of` centres the unit on the version current then, and marks later ones "changed later"; `--as-it-stood` leaves them out.
+- **As of a date:** a past period the question names or `--as-of` centres the unit on the version current then (on today's when every version was said later), and marks later ones "changed later"; `--as-it-stood` leaves them out, keeping the hit when none was said yet.
 - **Evals** count every version a result or row shows as in hand (`evalset.result_refs`, `evalset.timeline_refs`).
 
 ## The one-call timeline

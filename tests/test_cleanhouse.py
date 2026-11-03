@@ -196,6 +196,20 @@ def test_an_as_of_question_centres_on_the_version_current_then(rec):
     assert stood["ref"] == old.id and not stood["unit"]["lines"] and stood["unit"]["hidden"] == [new.id]
 
 
+def test_a_past_date_before_every_version_centres_on_the_current_one_unless_read_as_it_stood(rec):
+    from engram import search
+    st = Store(rec["repo"])
+    old = st.add({"kind": "observation", "title": "Knee clicks when climbing", "date": "2026-05-03", "recorded": "2026-08-02T09:00:00-07:00",
+                  "about": ["series/_observations", "story/knee"], "by": "sam"}, "- knee clicks on stairs\n")
+    new = _fix(st, old.id, "Only the left one", "2026-05-03", "2026-09-05T09:00:00-07:00", about=("series/_observations", "story/knee"),
+               note="- side: both knees became the left only", body="- the left only.\n")
+    main(["ingest", "--domain", "medical"])
+    then = _unit_of(search.search("did my knee click on stairs in June 2026", ["medical"], limit=5), old.id)
+    assert then["ref"] == new.id  # every version came after June: none stood then, so the current one
+    stood = _unit_of(search.search("knee clicks on stairs", ["medical"], limit=5, as_of="2026-06-01", as_it_stood=True), old.id)
+    assert stood["ref"] == old.id and stood["unit"]["hidden"] == [new.id]  # nothing said later shows in full
+
+
 def test_a_chain_longer_than_six_is_capped(rec):
     from engram import search
     st = Store(rec["repo"])

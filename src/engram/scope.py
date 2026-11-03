@@ -1,5 +1,6 @@
 """Which domains a search may open: the repo the working directory belongs to, and others only when asked for by
 name (.engram/README.md, "Each repo searches only itself")."""
+import re
 import subprocess
 from pathlib import Path
 
@@ -16,7 +17,7 @@ def _git(cwd: Path, *args: str) -> str | None:
 
 def repo_domain(cwd: Path, domains: dict[str, Domain]) -> str | None:
     """The domain cwd is in: the one whose folder holds it (the deepest), else the one whose repo cwd's git checkout
-    belongs to (worktrees count), else the one with a remote the origin URL ends with."""
+    belongs to (worktrees count), else the one with a remote the origin URL ends with, from a path boundary on."""
     here = cwd.resolve()
     held = [d for d in domains.values() if d.repo and here.is_relative_to(d.repo.resolve())]
     if held:
@@ -28,7 +29,7 @@ def repo_domain(cwd: Path, domains: dict[str, Domain]) -> str | None:
             return d.name
     origin = _git(cwd, "remote", "get-url", "origin") or ""
     for d in domains.values():
-        if any(origin.endswith((r, r + ".git")) for r in d.remotes):
+        if any(re.search(rf"(^|[/:@]){re.escape(r)}(\.git)?$", origin) for r in d.remotes):  # whole path parts
             return d.name
     return None
 

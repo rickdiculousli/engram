@@ -162,10 +162,11 @@ def test_scope_is_the_deepest_configured_folder_holding_cwd_then_the_repo_then_t
     outer = make_repo(tmp_path / "outer", {"inner/a.md": "# A\n", "inner/deep/b.md": "# B\n"})
     other = make_repo(tmp_path / "other", {"a.md": "# A\n"}, origin="git@github.com:example/notes-archive.git")
     clone = make_repo(tmp_path / "clone", {"a.md": "# A\n"}, origin="git@github.com:example/notes.git")
+    theirs = make_repo(tmp_path / "theirs", {"a.md": "# A\n"}, origin="https://github.com/myexample/notes")
     example = Path(__file__).resolve().parents[1] / "examples/notes"  # a folder inside engram's own checkout
     env["set_repo"]("outer", outer)
     env["set_repo"]("inner", outer / "inner")
-    env["set_repo"]("notes", tmp_path / "elsewhere", remotes=["github.com:example/notes"])
+    env["set_repo"]("notes", tmp_path / "elsewhere", remotes=["github.com:example/notes", "example/notes"])
     env["set_repo"]("garden", example)
     doms = config.load()
     assert resolve(outer / "inner/deep", doms) == ["inner"]  # a folder inside another git repo, the deepest match
@@ -174,6 +175,8 @@ def test_scope_is_the_deepest_configured_folder_holding_cwd_then_the_repo_then_t
     assert resolve(clone, doms) == ["notes"]  # by its remote
     with pytest.raises(SystemExit):
         resolve(other, doms)  # notes-archive isn't notes
+    with pytest.raises(SystemExit):
+        resolve(theirs, doms)  # myexample/notes isn't example/notes
 
 
 @pytest.mark.parametrize("call", [["search", "HbA1c"], ["timeline"], ["now"], ["theory"], ["lenses"]])

@@ -94,9 +94,9 @@ class Store:
                 if line.strip():
                     try:
                         fm = json.loads(line)
-                    except ValueError as e:
-                        raise ValueError(f"{self.events_dir}/{LINKS}:{n}: {e}") from e
-                    out.append(Event(fm["id"], f"{self.events_dir}/{LINKS}:{n}", fm, fm.pop("note", "")))
+                        out.append(Event(fm["id"], f"{self.events_dir}/{LINKS}:{n}", fm, fm.pop("note", "")))
+                    except (ValueError, KeyError, TypeError) as e:
+                        raise ValueError(f"{self.events_dir}/{LINKS}:{n}: {e!r}") from e
             self._events = out
         return [e for e in self._events
                 if (kind is None or e.kind == kind) and (about is None or about in e.about)]

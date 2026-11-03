@@ -103,14 +103,15 @@ def test_a_malformed_entry_or_link_line_names_itself(repo):
     st.add({"title": "fine", "date": "2026-03-01", "kind": "symptom"}, "")
     bad = repo / "events/2026/03/20260301-000000-symptom-0000.md"
     bad.parent.mkdir(parents=True, exist_ok=True)
-    bad.write_text("---\ntitle: [unclosed\n---\n")
-    with pytest.raises(ValueError, match="events/2026/03/20260301-000000-symptom-0000.md: "):
-        Store(repo).events()
+    for text in ("---\ntitle: [unclosed\n---\n", "---\ntitle: caf\xe9\n---\n"):  # bad YAML, or not UTF-8
+        bad.write_bytes(text.encode("latin-1"))
+        with pytest.raises(ValueError, match="events/2026/03/20260301-000000-symptom-0000.md: "):
+            Store(repo).events()
     bad.unlink()
-    with (repo / "events/links.jsonl").open("w") as f:
-        f.write('{"id": "a", "kind": "link"}\n{not json\n')
-    with pytest.raises(ValueError, match="events/links.jsonl:2: "):
-        Store(repo).events()
+    for line in ("{not json", '{"kind": "link"}', "[1]"):  # not JSON, no id, not an object
+        (repo / "events/links.jsonl").write_text('{"id": "a", "kind": "link"}\n' + line + "\n")
+        with pytest.raises(ValueError, match="events/links.jsonl:2: "):
+            Store(repo).events()
 
 
 def test_a_hit_arrives_with_its_story_neighbours(repo, env):

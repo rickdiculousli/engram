@@ -34,7 +34,7 @@ DATA = {
     "gate": "the frozen gate's record, data and runs",
     "eval": "question sets and their results",
     "rewire": "`engram rewire analyse` output, per repo",
-    "refine": "the weekly pass's spend ledger, each pass's report and page, and the changes already on a page",
+    "refine": "the weekly pass's spend ledger, each pass's report, the week's page, and the changes already on a page",
     "archive.sqlite": "the archive, on the box that keeps it",
     "backups": "the archive's backups",
     "daily.json": "how the last daily copy to the second box went",

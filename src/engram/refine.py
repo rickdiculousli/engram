@@ -1,8 +1,8 @@
 """The weekly refinement (docs/operations.md, "The weekly refinement"): `engram refine run` starts one `claude -p` pass
 per repo engram owns, its own repo first and then each configured domain's with a page, under the week's cap. The pass
 follows skills/engram-refine/SKILL.md in engram's own repo; each change it lands carries a `Refinement:` trailer, its
-one line for the owner, and each idea it can't land is a spec in the repo's .engram/specs/. After a pass, `digest` opens a page
-of both for the owner, and `install` writes the timed job that runs the week's passes."""
+one line for the owner, and each idea it can't land is a spec in the repo's .engram/specs/. After the passes, `digest` writes
+the week's one page of both across the repos, and `install` writes the timed job that runs the week's passes."""
 import contextlib
 import fcntl
 import json
@@ -27,6 +27,7 @@ SKILL = "skills/engram-refine/SKILL.md"  # in engram's own repo, so an edit ther
 TRAILER = "Refinement"
 REVERTS = "This reverts commit "  # git revert's line
 SWEEP = "sweep"  # the job of the evidence sweep's ledger rows: they count toward the week, never as a pass
+PAGE_JOB = "page"  # the job of the week's page's ledger row: it counts toward the week, never as a pass
 LABEL = "engram.refine"
 # Saturday 04:00, with catch-ups on Sunday and Monday for a box asleep then; a repo whose pass this week landed, is
 # running, or cost something is skipped, and one whose pass failed for nothing is tried again
@@ -39,16 +40,16 @@ ALLOW = ("The weekly refinement pass: editing files in the repo it was given and
 OFF_LIMITS = ("bench/gate.py", "skills/engram-refine/**", ".githooks/**")
 DIGEST_CAP = 3.0  # what one digest may spend
 DIGEST = """Write one self-contained HTML page (inline CSS, no scripts, nothing loaded from elsewhere) that tells {owner} \
-what this week's refinement of their {repo} repo brings them to decide. Reply with the page alone, from <!doctype html> \
+what this week's refinement of their repos brings them to decide. Reply with the page alone, from <!doctype html> \
 to </html>.
 
 It's for reading, not acting. For each item below that needs them: a plain title; what it would change for them; its \
 cost; the recommendation; the evidence; then the answers they can give: yes, no, defer, or tell me more. A spec \
 approved but not built says why it waits; jobs still proposed are shown as written, asking if that's it. Changes \
-already made are one plain line each, with no answers. Write in the specs' own plain voice, to {owner} as "you", with \
+already made are one plain line each, with no answers. Each item says which repo it's in. Write in the specs' own plain voice, to {owner} as "you", with \
 no file paths, commands, field names, statuses or other machinery; leave out what an item doesn't say, and add nothing.
 
-End with this line, alone: "Bring it up in a regular session in {repo} when you want to deal with it."
+End with this line, alone: "Bring each up in a regular session in its repo when you want to deal with it."
 """
 
 
@@ -234,7 +235,7 @@ def run(only: str | None = None, dry_run: Path | None = None, show: bool = False
     s, wk, targets = settings(), week(), repos()
     if only and only not in targets:
         sys.exit(f"engram refine: {only} is none of {', '.join(targets)}")
-    out = []
+    out, ran = [], False
     # the schedule waits out a pass on request; a pass `start` launched holds the lock it inherited
     with contextlib.nullcontext() if attached else _lock(wait=not (only or show or dry_run)):
         rows = ledger()
@@ -267,6 +268,7 @@ def run(only: str | None = None, dry_run: Path | None = None, show: bool = False
                    "running": True}  # a pass stopped mid-run keeps its cap spent, so nothing reruns it for free
             rows.append(row)
             _write(rows)
+            ran = not dry_run
             try:
                 proc = runner(cmd, cwd=_work(), capture_output=True, text=True,
                               env=claude_env.clean(**fenced(name, repo, wk)), timeout=s["hours"] * 3600)
@@ -290,9 +292,6 @@ def run(only: str | None = None, dry_run: Path | None = None, show: bool = False
             _write(rows)
             (_dir() / "runs" / wk).mkdir(parents=True, exist_ok=True)
             (_dir() / "runs" / wk / f"{name}{'-dry' if dry_run else ''}.md").write_text(said or "")
-            paid, page = (0.0, "") if dry_run else digest(name, repo, min(DIGEST_CAP, s["weekly_cap"] - spent(rows, wk)),
-                                                         runner)
-            row["cost_usd"] = round(row["cost_usd"] + paid, 4)  # the page is the pass's
             if not dry_run and name in config.load() and pack.load(name).prompts.get("compile"):
                 from engram import compile as compile_mod
                 try:  # the compiled wiki's health check runs with the pass, its cost the pass's
@@ -301,7 +300,19 @@ def run(only: str | None = None, dry_run: Path | None = None, show: bool = False
                     out.append(f"{name}: the wiki's health check failed: {type(e).__name__}: {e}")
             _write(rows)
             out.append(f"{name}: {'ok' if row['ok'] else 'failed'}, ${cost:.2f}; week ${spent(rows, wk):.2f} of "
-                       f"${s['weekly_cap']:.0f}" + (f"; {page}" if page else ""))
+                       f"${s['weekly_cap']:.0f}")
+        page = _dir() / "digests" / f"{wk}.html"
+        if ran and page.exists():  # one page a week: a later pass's items wait for the next
+            out.append(f"the week's page is already {page}; what this run brought waits for the next")
+        elif ran:
+            started = datetime.now().isoformat(timespec="seconds")
+            paid, line = digest(targets, min(DIGEST_CAP, s["weekly_cap"] - spent(rows, wk)), runner)
+            if paid:
+                rows.append({"week": wk, "repo": "", "job": PAGE_JOB, "started": started, "dry_run": False,
+                             "cost_usd": round(paid, 4), "ok": page.exists()})
+                _write(rows)
+            if line:
+                out.append(f"the week's page: {line}")
     return out
 
 
@@ -461,26 +472,30 @@ def _seen() -> set[str]:
         return set()
 
 
-def digest(name: str, repo: Path, budget: float, runner=subprocess.run) -> tuple[float, str]:
-    """The page a pass leaves the owner when there's something to discuss in its repo: each spec waiting on them, each
-    landed change not yet in a page, and their jobs while still proposed. One `claude -p` with no tools writes it, the
-    page goes in the data folder and opens in the browser, and only then are its changes marked shown. Returns (cost,
-    a line for the log, empty when there was nothing to discuss)."""
-    seen = _seen()
-    changed = [(sha, day, line) for sha, day, line in _landed(repo) if sha not in seen]
-    waiting, portrait = _specs(repo)[0], ""
-    with contextlib.suppress(ValueError, yaml.YAMLError):  # a broken page is told at session start
-        portrait = _portrait(repo)
-    if not (changed or waiting or portrait):
+def digest(targets: dict[str, Path], budget: float, runner=subprocess.run) -> tuple[float, str]:
+    """The week's one page for the owner, across the repos, when something there needs them: each spec waiting on
+    them, each landed change not yet in a page, and their jobs while still proposed. One `claude -p` with no tools
+    writes it, the page goes in the data folder and opens in the browser, and only then are its changes marked shown.
+    Returns (cost, a line for the log, empty when nothing needed them: then nothing is written or opened)."""
+    seen, items, changed = _seen(), [], set()
+    for repo in targets.values():
+        new = [(sha, day, line) for sha, day, line in _landed(repo) if sha not in seen]
+        portrait = ""
+        with contextlib.suppress(ValueError, yaml.YAMLError):  # a broken page is told at session start
+            portrait = _portrait(repo)
+        part = ([f"## Jobs still proposed\n\n{portrait}"] if portrait else []) + \
+            [f"## A spec\n\n{p.read_text()}" for p in _specs(repo)[0]] + \
+            (["## Changed since the last page\n\n" + "\n".join(f"- {day}: {line}" for _, day, line in new)] if new else [])
+        if part:
+            items.append(f"# In {repo.name}\n\n" + "\n\n".join(part))
+        changed |= {sha for sha, _, _ in new}
+    if not items:
         return 0.0, ""
     if budget < 0.5:
-        return 0.0, "no page, the week's cap is spent; its items wait for the next"
-    items = ([f"## Jobs still proposed\n\n{portrait}"] if portrait else []) + \
-        [f"## A spec\n\n{p.read_text()}" for p in waiting] + \
-        (["## Changed since the last page\n\n" + "\n".join(f"- {day}: {line}" for _, day, line in changed)] if changed else [])
+        return 0.0, "none, the week's cap is spent; its items wait for the next"
     cmd = ["claude", "-p", "--output-format", "json", "--model", settings()["model"], "--max-budget-usd", f"{budget:.2f}",
            "--tools", "", "--strict-mcp-config", "--setting-sources", "project", "--no-session-persistence"]
-    prompt = DIGEST.format(owner=config.owner(), repo=repo.name) + "\n\n" + "\n\n".join(items)
+    prompt = DIGEST.format(owner=config.owner()) + "\n\n" + "\n\n".join(items)
     _work().mkdir(parents=True, exist_ok=True)
     try:
         proc = runner(cmd, input=prompt, cwd=_work(), capture_output=True, text=True, env=claude_env.clean(), timeout=1800)
@@ -488,18 +503,18 @@ def digest(name: str, repo: Path, budget: float, runner=subprocess.run) -> tuple
         cost = float(res.get("total_cost_usd", budget))
         html = re.search(r"<!doctype html.*</html>", res.get("result") or "", re.S | re.I)
     except (OSError, ValueError, TypeError, AttributeError, subprocess.SubprocessError):  # an unknown cost is the cap
-        return budget, "no page, the writer gave no answer; its items wait for the next"
+        return budget, "none, the writer gave no answer; its items wait for the next"
     if not html:
-        return cost, "no page, the writer's answer wasn't one; its items wait for the next"
-    page = _dir() / "digests" / f"{datetime.now():%Y-%m-%d}-{name}.html"
+        return cost, "none, the writer's answer wasn't one; its items wait for the next"
+    page = _dir() / "digests" / f"{week()}.html"
     page.parent.mkdir(exist_ok=True)
     page.write_text(html.group(0))
     tmp = _dir() / "seen.tmp"  # written whole
-    tmp.write_text(json.dumps(sorted(seen | {sha for sha, _, _ in changed})))
+    tmp.write_text(json.dumps(sorted(seen | changed)))
     tmp.replace(_dir() / "seen.json")
     if sys.platform == "darwin":
         runner(["open", str(page)])
-    return cost, f"page {page}"
+    return cost, str(page)
 
 
 def install(agents: Path | None = None, load: bool = True) -> Path:

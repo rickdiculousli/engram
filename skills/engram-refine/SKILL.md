@@ -51,7 +51,7 @@ B=$(git -C <repo> symbolic-ref --short HEAD)
 git -C <repo> worktree add -b refinement/<yyyy-mm-dd>-<slug> "$W" "$B"
 ```
 
-A worktree has no `.venv`: make its own with `uv sync`. Never link the checkout's: a linked `.venv` gets committed, and once wiped the live one. Make the change, and end its commit message with the trailer `Refinement: <what changed for the user, one line, plain words>`. Run the repo's checks in `$W`, commit under the repo's commit rules, then `git -C <repo> merge --ff-only <branch>` and `git -C <repo> push origin "$B"`. If a check fails or the merge won't fast-forward after one rebase, drop the change and write it as a spec. Remove the worktree and branch either way.
+A worktree has no `.venv`: make its own with `uv sync`. Never link the checkout's: a linked `.venv` gets committed, and once wiped the live one. Make the change. If the user would see it, end its commit message with the trailer `Refinement: <what changed for them, one line, plain words>`; one they wouldn't see gets none. Run the repo's checks in `$W`, commit under the repo's commit rules, then `git -C <repo> merge --ff-only <branch>` and `git -C <repo> push origin "$B"`. If a check fails or the merge won't fast-forward after one rebase, drop the change and write it as a spec. Remove the worktree and branch either way.
 
 ## Spec
 
@@ -71,7 +71,7 @@ status: open
 - **Plan:** how it would be built, short enough to build from once approved.
 ```
 
-After the pass, engram writes the user a page of each open spec and each landed change's trailer; they answer in a later session, where the advisor sets `status: approved`, `rejected` or `deferred`. A deferred spec is the user's to raise again: never build it, rewrite it or spec its idea anew.
+After the week's passes, engram writes the user one page across repos of each open spec and each trailer not yet shown; they answer in a later session, where the advisor sets `status: approved`, `rejected` or `deferred`. A deferred spec is the user's to raise again: never build it, rewrite it or spec its idea anew.
 
 ## Report
 

@@ -155,6 +155,24 @@ def test_scope_follows_the_repo_including_worktrees(medical, env, tmp_path):
     assert resolve(medical, doms, "medical,general") == ["medical", "general"]
 
 
+def test_scope_is_the_deepest_configured_folder_holding_cwd_then_the_repo_then_the_remote(env, tmp_path):
+    from pathlib import Path
+    outer = make_repo(tmp_path / "outer", {"inner/a.md": "# A\n", "inner/deep/b.md": "# B\n"})
+    other = make_repo(tmp_path / "other", {"a.md": "# A\n"}, origin="git@github.com:example/notes-archive.git")
+    clone = make_repo(tmp_path / "clone", {"a.md": "# A\n"}, origin="git@github.com:example/notes.git")
+    example = Path(__file__).resolve().parents[1] / "examples/notes"  # a folder inside engram's own checkout
+    env["set_repo"]("outer", outer)
+    env["set_repo"]("inner", outer / "inner")
+    env["set_repo"]("notes", tmp_path / "elsewhere", remotes=["github.com:example/notes"])
+    env["set_repo"]("garden", example)
+    doms = config.load()
+    assert resolve(outer / "inner/deep", doms) == ["inner"]  # a folder inside another git repo, the deepest match
+    assert resolve(outer, doms) == ["outer"]
+    assert resolve(example / "garden", doms) == ["garden"]
+    assert resolve(clone, doms) == ["notes"]  # by its remote, with or without .git
+    assert resolve(other, doms) == ["general"]  # notes-archive isn't notes
+
+
 def test_search_and_open_are_logged(medical, monkeypatch, capsys):
     monkeypatch.setenv("ENGRAM_TAG", "t1")
     main(["search", "HbA1c", "--domain", "medical"])

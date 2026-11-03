@@ -99,7 +99,7 @@ A weight's key says which records it fits: `milestone`; `day-to-day` (a record o
 
 ## Scope
 
-- **By repo identity, not path text.** The git toplevel and `origin` URL decide, so worktrees resolve like the main checkout.
+- **Folder, then repo, then remote.** The deepest configured folder holding the working directory decides, so a record folder inside another git repo resolves; else the configured repo the git checkout belongs to, so worktrees resolve like the main checkout; else a configured remote the `origin` URL ends with.
 - **Each repo searches only itself** (an owner's decision, in the private `.engram/README.md`): inside a configured domain's repo, that domain; elsewhere, `general` only.
 - **`--domain` widens scope, by name** (`--domain notes,general`, or `all`). An index file outside scope is never opened.
 

@@ -15,21 +15,20 @@ def _git(cwd: Path, *args: str) -> str | None:
 
 
 def repo_domain(cwd: Path, domains: dict[str, Domain]) -> str | None:
-    """The domain whose repo contains cwd: matched by origin URL, so worktrees count, else by path."""
-    origin = _git(cwd, "remote", "get-url", "origin")
-    if origin:
-        for d in domains.values():
-            if any(r in origin for r in d.remotes):
-                return d.name
+    """The domain cwd is in: the one whose folder holds it (the deepest), else the one whose repo cwd's git checkout
+    belongs to (worktrees count), else the one with a remote the origin URL ends with."""
+    here = cwd.resolve()
+    held = [d for d in domains.values() if d.repo and here.is_relative_to(d.repo.resolve())]
+    if held:
+        return max(held, key=lambda d: len(d.repo.resolve().parts)).name
     common = _git(cwd, "rev-parse", "--path-format=absolute", "--git-common-dir")
-    if common:
-        root = Path(common).resolve().parent
-        for d in domains.values():
-            if d.repo and root == d.repo.resolve():
-                return d.name
-        return None
-    for d in domains.values():  # outside git: the domain whose folder holds cwd
-        if d.repo and cwd.resolve().is_relative_to(d.repo.resolve()):
+    root = common and Path(common).resolve().parent
+    for d in domains.values():
+        if d.repo and root == d.repo.resolve():
+            return d.name
+    origin = _git(cwd, "remote", "get-url", "origin") or ""
+    for d in domains.values():
+        if any(origin.endswith((r, r + ".git")) for r in d.remotes):
             return d.name
     return None
 

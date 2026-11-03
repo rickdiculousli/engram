@@ -61,7 +61,7 @@ def test_a_session_belongs_where_it_was_started(world):
     ])
     write_session(root, "-Users-x-scratch-b", "w1", [turn("user", "fakezine made me drowsy after the fakelog visit")])
     write_session(root, "-Users-x-repos-portfolio", "i1", [turn("user", "where does the copper pin stand?")])
-    write_session(root, "-Users-x-repos-gametrainer", "g1", [turn("user", "fix the build")])
+    write_session(root, "-Users-x-repos-sideproject", "g1", [turn("user", "fix the build")])
     out = sessions.ingest(world["doms"], root)
     assert out["read"] == 5
     assert filed("medical") == {"m1"}  # touching its files (t1) or naming its words (w1) doesn't count

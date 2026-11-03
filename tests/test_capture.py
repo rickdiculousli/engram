@@ -764,6 +764,28 @@ def test_a_push_that_hangs_is_a_failed_push_and_retried(world, monkeypatch):
     assert store.push_failure(repo) is None and out["error"] is None
 
 
+def test_a_summaries_run_that_stops_is_the_runs_error(world, monkeypatch):
+    monkeypatch.setattr(capture.summarize, "run", lambda d: {"summarized": 0, "stopped": "out of quota"})
+    out = capture.run(ask=fake([], []), now=LATER)
+    assert "out of quota" in out["error"]
+    assert any("out of quota" in l for l in capture.problems("medical"))
+
+
+def test_a_daily_copy_that_failed_or_went_quiet_is_its_own_line(world):
+    cfg, daily_json = world["tmp"] / "config.toml", world["tmp"] / "data/daily.json"
+    def last(ok, ago):
+        at = (datetime.now().astimezone() - ago).isoformat(timespec="seconds")
+        daily_json.write_text(json.dumps({"started": at, "ok": ok, "finished": at} | ({} if ok else {"failed_step": "pull backups"})))
+        return capture.session_start(world["payload"])
+    assert last(False, timedelta(hours=1)) == ""  # no daily copy configured: nothing to say
+    cfg.write_text(cfg.read_text() + '[daily]\nbox = "spare"\n')
+    failed = last(False, timedelta(hours=1))
+    assert failed.startswith("engram's daily copy") and "pull backups" in failed and "capture" not in failed
+    quiet = last(True, timedelta(days=3))
+    assert quiet.startswith("engram's daily copy") and "capture" not in quiet
+    assert last(True, timedelta(hours=20)) == ""
+
+
 def test_a_launcher_at_another_path_running_the_same_code_is_not_old(world):
     repo, tmp = world["repo"], world["tmp"]
     other = tmp / "bin/engram"  # another install of the same checkout, as ~/.local/bin/engram is

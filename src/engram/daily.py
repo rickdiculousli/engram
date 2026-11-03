@@ -5,7 +5,7 @@ archive's backups back. It never deletes there; `engram health` reads how its la
 import json
 import shlex
 import subprocess
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from engram import config, refine
@@ -15,6 +15,7 @@ LABEL = "engram.daily"
 REMOTE = ".local/share/engram/"  # the data folder on the second box, under its home
 SESSIONS = REMOTE + "mirror/claude-projects/"  # where the session files land there, for summaries of cleaned-up ones
 KEEP = 7  # backups kept here
+STALE = timedelta(days=2)  # a copy older than this has stopped running
 
 
 def settings() -> dict:
@@ -74,13 +75,27 @@ def run() -> dict:
     return state
 
 
-def status() -> str | None:
+def _last() -> dict | None:
     f = data_path("daily.json")
-    if not f.exists():
+    return json.loads(f.read_text()) if f.exists() else None
+
+
+def status() -> str | None:
+    if not (s := _last()):
         return None
-    s = json.loads(f.read_text())
     return (f"daily copy to {box() or 'the second box'}: last run {s.get('finished')}, "
             + ("ok" if s.get("ok") else f"FAILED at {s.get('failed_step')}"))
+
+
+def stalled() -> str | None:
+    """While a daily copy is configured: what's wrong when its last run failed or is over STALE old; None otherwise."""
+    if not box() or not (s := _last()):
+        return None
+    if not s.get("ok"):
+        return f"failed at {s.get('failed_step')} on {s.get('finished')}"
+    if datetime.now().astimezone() - datetime.fromisoformat(s["finished"]) > STALE:
+        return f"hasn't run since {s['finished']}"
+    return None
 
 
 def install(agents: Path | None = None, load: bool = True) -> Path:

@@ -55,7 +55,7 @@ from collections import Counter
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-from engram import claude_env, commitmsg, config, dates, pack, recsum, refine, review, store, summarize
+from engram import claude_env, commitmsg, config, daily, dates, pack, recsum, refine, review, store, summarize
 from engram import now as now_mod
 from engram import theory as theory_mod
 from engram.paths import data_path, record_conf, record_toml
@@ -1106,7 +1106,8 @@ def run(ask=None, dry_run: bool = False, summaries: bool = True, now: datetime |
             sessions.ingest(config.load())
             if summaries and not dry_run:
                 for d in repos:  # without raw transcripts in the index, a session is searchable through its summary
-                    summarize.run(d)
+                    if stopped := summarize.run(d)["stopped"]:
+                        _error(out, f"summaries {d} stopped: {stopped}")
             summarize.index_all()
         except Exception as e:
             _error(out, f"indexing: {type(e).__name__}: {e}")
@@ -1253,6 +1254,8 @@ def session_start(payload: dict) -> str:
     if why := pack.problem(found[0]):
         bad.append(f"its pack didn't load, so nothing is filed: {why}")
     out = [f"engram capture needs fixing ({'; '.join(bad)}): run `engram capture status` and tell {config.owner()} in one line."] if bad else []
+    if copy := daily.stalled():  # not capture's: its own line, so it never reads as capture broken
+        out.append(f"engram's daily copy {copy}: run `engram health` and tell {config.owner()} in one line.")
     conf = record_conf(found[1])
     if (conf.get("index") or {}).get("events"):
         with contextlib.suppress(Exception):  # the picture is a help; a broken record mustn't block the session

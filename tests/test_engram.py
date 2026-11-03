@@ -150,7 +150,8 @@ def test_scope_follows_the_repo_including_worktrees(medical, env, tmp_path):
     wt = tmp_path / "wt"
     git(medical, "worktree", "add", "-q", str(wt), "-b", "side")
     assert resolve(wt, doms) == ["medical"]
-    assert resolve(tmp_path, doms) == ["general"]
+    with pytest.raises(SystemExit, match="not in a repo engram serves; known: medical, general; pass --domain"):
+        resolve(tmp_path, doms)
     assert resolve(tmp_path, doms, "all") == list(config.load())
     assert resolve(medical, doms, "medical,general") == ["medical", "general"]
 
@@ -169,8 +170,26 @@ def test_scope_is_the_deepest_configured_folder_holding_cwd_then_the_repo_then_t
     assert resolve(outer / "inner/deep", doms) == ["inner"]  # a folder inside another git repo, the deepest match
     assert resolve(outer, doms) == ["outer"]
     assert resolve(example / "garden", doms) == ["garden"]
-    assert resolve(clone, doms) == ["notes"]  # by its remote, with or without .git
-    assert resolve(other, doms) == ["general"]  # notes-archive isn't notes
+    assert resolve(clone, doms) == ["notes"]  # by its remote
+    with pytest.raises(SystemExit):
+        resolve(other, doms)  # notes-archive isn't notes
+
+
+@pytest.mark.parametrize("call", [["search", "HbA1c"], ["timeline"], ["now"], ["theory"], ["lenses"]])
+def test_outside_every_repo_a_scope_wide_read_says_so(medical, tmp_path, monkeypatch, capsys, call):
+    (tmp_path / "elsewhere").mkdir()
+    monkeypatch.chdir(tmp_path / "elsewhere")
+    with pytest.raises(SystemExit, match="not in a repo engram serves; known: medical, general; pass --domain"):
+        main(call)
+
+
+def test_outside_every_repo_general_is_asked_for_by_name_and_a_ref_still_opens(medical, tmp_path, monkeypatch, capsys):
+    (tmp_path / "elsewhere").mkdir()
+    monkeypatch.chdir(tmp_path / "elsewhere")
+    main(["search", "HbA1c", "--domain", "general"])
+    assert "HbA1c" not in capsys.readouterr().out  # the general pile, not the medical record
+    main(["show", "log.md#Lab"])
+    assert "HbA1c 5.4%" in capsys.readouterr().out
 
 
 def test_search_and_open_are_logged(medical, monkeypatch, capsys):

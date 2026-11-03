@@ -3,7 +3,7 @@ name (.engram/README.md, "Each repo searches only itself")."""
 import subprocess
 from pathlib import Path
 
-from engram.config import GENERAL, Domain
+from engram.config import Domain
 
 
 def _git(cwd: Path, *args: str) -> str | None:
@@ -43,4 +43,6 @@ def resolve(cwd: Path, domains: dict[str, Domain], requested: str | None = None)
             raise SystemExit(f"engram: unknown domain {', '.join(unknown)} (known: {', '.join(domains)})")
         return names
     own = repo_domain(cwd, domains)  # a repo searches only itself; general or another domain only when asked by name
-    return [own] if own else [GENERAL]
+    if not own:
+        raise SystemExit(f"engram: not in a repo engram serves; known: {', '.join(domains)}; pass --domain")
+    return [own]

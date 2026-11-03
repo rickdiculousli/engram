@@ -290,10 +290,12 @@ def test_a_timeline_across_domains_answers_from_each_with_stories_under_its_name
     for scope in ("blog,medical", "medical,blog"):  # the one with stories answers, in either order
         main(["timeline", "ankle", "--domain", scope])
         out = capsys.readouterr().out
-        assert "[medical]" in out.splitlines() and "First session" in out and "[blog]" not in out
+        assert out.startswith('{"domain":"medical",') and "First session" in out and '"blog"' not in out
     main(["timeline", "ankle", "--domain", "medical,clinic"])  # both with stories: both answer, each under its name
     out = capsys.readouterr().out
-    assert out.index("[medical]") < out.index("First session") < out.index("[clinic]") < out.index("Soreness gone")
+    assert out.index('{"domain":"medical",') < out.index("First session") < out.index('{"domain":"clinic",') < out.index("Soreness gone")
+    main(["timeline", "ankle", "--domain", "medical,clinic", "--format", "jsonl"])  # still JSON lines, every one
+    assert all(json.loads(l) for l in capsys.readouterr().out.splitlines())
     with pytest.raises(SystemExit, match="no stories here"):
         main(["timeline", "ankle", "--domain", "blog"])
 

@@ -192,7 +192,7 @@ def cmd_timeline(a):
         usage.log_search(d, f"timeline {' '.join(a.name)}", [d], "timeline",
                          [{"domain": d, "rank": 1, "ref": ref, "score": 0, "factors": {}}
                           for r in rows for ref in ([r["_ref"]] if "_ref" in r else r["_refs"])])
-        print(f"[{d}]\n" * (len(domains) > 1) + timeline.render(header, rows, a.format))
+        print(timeline.render({"domain": d, **header} if len(domains) > 1 else header, rows, a.format))
         told = True
     if a.name and not told:
         sys.exit("engram: no stories here; a repo gets them once it's rewired, and `engram timeline` lists what there is")

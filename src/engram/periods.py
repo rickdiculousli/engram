@@ -37,7 +37,10 @@ def span(text: str | None, today: date | None = None) -> tuple[date, date] | Non
     if not m:
         return None
     y, mo, d = int(m.group(1)), m.group(2) and int(m.group(2)), m.group(3) and int(m.group(3))
-    start = date(y, mo or 1, d or 1)
+    try:  # "2026-02-30" names no day
+        start = date(y, mo or 1, d or 1)
+    except ValueError:
+        return None
     end = date(y, mo, d) if d else _month_end(y, mo) if mo else date(y, 12, 31)
     if re.search(r"~|approx|around|about|early|mid|late", text, re.I):
         pad = timedelta(days=30 * (1 + max(0, (today - start).days // 365)))

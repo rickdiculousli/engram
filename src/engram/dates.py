@@ -1,5 +1,6 @@
 """Event dates at the precision they were known: a year, a month, a day, or not sure."""
 import re
+from datetime import date
 
 DATE = re.compile(r"^(\d{4})(?:-(\d{2})(?:-(\d{2}))?)?$")
 FIND = re.compile(r"(?<!\d)(\d{4}-\d{2}(?:-\d{2})?)(?!\d)")
@@ -11,13 +12,17 @@ def valid(value: str) -> bool:
     m = DATE.match(value)
     if not m:
         return False
-    month, day = m.group(2), m.group(3)
-    return (month is None or 1 <= int(month) <= 12) and (day is None or 1 <= int(day) <= 31)
+    y, mo, d = m.groups()
+    try:  # a day that exists: no 2026-02-30
+        date.fromisoformat(f"{y}-{mo or '01'}-{d or '01'}")
+    except ValueError:
+        return False
+    return True
 
 
 def key(value: str | None) -> str | None:
     """Sortable YYYY-MM-DD; an imprecise date sorts at the start of its period."""
-    if not value or value == "not-sure" or not DATE.match(value):
+    if not value or value == "not-sure" or not valid(value):
         return None
     y, m, d = DATE.match(value).groups()
     return f"{y}-{m or '01'}-{d or '01'}"

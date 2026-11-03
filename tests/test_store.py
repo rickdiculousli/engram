@@ -121,6 +121,16 @@ def test_a_hit_arrives_with_its_story_neighbours(repo, env):
     assert top["surroundings"][0]["rel"] == "led to" and top["surroundings"][0]["story"] == "ankle"
 
 
+def test_a_search_naming_an_impossible_day_reads_it_as_no_date(repo, env):
+    from engram import search
+    from engram.cli import main
+    file_log(Store(repo))
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    env["set_repo"]("medical", repo)
+    main(["ingest", "--domain", "medical"])
+    assert search.search("soreness gone on 2026-02-30", ["medical"], limit=3)
+
+
 def test_links_reach_theory_sections_and_the_query_picks_among_them(repo, env, capsys):
     from engram import search
     from engram.cli import main

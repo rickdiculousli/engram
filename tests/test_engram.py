@@ -126,7 +126,8 @@ def test_frontmatter_keeps_text():
 
 def test_dates_at_any_precision():
     assert all(dates.valid(v) for v in ("2026", "2026-10", "2026-10-18", "not-sure"))
-    assert not any(dates.valid(v) for v in ("~2026-10", "2026-13", "Oct 2026", "2026-10-32"))
+    assert not any(dates.valid(v) for v in ("~2026-10", "2026-13", "Oct 2026", "2026-10-32", "2026-02-30", "2025-02-29"))
+    assert dates.key("2026-02-30") is None
     assert dates.key("2026-10") == "2026-10-01" and dates.key("not-sure") is None
 
 

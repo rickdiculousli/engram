@@ -436,6 +436,13 @@ def test_a_date_he_never_gave_is_not_sure_and_a_named_month_is_kept():
     assert (fm["date"], fm["date_note"], fm["reported"]) == ("not-sure", "reported; when it happened wasn't said", said)
 
 
+def test_an_impossible_day_is_never_filed():
+    assert capture.full_date({"date": "2026-02-30"}, "2026-03-02") == ("not-sure", False)
+    fm, _ = capture.entry({"text": "Knee ached", "quote": "knee ached", "date": "2026-02-30"},
+                          "2026-03-02", "s1", ["observation"], [], "", "knee ached")
+    assert fm["date"] != "2026-02-30"
+
+
 def test_a_past_episode_dated_the_day_he_said_it_is_not_sure_and_a_month_is_the_latest_one():
     said, words = "2026-10-24", "Last time I was going to sleep and my back got tweaked"
     assert capture.full_date({"date": said, "quote": words}, said, words) == ("never-said", False)

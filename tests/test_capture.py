@@ -187,6 +187,63 @@ def test_setup_teardown_round_trip_and_self_repair(world, monkeypatch):
     assert setup._git(repo, "config", "--get", "core.hooksPath").stdout.strip() == ""
 
 
+@pytest.fixture
+def loaded(world, monkeypatch):
+    """The world's install as the box's real one: its manifest loaded, launchctl stubbed (the label is the real one,
+    so a guard bug must never reach the box's own job), and every piece broken, for a repair to find."""
+    repo, ran = world["repo"], []
+    monkeypatch.setattr("engram.jobs._run", lambda *a: ran.append(a) or subprocess.CompletedProcess(a, 0, "", ""))
+    with capture.db() as c:
+        man = json.loads(c.execute("SELECT setup FROM repo").fetchone()[0]) | {"load": True}
+        c.execute("UPDATE repo SET setup = ?", (json.dumps(man),))
+        c.execute(setup.REPAIR)
+    plist = world["tmp"] / "LaunchAgents" / f"{setup.LABEL}.plist"
+    plist.unlink()
+    sp = repo / ".claude/settings.json"
+    sp.write_text('{\n    "hooks": {}\n}\n')
+    git(repo, "config", "--unset", "core.hooksPath")
+    untouched = lambda: (not plist.exists() and sp.read_text() == '{\n    "hooks": {}\n}\n'
+                         and not setup._git(repo, "config", "core.hooksPath").stdout.strip()
+                         and not [a for a in ran if a[1] in ("bootout", "bootstrap")]
+                         and not capture.db().execute("SELECT count(*) FROM repair").fetchone()[0])
+    return {"ran": ran, "plist": plist, "untouched": untouched}
+
+
+def test_a_scratch_data_folder_leaves_the_real_install_alone(world, loaded, monkeypatch):
+    import shutil
+    real, scratch = world["tmp"] / "real", world["tmp"] / "data"
+    real.mkdir()
+    shutil.copy(scratch / "capture.sqlite", real / "capture.sqlite")  # the scratch copy holds the real rows
+    monkeypatch.setattr("engram.paths.default_data_dir", lambda: real)
+    monkeypatch.setattr("engram.review.release", lambda: world["tmp"] / "no-release")  # the release rule off
+    assert setup.repair("medical") == [] and loaded["untouched"]()
+    with pytest.raises(SystemExit, match="scratch data folder"):
+        setup.setup(world["repo"], world["tmp"] / "LaunchAgents", load=True)
+    assert loaded["untouched"]()
+    (world["tmp"] / "sub").mkdir()
+    monkeypatch.setenv("ENGRAM_DATA", str(world["tmp"] / "sub/../real"))  # the default, named another way
+    shutil.copy(scratch / "capture.sqlite", real / "capture.sqlite")
+    assert len([d for d in setup.repair("medical") if d["ok"]]) == 3 and loaded["plist"].exists()
+
+
+def test_only_the_release_repairs_a_loaded_install(world, loaded, monkeypatch):
+    rel = world["tmp"] / "data/release"
+    rel.mkdir()  # the scratch rule off: the test's data folder is the box's own
+    monkeypatch.setattr("engram.paths.default_data_dir", lambda: world["tmp"] / "data")
+    assert setup.repair("medical") == [] and loaded["untouched"]()
+    with pytest.raises(SystemExit, match="not the release clone"):
+        setup.setup(world["repo"], world["tmp"] / "LaunchAgents", load=True)
+    assert capture.session_start(world["payload"]) == "" and loaded["untouched"]()
+    monkeypatch.setattr("engram.review.release", lambda: Path(setup.this_code()).parents[1])  # running from the release
+    assert len([d for d in setup.repair("medical") if d["ok"]]) == 3 and loaded["plist"].exists()
+    assert [a[1] for a in loaded["ran"] if a[1] in ("bootout", "bootstrap")] == ["bootout", "bootstrap"]
+
+
+def test_any_engram_repairs_a_loaded_install_with_no_release_clone(world, loaded, monkeypatch):
+    monkeypatch.setattr("engram.paths.default_data_dir", lambda: world["tmp"] / "data")
+    assert len([d for d in setup.repair("medical") if d["ok"]]) == 3 and loaded["plist"].exists()
+
+
 def test_setup_refuses_a_repo_with_no_current_rewiring(world):
     repo = world["repo"]
     setup.teardown(repo)

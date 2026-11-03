@@ -44,6 +44,7 @@ def box_config(tmp_path, monkeypatch):
     for v in GIT_LOCAL:  # run from a git hook, these would point every repo a test makes at the repo committing
         monkeypatch.delenv(v, raising=False)
     monkeypatch.setattr("engram.jobs.KIND", "launchd")  # the same job files on every platform; test_jobs covers systemd
+    monkeypatch.setattr("engram.paths.default_data_dir", lambda: tmp_path / "box-data")  # never this box's real install
 
 
 @pytest.fixture

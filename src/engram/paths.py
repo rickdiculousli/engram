@@ -47,8 +47,13 @@ DATA = {
 SQLITE_SIDES = ("-wal", "-shm", "-journal")
 
 
+def default_data_dir() -> Path:
+    """The box's own data folder, the one its install runs on; `ENGRAM_DATA` points a scratch copy elsewhere."""
+    return Path.home() / ".local/share/engram"
+
+
 def data_dir() -> Path:
-    d = Path(os.environ.get("ENGRAM_DATA", Path.home() / ".local/share/engram")).expanduser()
+    d = Path(os.environ.get("ENGRAM_DATA", default_data_dir())).expanduser()
     d.mkdir(parents=True, exist_ok=True)
     return d
 

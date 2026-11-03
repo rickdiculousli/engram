@@ -17,12 +17,13 @@ import json
 import os
 import shlex
 import shutil
+import sqlite3
 import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
 
-from engram import commitmsg, jobs
+from engram import commitmsg, jobs, paths
 from engram.paths import HOOKS as HOOKS_DIR, RECORD_TOML, data_path, record_toml
 
 TAG = "# engram-setup"
@@ -196,6 +197,37 @@ def missing(root: Path, man: dict) -> dict[str, str]:
     return out
 
 
+def real_install() -> dict[str, dict]:
+    """The box's real install: each repo root its own data folder has set up, with its manifest; empty unless one is
+    loaded (a test's setup never is)."""
+    f = paths.default_data_dir() / "capture.sqlite"
+    if not f.exists():
+        return {}
+    with contextlib.closing(sqlite3.connect(f"file:{f}?mode=ro", uri=True)) as c:
+        try:
+            mans = {r: json.loads(m) for r, m in c.execute("SELECT root, setup FROM repo")}
+        except sqlite3.OperationalError:
+            return {}
+    return mans if any(m.get("load") for m in mans.values()) else {}
+
+
+def refused(root: Path) -> dict[str, str]:
+    """piece -> why this engram leaves it alone, so only the release repairs the box's real install. Under another data
+    folder (a scratch copy holding the real rows): the job, whose file would carry that folder, and a real repo's
+    settings and hooks. From any engram but the release clone's, when there is one: every piece, or a worktree's
+    `engram capture check` would call the release's hooks old and repoint the real repos and job at itself."""
+    if not (real := real_install()):
+        return {}
+    if paths.data_dir().resolve() != paths.default_data_dir().resolve():
+        why = f"{paths.data_dir()} is a scratch data folder; the box's install is the release's"
+        return {p: why for p in ("settings", "git", "job") if p == "job" or str(Path(root).resolve()) in real}
+    from engram import review
+    rel = review.release()
+    if rel.exists() and not Path(this_code()).is_relative_to(rel.resolve()):
+        return dict.fromkeys(("settings", "git", "job"), f"this engram runs from {this_code()}, not the release clone {rel}")
+    return {}
+
+
 # ---- the commands --------------------------------------------------------------------------------------------------
 
 def setup(root: Path, launch_agents_dir: Path | None = None, load: bool = True) -> list[str]:
@@ -211,6 +243,9 @@ def setup(root: Path, launch_agents_dir: Path | None = None, load: bool = True) 
                          f"for it; " + (pack.problem(domain) or "set [domains.<name>] pack in the config"))
     if why := rewire.drift(root):
         raise SystemExit(f"engram: {domain} has no current rewiring, so it isn't set up: " + "; ".join(why))
+    skip = refused(root)
+    if "settings" in skip:
+        raise SystemExit(f"engram: {domain} isn't set up from here: {skip['settings']}")
     c = capture.db()
     row = c.execute("SELECT setup FROM repo WHERE domain = ?", (domain,)).fetchone()
     if row:
@@ -228,12 +263,13 @@ def setup(root: Path, launch_agents_dir: Path | None = None, load: bool = True) 
             man["kept_hook"] = "pre-commit.before-engram"
     install_settings(root, man)
     install_git(root, man)
-    install_job(man)
+    if "job" not in skip:
+        install_job(man)
     with c:
         c.execute("INSERT OR REPLACE INTO repo (domain, root, setup, at) VALUES (?, ?, ?, coalesce((SELECT at FROM repo WHERE domain = ?), ?))",
                   (domain, str(root), json.dumps(man), domain, _now()))
     c.close()
-    return [f"{domain}: set up ({root})", *(f"  {k}: {v}" for k, v in missing(root, man).items())]
+    return [f"{domain}: set up ({root})", *(f"  {k}: {v}" for k, v in (missing(root, man) | skip).items())]
 
 
 def teardown(root: Path) -> list[str]:
@@ -287,7 +323,8 @@ def _teardown(root: Path) -> list[str]:
 
 
 def repair(domain: str) -> list[dict]:
-    """Re-install each missing or stale piece for a repo set up; every attempt is recorded."""
+    """Re-install each missing or stale piece for a repo set up, but none `refused()` leaves alone; every attempt is
+    recorded, and a piece left alone isn't an attempt."""
     from engram import capture
     c = capture.db()
     c.execute(REPAIR)
@@ -297,7 +334,10 @@ def repair(domain: str) -> list[dict]:
         return []
     root, man = Path(row[0]), json.loads(row[1])
     done, at = [], _now()  # one stamp per run, so status lists every repair it made
+    skip = refused(root)
     for piece, why in missing(root, man).items():
+        if piece in skip:
+            continue
         try:
             {"settings": lambda: install_settings(root, man), "git": lambda: install_git(root, man),
              "job": lambda: install_job(man)}[piece]()

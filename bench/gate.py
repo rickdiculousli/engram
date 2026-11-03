@@ -2,8 +2,8 @@
 moves anything that area sees is caught before it lands (docs/evaluation.md, "The frozen gate"). The area is the
 config's `[review] gate`; `[review] gate_sets` names its question sets at freeze, the newest last.
 
-usage: uv run python bench/gate.py freeze            # once: pin the record, copy the data, pick the sessions
-       uv run python bench/gate.py record            # once: the real filer over the sessions, replies saved
+usage: uv run python bench/gate.py freeze --pack <repo>@<commit>   # once: pick the sessions, pin the record without their writes, copy the data
+       uv run python bench/gate.py record --pack <repo>@<commit>   # once: the real filer over the sessions, replies saved
        uv run python bench/gate.py run <out.json> --pack <repo>@<commit>   # every change: the measures on the frozen inputs
        uv run python bench/gate.py check-pin <out.json>   # before a release: the box's pin for the area is the gated tree
        uv run python bench/gate.py compare <a.json> <b.json>
@@ -211,8 +211,32 @@ def _session_path(s: dict) -> Path:
 
 # ---- freeze, record, run
 
-def freeze():
+WROTE = re.compile(r"^(?:said|agreed) in session (\S{8}) ")  # an entry, renewal or placement link a session filed
+
+
+def _writes(clone: Path) -> dict[str, list]:
+    """Each session's writes in the clone, by the first 8 of its id, as the store reads them: every entry, renewal and
+    placement link whose source names the session."""
+    from engram import store
+    out = {}
+    for e in store.Store(clone).events():
+        if m := WROTE.match(str(e.fm.get("source", ""))):
+            out.setdefault(m[1], []).append(e)
+    return out
+
+
+def _filed(writes: list) -> int:
+    """What a session filed, as the filer counts it: its renewals and placement links are bookkeeping."""
+    from engram.now import RENEWAL
+    return sum(e.kind != RENEWAL and e.fm.get("family") != "timeline" for e in writes)
+
+
+def freeze(pack: str):
+    """The record is cloned at HEAD, the sessions picked from it, then their writes are taken out of the clone in one
+    commit and the index rebuilt from it, so the filer reads each session for the first time: nothing of its own in the
+    record, the record-window search or the repeat check."""
     from engram import config
+    from engram.paths import index_path
     if (GATE / "manifest.json").exists():
         sys.exit(f"{GATE} is already frozen")
     if subprocess.run(["pgrep", "-f", "capture run"], capture_output=True).stdout.strip():
@@ -222,7 +246,6 @@ def freeze():
     clone = GATE / config.load()[D].repo.name
     subprocess.run(["git", "clone", "-q", str(config.load()[D].repo), str(clone)], check=True)
     subprocess.run(["git", "-C", str(clone), "remote", "remove", "origin"], check=True)  # nothing here can push
-    commit = subprocess.run(["git", "-C", str(clone), "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout.strip()
     data = GATE / "data"
     data.mkdir()
     for f in DATA_FILES:
@@ -240,15 +263,17 @@ def freeze():
         shutil.copy2(LIVE / "eval" / f, data / "eval" / f)
     (GATE / "config.toml").write_text(f'[domains.{D}]\nrepo = "{clone}"\n'  # every other area emptied
                                       + "".join(f'[domains.{n}]\nrepo = ""\n' for n in config.load() if n != D))
+    writes = _writes(clone)
     c = sqlite3.connect(data / "capture.sqlite")
-    rows = [r for r in c.execute("SELECT session, path, entries FROM filed WHERE domain = ? ORDER BY session", (D,))
+    rows = [r for r in c.execute("SELECT session, path FROM filed WHERE domain = ? ORDER BY session", (D,))
             if Path(r[1]).exists() and "/subagents/" not in r[1]]
-    chosen = [r for r in rows if json.loads(r[2])][:WITH_ENTRIES]
-    chosen += [r for r in rows if not json.loads(r[2]) and Path(r[1]).stat().st_size <= MAX_BYTES][:SESSIONS - len(chosen)]
-    picked = []
-    for sid, path, entries in chosen:
+    chosen = [r for r in rows if _filed(writes.get(r[0][:8], []))][:WITH_ENTRIES]
+    chosen += [r for r in rows if not writes.get(r[0][:8]) and Path(r[1]).stat().st_size <= MAX_BYTES][:SESSIONS - len(chosen)]
+    picked, gone = [], []
+    for sid, path in chosen:
         src = Path(path)
-        s = {"id": sid, "project": src.relative_to(PROJECTS).parts[0], "filed_before": len(json.loads(entries))}
+        s = {"id": sid, "project": src.relative_to(PROJECTS).parts[0], "filed_before": _filed(writes.get(sid[:8], []))}
+        gone += writes.get(sid[:8], [])
         dst = _session_path(s)
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dst)
@@ -259,20 +284,42 @@ def freeze():
     c.execute("UPDATE repo SET root = ? WHERE domain = ?", (str(clone), D))
     c.commit()
     c.close()
+    lines = {}  # a link is a line of the links file, `<file>:<n>`; every other write is a file of its own
+    for e in gone:
+        f, _, n = e.path.partition(":")
+        if n:
+            lines.setdefault(f, set()).add(int(n))
+        else:
+            (clone / f).unlink()
+    for f, ns in lines.items():
+        (clone / f).write_text("".join(l for n, l in enumerate((clone / f).read_text().splitlines(keepends=True), 1) if n not in ns))
+    git = ["git", "-C", str(clone)]
+    subprocess.run([*git, "add", "-A"], check=True)
+    subprocess.run([*git, "commit", "-q", "-m", f"gate: the {len(picked)} picked sessions' {len(gone)} writes taken out"], check=True)
+    commit = subprocess.run([*git, "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout.strip()
     m = {"commit": commit, "record": clone.name, "sets": sets, "today": date.today().isoformat(), "frozen": datetime.now().astimezone().isoformat(timespec="seconds"),
          "sessions": picked}
     (GATE / "manifest.json").write_text(json.dumps(m, indent=1))
-    print(f"frozen at {commit[:12]}: {len(picked)} sessions, {sum(s['filed_before'] > 0 for s in picked)} that filed something")
+    with tempfile.TemporaryDirectory(prefix="gate-") as work:  # the index re-read from the trimmed clone, as a run reads it
+        from engram import cli
+        from engram.sources import sections
+        _world(Path(work), pack)
+        cli._ingest(D, sections)
+        src, dst = sqlite3.connect(index_path(D)), sqlite3.connect(data / f"{D}.sqlite")
+        src.backup(dst)
+        src.close(), dst.close()
+    print(f"frozen at {commit[:12]}: {len(picked)} sessions, {sum(s['filed_before'] > 0 for s in picked)} that filed something, "
+          f"{len(gone)} of their writes taken out")
 
 
-def record():
+def record(pack: str):
     """The real filer, once, over the fixed sessions: each raw reply saved, nothing filed."""
     from engram import capture
     out = GATE / "replies"
     if out.exists():
         sys.exit(f"{out} already holds the recorded replies")
     with tempfile.TemporaryDirectory(prefix="gate-") as work:
-        m = _world(Path(work))
+        m = _world(Path(work), pack)
         out.mkdir()
         calls, usd = 0, 0.0
         for s in m["sessions"]:
@@ -520,10 +567,12 @@ def main(argv: list[str]):
     cmd = argv[0] if argv else ""
     if cmd in ("freeze", "record", "run", "check-pin") and not D:
         sys.exit("no gate set: name the area in the config's [review] gate")
+    if cmd in ("freeze", "record") and (len(argv) != 3 or argv[1] != "--pack"):
+        sys.exit(__doc__)
     if cmd == "freeze":
-        freeze()
+        freeze(argv[2])
     elif cmd == "record":
-        record()
+        record(argv[2])
     elif cmd == "run" and len(argv) in (2, 4) and (len(argv) == 2 or argv[2] == "--pack"):
         run(Path(argv[1]).expanduser(), argv[3] if len(argv) == 4 else "")
     elif cmd == "check-pin" and len(argv) == 2:

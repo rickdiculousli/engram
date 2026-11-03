@@ -18,7 +18,7 @@ from pathlib import Path
 
 import yaml
 
-from engram import claude_env, config, frontmatter, pack, rewire
+from engram import claude_env, config, frontmatter, pack, review, rewire
 from engram.paths import PAGE, SPECS, data_dir, data_path, record_conf
 from engram.sources import sessions
 
@@ -150,11 +150,13 @@ def _work() -> Path:
 
 
 def copy_data(to: Path):
-    """The data folder's SQLite files, each through SQLite's backup (whole, while a writer runs), and its moved refs."""
+    """The data folder's SQLite files (the value review's too), each through SQLite's backup (whole, while a writer
+    runs), and its moved refs."""
     to.mkdir(parents=True, exist_ok=True)
-    for f in data_dir().glob("*.sqlite"):
+    for f in [*data_dir().glob("*.sqlite"), *data_dir().glob("review/*.sqlite")]:
+        (to / f.relative_to(data_dir())).parent.mkdir(parents=True, exist_ok=True)
         with contextlib.closing(sqlite3.connect(f"file:{f}?mode=ro", uri=True)) as src, \
-                contextlib.closing(sqlite3.connect(to / f.name)) as dst:
+                contextlib.closing(sqlite3.connect(to / f.relative_to(data_dir()))) as dst:
             src.backup(dst)
     if data_path("moved").is_dir():
         shutil.copytree(data_path("moved"), to / "moved", dirs_exist_ok=True)
@@ -343,9 +345,10 @@ def _sweeps(rows: list[dict], wk: str, s: dict, only: str | None, dry: bool) -> 
 
 
 def conversations(repo: Path, days: float = 7, session: str | None = None, cap: int = 60000) -> str:
-    """The owner's messages in the repo's sessions of the last `days`, each with the reply they read: the pass's only
-    evidence of use. Subagents and sessions an agent started (`sessions.by_agent`) are left out; past `cap` characters
-    a session is only counted, and `session` reads one whole."""
+    """The owner's messages in the repo's sessions of the last `days`, each with the reply they read: the pass's
+    evidence of use, with, for engram's own repo, the value review's findings on engram's tools. Subagents and sessions
+    an agent started (`sessions.by_agent`) are left out; past `cap` characters a session is only counted, and `session`
+    reads one whole."""
     since = datetime.now(timezone.utc) - timedelta(days=days)
     found = {}
     for root in rewire.roots():
@@ -374,7 +377,14 @@ def conversations(repo: Path, days: float = 7, session: str | None = None, cap: 
             continue
         out.append(text)
         size += len(text)
-    return "\n".join(out + (["\n## Left out at the size cap; read each with --session <id>", *left] if left else []))
+    if left:
+        out += ["\n## Left out at the size cap; read each with --session <id>", *left]
+    if not session and own() and repo.resolve() == own().resolve():
+        found = review.tools(since)
+        out += [f"\n# {len(found)} value review findings on engram's tools since {since:%Y-%m-%d}"]
+        out += [f"- {f['day']} {f['domain']}, {review.QUESTIONS[f['question']]}: {f['what']} (ref {f['ref']}"
+                + (f"; {f['call']}" if f["call"] else "") + ")" for f in found]
+    return "\n".join(out)
 
 
 def _landed(repo: Path) -> list[tuple[str, str, str]]:

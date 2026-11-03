@@ -19,7 +19,7 @@ The prompt names `repo=<path>`, `mode=land` or `mode=dry-run <file>`, and `workt
 - `<repo>/.engram/specs/*.md` with `status: approved`: the user said yes. Build these first, through Land's steps. Their yes covers what the spec's plan names, even where the rules section would make it a spec, but never the record. Then set `status: built`. One it still can't build stays `approved` with `blocked: >-` in its front matter and the why, one line, indented on the next, which the owner's page shows.
 - The week's conversations, by script, never a transcript whole:
   `engram refine conversations <repo>`
-  (`--session <id>` reads one session). They are the only evidence of use: never a question set, eval or fixture, and never agent-written audits, reviews or notes. When the Jobs section names other repos, read theirs too.
+  (`--session <id>` reads one session). On engram's own repo it ends with the value review's findings on engram's tools: each a record a session needed that no engram call surfaced. The conversations and these findings are the only evidence of use: never a question set, eval or fixture, and never other agent-written audits, reviews or notes. When the Jobs section names other repos, read theirs too.
 
 ## Find
 

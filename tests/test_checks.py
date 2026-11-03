@@ -51,8 +51,7 @@ TODAY = [  # medical's messages as engram wrote them before the templates, byte 
 ]
 
 
-REVIEW = [("review", dict(id=3, question="data", call="search"), "engram review: finding 3, data, the search call"),  # group 9
-          ("sweep", dict(n=4, records="records"), "engram: evidence swept, 4 records linked to the theory\n\n"
+SWEEP = [("sweep", dict(n=4, records="records"), "engram: evidence swept, 4 records linked to the theory\n\n"
                                "Refinement: the theory's loops and Discoveries gained evidence from 4 more records"),
           ("sweep", dict(n=1, records="record"), "engram: evidence swept, 1 record linked to the theory\n\n"
                                "Refinement: the theory's loops and Discoveries gained evidence from 1 more record")]
@@ -64,8 +63,8 @@ RENEWALS = [("renewals", dict(n=2, session="ab12cd34"), "engram: Sam still on 2 
 
 
 def test_each_template_writes_medicals_message_byte_for_byte():
-    assert {name for name, *_ in TODAY + REVIEW + WIKI + RENEWALS} == set(commitmsg.TEMPLATES)
-    for name, fields, want in TODAY + REVIEW + WIKI + RENEWALS:
+    assert {name for name, *_ in TODAY + SWEEP + WIKI + RENEWALS} == set(commitmsg.TEMPLATES)
+    for name, fields, want in TODAY + SWEEP + WIKI + RENEWALS:
         assert commitmsg.message(name, **fields) == want
     assert commitmsg.message("write", "rec: {kind} on {date}", kind="lab", date="2026-10-03") == "rec: lab on 2026-10-03"
 

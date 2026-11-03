@@ -39,13 +39,13 @@ To release:
 
 To roll back, take the previous line of `releases.jsonl`: set its pins in the config and run `engram review --release <its tag>`.
 
+In engram's config, `[review]` sets `gate` (the domain whose frozen gate a release passes), `gate_sets` (its question sets, read when it's frozen), `gate_base` (its baseline), and optionally `release` (the clone's folder).
+
 ## The value review
 
 engram reviews its own value ([technical](technical.md#the-value-review)). It's off for every repo until turned on.
-- **Turning it on:** first the dry run, `uv run engram review <session> --dry-run`, its cost reported afterwards. Then `[review] on = true` in the repo's `engram.toml`; `landing = "auto"` only once proposals have landed well. In engram's config, `[review]` sets `gate` (the domain whose frozen gate checks every fix), `gate_sets` (its question sets, read when it's frozen), `gate_base` (its baseline), `heldout` (a command printing a JSON object of numbers), `measure.<domain>`, and optionally `release` and `remote`.
-- **A stop:** `engram review` says whether it's stopped and why. Once the cause is looked at, `engram review --clear-stop`.
-- **A proposed fix:** merge `review/fix-<id>`, release as above, then `engram review --landed <id>`.
-- **The owner's answer to an ask:** `engram review --answered <note id>`.
+- **Turning it on:** first the dry run, `uv run engram review <session> --dry-run`, which keeps its findings in scratch, its cost reported afterwards. Then `[review] on = true` in the repo's `engram.toml`.
+- **What it found:** `review/review.sqlite` in the data folder; the weekly pass on engram's own repo reads its `tools` findings.
 
 ## The weekly refinement
 

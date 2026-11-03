@@ -1245,8 +1245,8 @@ def _root(domain: str) -> Path | None:
 
 def session_start(payload: dict) -> str:
     """The SessionStart hook: check the install and repair it, saying one line only if something couldn't be fixed;
-    then, for a record whose entries are read straight from events, where things stand (`engram now`); then the value
-    review's lines and, for the agent, any weekly-refinement file that won't parse (`engram refine surface`)."""
+    then, for a record whose entries are read straight from events, where things stand (`engram now`); then, for the
+    agent, any weekly-refinement file that won't parse (`engram refine surface`)."""
     found = repo_of(payload.get("cwd") or os.environ.get("CLAUDE_PROJECT_DIR"))
     if not found:
         return ""
@@ -1260,8 +1260,6 @@ def session_start(payload: dict) -> str:
     if (conf.get("index") or {}).get("events"):
         with contextlib.suppress(Exception):  # the picture is a help; a broken record mustn't block the session
             out.append(now_mod.text(found[1], mark_shown=True))
-    with contextlib.suppress(Exception):
-        out += review.session_start(found[0], found[1])
     with contextlib.suppress(Exception):
         out += [t] if (t := refine.surface(found[1])) else []
     return "\n\n".join(out)

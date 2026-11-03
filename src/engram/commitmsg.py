@@ -18,7 +18,6 @@ TEMPLATES = {
     "ids": "engram: stable ids for {docs} documents and {headings} linked headings",
     "moved": "engram: {old} moved to {new}",
     "fix": "engram fix: {why}\n\nEngram-Fix: {why}",
-    "review": "engram review: finding {id}, {question}, the {call} call",  # a value review's fix, in engram's own repo
     "wiki": "engram: the wiki from {item}, {n} pages",
     "wiki_index": "engram: the wiki's index and open list",
     "wiki_merge": "engram: the wiki's health check merged concepts ({n}), their links repointed",

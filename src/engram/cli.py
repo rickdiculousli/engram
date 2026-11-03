@@ -675,15 +675,9 @@ def cmd_capture(a):
 
 
 def cmd_review(a):
-    """The value review (docs/technical.md, "The value review"): one session on demand, or its upkeep."""
+    """The value review (docs/technical.md, "The value review") of one session on demand, or the release step."""
     from engram import review
-    if a.clear_stop:
-        print(f"engram review: {review.clear_stop()} stops cleared")
-    elif a.answered:
-        review.answered(a.answered)
-    elif a.landed:
-        print(review.landed(a.landed) or f"engram review: no landed fix for finding {a.landed}")
-    elif a.release:
+    if a.release:
         gated = json.loads(Path(a.gate).expanduser().read_text()) if a.gate else None
         try:
             print(f"engram: the release runs {review.advance(a.release, Path.cwd(), gated)}, pins {review.pins()}")
@@ -693,7 +687,7 @@ def cmd_review(a):
         r = review.on_demand(a.session, a.dry_run)
         print(review.summary(r) + (f"\nstate in {r['state']}" if a.dry_run else ""))
     else:
-        print(f"engram review: {'stopped (' + review.stopped() + ')' if review.stopped() else 'running'}")
+        sys.exit("engram review: name a session, or --release <tag>")
 
 
 def cmd_setup(a):
@@ -1032,12 +1026,9 @@ def main(argv=None):
     s.set_defaults(fn=cmd_capture)
 
     s = sub.add_parser("review", help="engram's value review of one session (when the value wasn't there): findings by "
-                                      "count and the cost; --dry-run keeps everything in scratch and pushes nothing")
+                                      "count and the cost, recorded for the weekly pass")
     s.add_argument("session", nargs="?", help="a session id prefix")
-    s.add_argument("--dry-run", action="store_true")
-    s.add_argument("--clear-stop", action="store_true", help="the lead clears a stop (two drops, or the held-out set)")
-    s.add_argument("--answered", type=int, help="the owner answered this ask (its note id)")
-    s.add_argument("--landed", type=int, help="the lead merged and released this proposed fix (its finding id)")
+    s.add_argument("--dry-run", action="store_true", help="keep the findings in scratch, out of the weekly pass's evidence")
     s.add_argument("--release", help="move the release clone to this tag, fetched from here, and log it with the pins")
     s.add_argument("--gate", help="with --release: the gate's run; refused unless it measured the pinned pack")
     s.set_defaults(fn=cmd_review)

@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+import yaml
+
 from engram import commitmsg, frontmatter
 from engram.paths import data_path, record_conf
 
@@ -79,14 +81,21 @@ class Store:
         if self._events is None:
             out = []
             for p in sorted((self.root / self.events_dir).rglob("*.md")):
-                fm, body = frontmatter.split(p.read_text())
+                rel = p.relative_to(self.root).as_posix()
+                try:  # a malformed entry stops the read, naming itself, rather than vanish from the record
+                    fm, body = frontmatter.split(p.read_text())
+                except (ValueError, yaml.YAMLError) as e:
+                    raise ValueError(f"{rel}: {e}") from e
                 if fm is None:
                     continue
-                out.append(Event(fm.get("id", p.stem), p.relative_to(self.root).as_posix(), fm, body))
+                out.append(Event(fm.get("id", p.stem), rel, fm, body))
             links = self.root / self.events_dir / LINKS
             for n, line in enumerate(links.read_text().splitlines() if links.exists() else [], 1):
                 if line.strip():
-                    fm = json.loads(line)
+                    try:
+                        fm = json.loads(line)
+                    except ValueError as e:
+                        raise ValueError(f"{self.events_dir}/{LINKS}:{n}: {e}") from e
                     out.append(Event(fm["id"], f"{self.events_dir}/{LINKS}:{n}", fm, fm.pop("note", "")))
             self._events = out
         return [e for e in self._events

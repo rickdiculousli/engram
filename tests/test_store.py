@@ -98,6 +98,21 @@ def test_engram_add_commits_one_event(repo, monkeypatch, capsys):
         main(["add", "--kind", "symptom", "--date", "2026-03-06", "--about", "nowhere/x", "--repo", str(repo)])
 
 
+def test_a_malformed_entry_or_link_line_names_itself(repo):
+    st = Store(repo)
+    st.add({"title": "fine", "date": "2026-03-01", "kind": "symptom"}, "")
+    bad = repo / "events/2026/03/20260301-000000-symptom-0000.md"
+    bad.parent.mkdir(parents=True, exist_ok=True)
+    bad.write_text("---\ntitle: [unclosed\n---\n")
+    with pytest.raises(ValueError, match="events/2026/03/20260301-000000-symptom-0000.md: "):
+        Store(repo).events()
+    bad.unlink()
+    with (repo / "events/links.jsonl").open("w") as f:
+        f.write('{"id": "a", "kind": "link"}\n{not json\n')
+    with pytest.raises(ValueError, match="events/links.jsonl:2: "):
+        Store(repo).events()
+
+
 def test_a_hit_arrives_with_its_story_neighbours(repo, env):
     from engram import config, search
     from engram.cli import main

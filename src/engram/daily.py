@@ -1,7 +1,7 @@
 """The daily copy to a second box (docs/operations.md, "The daily copy"): `engram daily run` refreshes the session
-index, copies what can't be fetched again to `[daily] box` (the session files, usage logs, summaries, the instance
-notes and each `[daily] copy` folder), has that box archive its mirror at the release this box runs, and pulls the
-archive's backups back. It never deletes there; `engram health` reads how its last run went."""
+index, copies what can't be fetched again to `[daily] box` (the session files, usage logs, summaries, where moved
+records lived, the instance notes and each `[daily] copy` folder), has that box archive its mirror at the release this
+box runs, and pulls the archive's backups back. It never deletes there; `engram health` reads how its last run went."""
 import json
 import shlex
 import subprocess
@@ -41,8 +41,8 @@ def steps(s: dict) -> list[tuple[str, list[str]]]:
     out += [(f"copy {src}", [*rsync, str(Path(src).expanduser()), f"{host}:{REMOTE}{dest}"]) for src, dest in s["copy"]]
     out += [("mirror sessions", ["rsync", "-a", f"{Path.home()}/.claude/projects/", f"{host}:{SESSIONS}"]),
             ("copy usage logs", ["rsync", "-a", *map(str, sorted(data.glob("usage-*.sqlite"))), f"{host}:{REMOTE}usage-copies/"])]
-    if data_path("summaries").is_dir():
-        out.append(("copy summaries", ["rsync", "-a", str(data_path("summaries")), f"{host}:{REMOTE}"]))
+    out += [(f"copy {what}", ["rsync", "-a", str(data_path(d)), f"{host}:{REMOTE}"])
+            for d, what in (("summaries", "summaries"), ("moved", "moved records")) if data_path(d).is_dir()]
     if (own := refine.own()) and (own / "local").is_dir():
         out.append(("copy instance notes", ["rsync", "-a", f"{own / 'local'}/", f"{host}:{REMOTE}local-copy/"]))
     tag = subprocess.run(["git", "-C", str(data_path("release")), "describe", "--tags", "--exact-match"],

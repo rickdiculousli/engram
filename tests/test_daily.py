@@ -19,3 +19,11 @@ def test_the_copy_stops_at_the_first_failing_step_and_health_names_it(env, monke
     assert ran[-1][0] == "ssh"  # the backups aren't pulled after a failed archive
     assert json.loads((env["data"] / "daily.json").read_text())["failed_step"] == "archive on the box"
     assert daily.status().startswith("daily copy to spare: last run ") and daily.status().endswith("FAILED at archive on the box")
+
+
+def test_the_copy_carries_where_moved_records_lived_and_never_deletes(env, monkeypatch):
+    (env["tmp"] / "config.toml").write_text('[daily]\nbox = "spare"\n')
+    (env["data"] / "moved").mkdir(parents=True)
+    monkeypatch.setattr(daily.subprocess, "run", lambda cmd, **kw: subprocess.CompletedProcess(cmd, 1, "", ""))  # no tag
+    cmd = dict(daily.steps(daily.settings()))["copy moved records"]
+    assert cmd == ["rsync", "-a", str(env["data"] / "moved"), "spare:.local/share/engram/"]

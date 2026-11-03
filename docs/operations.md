@@ -24,7 +24,7 @@
 
 A timed job is a launchd job on macOS and a systemd user timer on Linux, WSL2 included once systemd is on there (`engram.jobs`); a time missed asleep runs on wake. Linux runs user timers only while the user's manager runs, so `loginctl enable-linger` keeps them going logged out.
 
-`[daily]` in the config sets `box` (an ssh host), `engram` (that box's checkout, `~/repos/engram` by default) and `copy`, pairs of a local folder an area can't fetch again and where it lands under the box's data folder; the session files, usage logs, summaries and engram's `local/` notes are copied without being listed. Summaries of sessions Claude Code has since cleaned up read the box's session mirror.
+`[daily]` in the config sets `box` (an ssh host), `engram` (that box's checkout, `~/repos/engram` by default) and `copy`, pairs of a local folder an area can't fetch again and where it lands under the box's data folder; the session files, usage logs, summaries, the data folder's `moved/` (where moved records lived) and engram's `local/` notes are copied without being listed. Summaries of sessions Claude Code has since cleaned up read the box's session mirror.
 
 ## The release
 

@@ -29,7 +29,7 @@ def repo_domain(cwd: Path, domains: dict[str, Domain]) -> str | None:
             return d.name
     origin = _git(cwd, "remote", "get-url", "origin") or ""
     for d in domains.values():
-        if any(re.search(rf"(^|[/:@]){re.escape(r)}(\.git)?$", origin) for r in d.remotes):  # whole path parts
+        if any(re.search(rf"(^|[/:@]){re.escape(r.lstrip('/:'))}(\.git)?$", origin) for r in d.remotes):  # whole path parts
             return d.name
     return None
 

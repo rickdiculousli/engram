@@ -159,7 +159,7 @@ def test_who_said_it_comes_from_where_the_evidence_sits_and_record_notes_are_fil
 def test_a_session_is_summarized_stored_indexed_and_withdrawn_with_its_session(world, monkeypatch):
     root = world["root"]
     monkeypatch.setattr(sessions, "ROOT", root)
-    p = write_session(root, "-Users-x-repos-medical-history", "m1", [
+    p = write_session(root, "-Users-x-repos-health-notes", "m1", [
         turn("user", "my knee is 6/10 since Tuesday, worse than 2026-10-01"), reply("Ice tonight."),
     ])
     old = p.stat().st_mtime - 3 * 3600
@@ -196,7 +196,7 @@ def test_a_failed_call_stops_the_run(world, monkeypatch):
     root = world["root"]
     monkeypatch.setattr(sessions, "ROOT", root)
     for i in range(3):
-        p = write_session(root, "-Users-x-repos-medical-history", f"m{i}", [turn("user", "hello"), reply("hi")])
+        p = write_session(root, "-Users-x-repos-health-notes", f"m{i}", [turn("user", "hello"), reply("hi")])
         os.utime(p, (p.stat().st_mtime - 3 * 3600,) * 2)
     sessions.ingest(world["doms"], root)
 
@@ -218,7 +218,7 @@ def test_a_long_session_is_stitched_in_groups_then_once_more(world, monkeypatch)
     lines = []
     for i in range(30):
         lines += [turn("user", f"a question about the same topic {i}"), reply(f"answer {i}")]
-    p = write_session(root, "-Users-x-repos-medical-history", "long", lines)
+    p = write_session(root, "-Users-x-repos-health-notes", "long", lines)
     os.utime(p, (p.stat().st_mtime - 3 * 3600,) * 2)
     sessions.ingest(world["doms"], root)
     calls, prompts = [], []
@@ -254,7 +254,7 @@ def test_a_long_one_segment_session_keeps_its_segments_cap(world, monkeypatch):
     lines = []
     for i in range(70):
         lines += [turn("user", f"a question about the same topic {i} " + "x" * 600), reply(f"answer {i}")]
-    p = write_session(root, "-Users-x-repos-medical-history", "one", lines)
+    p = write_session(root, "-Users-x-repos-health-notes", "one", lines)
     os.utime(p, (p.stat().st_mtime - 3 * 3600,) * 2)
     sessions.ingest(world["doms"], root)
 
@@ -274,7 +274,7 @@ def test_a_long_one_segment_session_keeps_its_segments_cap(world, monkeypatch):
 def test_a_summary_is_withdrawn_once_its_session_turns_out_to_be_a_programs_run(world, monkeypatch):
     root = world["root"]
     monkeypatch.setattr(sessions, "ROOT", root)
-    p = write_session(root, "-private-var-folders-x-T-desk-abc", "d1", [turn("user", "# Scout packet, week to 2026-10-10"), reply("ok")])
+    p = write_session(root, "-private-var-folders-x-T-seat-abc", "d1", [turn("user", "# Scout packet, week to 2026-10-10"), reply("ok")])
     os.utime(p, (p.stat().st_mtime - 3 * 3600,) * 2)
     sessions.ingest(world["doms"], root)
     dom = sqlite3.connect(data_path("sessions-state.sqlite")).execute("SELECT domain FROM file").fetchone()[0]

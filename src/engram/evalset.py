@@ -514,7 +514,7 @@ How answers must read:""" + ANSWER_PROMPT.split("How answers must read:", 1)[1]
 
 
 def _grep_one(q: dict, domain: str, repo: Path, model: str | None) -> dict:
-    env = claude_env.clean(MEDICAL_HISTORY_NO_CAPTURE="1")  # the repo's own capture stays off in its scratch copy
+    env = claude_env.clean()
     answer, err, info = _claude(config.voice(GREP_PROMPT).format(domain=domain, question=q["question"]), env, model,
                                 ["Read", "Grep", "Glob", "Skill"], cwd=repo)
     if err:

@@ -13,7 +13,7 @@ DRAFT = review._draft  # the real one; the fixture fakes it
 
 
 def session(root, stem, first="how is my knee?"):
-    p = root / "-Users-x-repos-medical-history" / f"{stem}.jsonl"
+    p = root / "-Users-x-repos-health-notes" / f"{stem}.jsonl"
     call = {"type": "assistant", "timestamp": TS, "cwd": "/x", "message": {"role": "assistant", "stop_reason": "tool_use",
             "content": [{"type": "tool_use", "name": "Bash", "input": {"command": 'engram search "knee" --domain medical | head'}}]}}
     p.write_text("\n".join([said(first), json.dumps(call), turn("user", [{"type": "tool_result", "content": "1. drops\n   ref: events/a.md"}]),

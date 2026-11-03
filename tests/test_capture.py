@@ -37,14 +37,14 @@ def reply(text, ts="2026-10-18T20:00:00Z"):
 @pytest.fixture
 def world(env, monkeypatch):
     tmp = env["tmp"]
-    repo = make_repo(tmp / "repos/medical_history", {".engram/engram.toml": TOML, ".engram/README.md": PAGE_MD, ".claude/settings.json": '{\n    "hooks": {}\n}\n'})
+    repo = make_repo(tmp / "repos/health_notes", {".engram/engram.toml": TOML, ".engram/README.md": PAGE_MD, ".claude/settings.json": '{\n    "hooks": {}\n}\n'})
     env["set_repo"]("medical", repo)
     st = store.Store(repo)
     with st.transaction() as tx:
         tx.add({"title": "old", "date": "2026-01-01", "kind": "observation", "about": ["series/_observations", "story/ankle"]}, "- old\n")
     root = tmp / "projects"
     monkeypatch.setattr("engram.sources.sessions.ROOT", root)
-    path = root / "-Users-x-repos-medical-history" / "s1.jsonl"
+    path = root / "-Users-x-repos-health-notes" / "s1.jsonl"
     path.parent.mkdir(parents=True)
     path.write_text("\n".join([
         said("how is my knee?"),

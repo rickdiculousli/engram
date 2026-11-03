@@ -261,6 +261,8 @@ def test_a_way_in_lights_its_records_and_names_a_chain(repo, env):
     assert "logs/example.md#2026-03-09 — Zentrafen started" in lit and "state-events.jsonl:1" in lit
     header, rows = timeline.chain("medical", "zentrafen")
     assert header["kind"] == "treatment" and "logs/example.md#2026-03-09 — Zentrafen started" in {r["_ref"] for r in rows}
+    from datetime import date
+    assert timeline._first_date("medical", "since zentrafen") == date(2026, 3, 9)  # the day it started, not 1 January
 
 
 def test_what_sam_said_in_a_session_is_a_row_on_its_story(repo, env):

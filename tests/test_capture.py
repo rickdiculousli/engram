@@ -135,6 +135,28 @@ def test_dry_run_files_nothing_and_keeps_the_mark(world):
     assert run([], facts)["filed"] == 1
 
 
+def clock(monkeypatch, step):
+    """The store's clock, moving `step` seconds at each reading: 0 is two writes in one second, 1 each in its own."""
+    class Clock(datetime):
+        at = datetime(2026, 10, 18, 22, 0, tzinfo=timezone.utc)
+
+        @classmethod
+        def now(cls, tz=None):
+            cls.at += timedelta(seconds=step)
+            return cls.at
+    monkeypatch.setattr("engram.store.datetime", Clock)
+
+
+@pytest.mark.parametrize("step", [0, 1])
+def test_the_same_fact_twice_is_filed_once(world, monkeypatch, step):
+    clock(monkeypatch, step)
+    fact = {"line": 7, "text": "Sam's ache is better.", "quote": "the ache is better", "date": "not-sure"}
+    assert len(run([], [fact, dict(fact)], dry_run=True)["would_file"]) == 1
+    out = run([], [fact, dict(fact)])
+    assert out["filed"] == 1 and not out["dropped"]
+    assert len([e for e in store.Store(world["repo"]).events() if e.fm.get("author") == "engram-capture"]) == 1
+
+
 def test_setup_teardown_round_trip_and_self_repair(world, monkeypatch):
     repo, agents = world["repo"], world["tmp"] / "LaunchAgents"
     ticks = iter(range(60))  # a clock that moves on every read: one run's repairs still show together
@@ -394,6 +416,16 @@ def test_a_link_sam_agrees_to_is_a_theory_link_in_links_jsonl(graph):
     from engram import theory
     [edge] = theory.load(graph["repo"]).joins()
     assert edge.note.startswith("knee tension raises the urge to rest") and edge.since == "2026-10-18"
+
+
+@pytest.mark.parametrize("step", [0, 1])
+def test_the_same_theory_link_twice_is_filed_once(graph, monkeypatch, step):
+    clock(monkeypatch, step)
+    link = {"from": "node/B", "to": "node/A", "rel": "amplifier", "mechanism": "knee tension raises the urge to rest",
+            "strength": "medium"}
+    ok = {"line": 5, "quote": "ok", "answering": "I think the knee tension amplifies the stiffness.", "link": link}
+    out = capture.run(ask=ask_theory([ok, dict(ok)]), summaries=False, now=LATER)
+    assert out["filed"] == 1 and len(captured(graph["repo"], "link")) == 1
 
 
 def test_an_agreement_counts_only_for_claudes_turn_just_before_it(graph):

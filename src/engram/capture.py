@@ -917,6 +917,10 @@ def file_session(domain: str, root: Path, path: Path, ask=None, dry_run: bool = 
             if why:
                 res["dropped"].append({"session": path.stem[:8], "line": line, "why": why, "text": "a structural theory change"})
         places += [None] * (len(entries) - len(places))  # theory changes carry no placement
+        once = {}  # the same fact twice is filed once: in one second the two would share an id and the store refuse it
+        for x, w in zip(entries, places):
+            once.setdefault(json.dumps(x, sort_keys=True, default=str), (x, w))
+        entries, places = [x for x, _ in once.values()], [w for _, w in once.values()]
         if dry_run:
             res["would_file"] = [{"session": path.stem[:8], **fm, "body": body,
                                   **({"placement": w[0]} if w and (w[0]["occurrence"] or w[0]["led_from"]) else {})}

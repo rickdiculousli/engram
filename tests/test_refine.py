@@ -39,7 +39,9 @@ def test_the_pass_serves_engram_then_each_domain_and_skips_a_paused_one(served):
         assert line.startswith(f"{name}: ") and shlex.split(line.removeprefix(f"{name}: ")) == [
             "claude", "-p", f"Follow {served['own']}/skills/engram-refine/SKILL.md: repo={repo} mode=land worktrees={work}",
             "--output-format", "json", "--max-budget-usd", "30.00", "--permission-mode", "auto", "--model", "opus",
-            "--settings", json.dumps({"autoMode": {"allow": ["$defaults", refine.ALLOW]}}),
+            "--settings", json.dumps({"autoMode": {"allow": ["$defaults", refine.ALLOW]}, "permissions": {"deny": [
+                "Edit(**/bench/gate.py)", "Write(**/bench/gate.py)", "Edit(**/skills/engram-refine/**)",
+                "Write(**/skills/engram-refine/**)", "Edit(**/.githooks/**)", "Write(**/.githooks/**)"]}}),
             "--add-dir", f"{served['own']}/skills/engram-refine", "--add-dir", str(repo), "--add-dir", str(work)]
     assert not (served["data"] / "refine/ledger.jsonl").exists()
 
@@ -91,6 +93,7 @@ def test_a_pass_runs_engram_on_a_scratch_copy_and_a_config_fenced_to_its_repo(se
                 m.setenv("ENGRAM_CONFIG", env["ENGRAM_CONFIG"])
                 repos = {n: d.repo for n, d in config.load().items()}
             seen[Path(name).name] = (copy, rows, env["ENGRAM_GATE"], repos, left.exists())
+            assert env["ENGRAM_REFINE"] == "1"  # engram's pre-commit refuses the pass its off-limits paths
         return type("P", (), {"returncode": 0, "stdout": json.dumps({"total_cost_usd": 1.0, "result": "ok"}), "stderr": ""})()
     refine.run(runner=runner)
     copy, rows, gate, repos, stale = seen["med"]
@@ -121,6 +124,26 @@ def test_engrams_hooks_read_the_boxs_own_config_under_a_pass_fence(served):
     tree = make_repo(tmp / "tree", {"docs/a.md": "kept in ~/notes-kept-elsewhere\n"})
     r = _hook("instance.py", tree, box, over, tmp / "hook-data")
     assert r.returncode == 1 and "docs/a.md:1:" in r.stderr
+
+
+def test_engrams_pre_commit_refuses_the_pass_its_off_limits_paths(tmp_path):
+    stub = tmp_path / "bin"
+    stub.mkdir()
+    (stub / "uv").write_text("#!/bin/sh\nexit 0\n")  # the hook's other checks pass
+    (stub / "uv").chmod(0o755)
+    files = ["bench/gate.py", "skills/engram-refine/SKILL.md", ".githooks/packs.py", "src/engram/refine.py"]
+    repo = make_repo(tmp_path / "engram", {f: "x\n" for f in files} | {".githooks/pre-commit": (HOOKS / "pre-commit").read_text()})
+
+    def commit(f, marked):
+        (repo / f).write_text("y\n")
+        git(repo, "add", f)
+        env = {k: v for k, v in os.environ.items() if k != "ENGRAM_REFINE"} | {"PATH": f"{stub}:{os.environ['PATH']}"}
+        r = subprocess.run(["sh", ".githooks/pre-commit"], cwd=repo, env=env | ({"ENGRAM_REFINE": "1"} if marked else {}),
+                           capture_output=True, text=True)
+        git(repo, "reset", "-q", "--hard")
+        return r.returncode
+    assert [commit(f, True) for f in files] == [1, 1, 1, 0]
+    assert commit("bench/gate.py", False) == 0
 
 
 def writer(html="<!DOCTYPE html><html>page</html>", cost=1.5):

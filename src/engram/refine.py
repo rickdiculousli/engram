@@ -35,6 +35,8 @@ SCHEDULE = [{"Weekday": 6, "Hour": 4, "Minute": 0}, {"Weekday": 0, "Hour": 9, "M
 ALLOW = ("The weekly refinement pass: editing files in the repo it was given and in its own worktrees, running that "
          "repo's checks, committing on a refinement branch, fast-forward merging it into the repo's default branch and "
          "pushing to origin, when the rules section of the repo's .engram/README.md allows it.")
+# what the pass may not change in engram's own repo: denied to its edits here, refused at commit by engram's pre-commit
+OFF_LIMITS = ("bench/gate.py", "skills/engram-refine/**", ".githooks/**")
 DIGEST_CAP = 3.0  # what one digest may spend
 DIGEST = """Write one self-contained HTML page (inline CSS, no scripts, nothing loaded from elsewhere) that tells {owner} \
 what this week's refinement of their {repo} repo brings them to decide. Reply with the page alone, from <!doctype html> \
@@ -159,9 +161,10 @@ def copy_data(to: Path):
 
 
 def fenced(name: str, repo: Path, wk: str) -> dict:
-    """The env a pass runs engram in: a copy of the data folder, its repo rows dropped so nothing there serves a real
-    repo, cleared at the next pass's start; the real gate folder for the baseline; and a config laid over the box's
-    that keeps a repo only for the domain under pass (none for engram's own), as the gate's freeze writes it."""
+    """The env a pass runs in: engram on a copy of the data folder, its repo rows dropped so nothing there serves a
+    real repo, cleared at the next pass's start; the real gate folder for the baseline; a config laid over the box's
+    that keeps a repo only for the domain under pass (none for engram's own), as the gate's freeze writes it; and the
+    mark engram's pre-commit refuses OFF_LIMITS under."""
     shutil.rmtree(data_path("scratch") / "refine-data", ignore_errors=True)
     at = data_path("scratch") / "refine-data" / f"{wk}-{name}"
     copy_data(at / "data")
@@ -172,7 +175,7 @@ def fenced(name: str, repo: Path, wk: str) -> dict:
     (at / "config.toml").write_text("".join(f"[domains.{n}]\nrepo = {json.dumps(str(repo) if n == name else '')}\n"
                                             for n in config.load()))
     return {"ENGRAM_DATA": str(at / "data"), "ENGRAM_CONFIG": str(at / "config.toml"),
-            "ENGRAM_GATE": str(data_path("gate"))}
+            "ENGRAM_GATE": str(data_path("gate")), "ENGRAM_REFINE": "1"}
 
 
 def command(name: str, repo: Path, cap: float, dry_run: Path | None = None) -> list[str]:
@@ -182,7 +185,8 @@ def command(name: str, repo: Path, cap: float, dry_run: Path | None = None) -> l
     mode = f"dry-run {dry_run / f'{name}.md'}" if dry_run else "land"
     cmd = ["claude", "-p", f"Follow {own() / SKILL}: repo={repo} mode={mode} worktrees={work}",
            "--output-format", "json", "--max-budget-usd", f"{cap:.2f}", "--permission-mode", s["permission_mode"],
-           "--model", s["model"], "--settings", json.dumps({"autoMode": {"allow": ["$defaults", ALLOW]}}),
+           "--model", s["model"], "--settings", json.dumps({"autoMode": {"allow": ["$defaults", ALLOW]}, "permissions": {
+               "deny": [f"{t}(**/{p})" for p in OFF_LIMITS for t in ("Edit", "Write")]}}),
            "--add-dir", str((own() / SKILL).parent), "--add-dir", str(repo), "--add-dir", str(work)]
     return cmd + (["--add-dir", str(dry_run)] if dry_run else [])
 

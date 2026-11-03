@@ -240,6 +240,39 @@ def test_a_timeline_is_a_storys_records_in_time_order_cleaned_for_reading(repo, 
     assert "\ton\t" in capsys.readouterr().out.splitlines()[1]
 
 
+def test_a_timeline_across_domains_answers_from_each_with_stories_under_its_name(env, tmp_path, capsys, monkeypatch):
+    from engram.cli import main
+
+    def record(name: str, story_on: str | None) -> Path:
+        root = tmp_path / name
+        (root / "logs").mkdir(parents=True)
+        (root / "logs/example.md").write_text(LOG)
+        (root / ".engram").mkdir()
+        (root / ".engram/engram.toml").write_text(f'[domain]\nname = "{name}"\ncommit = "none"\n')
+        if story_on:
+            (root / "events").mkdir()
+            (root / "events/_nodes.jsonl").write_text(json.dumps(
+                {"ref": f"logs/example.md#{story_on}", "node": "symptom", "by": "sam", "stories": ["ankle"]}) + "\n")
+        subprocess.run(["git", "init", "-q", str(root)], check=True)
+        env["set_repo"](name, root)
+        main(["ingest", "--domain", name])
+        return root
+
+    record("medical", "2026-03-01 — First session")
+    record("clinic", "2026-03-05 — Soreness gone")
+    monkeypatch.chdir(record("blog", None))
+    capsys.readouterr()
+    for scope in ("blog,medical", "medical,blog"):  # the one with stories answers, in either order
+        main(["timeline", "ankle", "--domain", scope])
+        out = capsys.readouterr().out
+        assert "[medical]" in out.splitlines() and "First session" in out and "[blog]" not in out
+    main(["timeline", "ankle", "--domain", "medical,clinic"])  # both with stories: both answer, each under its name
+    out = capsys.readouterr().out
+    assert out.index("[medical]") < out.index("First session") < out.index("[clinic]") < out.index("Soreness gone")
+    with pytest.raises(SystemExit, match="no stories here"):
+        main(["timeline", "ankle", "--domain", "blog"])
+
+
 def test_a_way_in_lights_its_records_and_names_a_chain(repo, env):
     import json as _json
     from engram import timeline

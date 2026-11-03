@@ -175,7 +175,8 @@ def render(results: list[dict], explain: bool = False) -> str:
 
 def cmd_timeline(a):
     from engram import timeline
-    for d in resolve(Path.cwd(), config.load(), a.domain):
+    domains, told = resolve(Path.cwd(), config.load(), a.domain), False
+    for d in domains:
         have = timeline.names(d)
         if not a.name:
             if have["stories"] or have["symptoms"]:
@@ -191,9 +192,9 @@ def cmd_timeline(a):
         usage.log_search(d, f"timeline {' '.join(a.name)}", [d], "timeline",
                          [{"domain": d, "rank": 1, "ref": ref, "score": 0, "factors": {}}
                           for r in rows for ref in ([r["_ref"]] if "_ref" in r else r["_refs"])])
-        print(timeline.render(header, rows, a.format))
-        return
-    if a.name:
+        print(f"[{d}]\n" * (len(domains) > 1) + timeline.render(header, rows, a.format))
+        told = True
+    if a.name and not told:
         sys.exit("engram: no stories here; a repo gets them once it's rewired, and `engram timeline` lists what there is")
 
 

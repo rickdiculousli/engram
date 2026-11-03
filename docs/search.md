@@ -80,6 +80,7 @@ A record and every version of it come back as one unit that counts as one result
 - **Named chains:** `engram timeline <thread | recurring thing | tracked thing | person | test | node>` gives just that chain. A recurring thing by name gives its listed occurrences plus what its name and the owner's words for it pick up.
 - **A graph walk from the hits was rejected:** it found fewer records at the same size and lost the time order, because the links reach most of a record within two steps.
 - **Output:** a table with the columns named once, a quarter smaller than JSON lines (`--format jsonl`): n, date (`~` when approximate), on, who, kind, milestone, what (the headline, cut to 12 words), id, after (rows it follows on), and where present, versions, now and version of. The cleanup is deterministic: thread tags, ids, a date the ref repeats and default values are left out.
+- **Several domains in scope** (`--domain a,b`): each one with stories answers, under its `[domain]` line.
 - **Summaries** print for direct matches only (the hits and the ways in); every other row is its headline.
 
 ## Periods and as it stood

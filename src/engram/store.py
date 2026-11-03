@@ -217,12 +217,19 @@ class Store:
         self.extra = []
 
     def push(self) -> bool:
-        """Push to the upstream; the outcome is recorded either way, so a failure shows until a later push succeeds."""
-        r = subprocess.run(["git", "-C", str(self.root), "push", "-q"], capture_output=True, text=True)
+        """Push to the upstream; the outcome is recorded either way, so a failure shows until a later push succeeds.
+        A push that hasn't answered in PUSH_TIMEOUT seconds (a dead link) is killed and is a failed push, so it can't
+        hold the hourly job or the filer's lock."""
+        try:
+            r = subprocess.run(["git", "-C", str(self.root), "push", "-q"], capture_output=True, text=True, timeout=PUSH_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            record_push(self.root, False, f"push timed out after {PUSH_TIMEOUT}s")
+            return False
         record_push(self.root, r.returncode == 0, (r.stderr or r.stdout).strip()[:300] if r.returncode else None)
         return r.returncode == 0
 
 
+PUSH_TIMEOUT = 120  # seconds; a push to a reachable hub takes a few
 PUSH = "CREATE TABLE IF NOT EXISTS push (root TEXT PRIMARY KEY, at TEXT, ok INTEGER, error TEXT, failed_since TEXT)"
 
 

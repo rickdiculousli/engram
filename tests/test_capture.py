@@ -745,6 +745,25 @@ def test_a_failed_push_is_recorded_shown_and_retried(world):
     assert capture.unpushed(repo)[0] == 0 and capture.session_start(world["payload"]) == ""
 
 
+def test_a_push_that_hangs_is_a_failed_push_and_retried(world, monkeypatch):
+    repo, bare = world["repo"], world["tmp"] / "hub.git"
+    git(bare.parent, "init", "-q", "--bare", str(bare))
+    git(repo, "remote", "add", "origin", str(bare))
+    git(repo, "config", "branch.main.remote", "origin")
+    git(repo, "config", "branch.main.merge", "refs/heads/main")
+    hook = repo / ".engram/hooks/pre-push"  # a push that never answers, as a dead ssh link
+    hook.write_text("#!/bin/sh\nsleep 30\n")
+    hook.chmod(0o755)
+    monkeypatch.setattr(store, "PUSH_TIMEOUT", 1)
+    assert store.Store(repo).push() is False
+    assert "timed out" in store.push_failure(repo)[1]
+    hook.unlink()
+    (repo / ".engram/engram.toml").write_text(TOML.replace('events_dir = "events"', 'events_dir = "events"\npush = true'))
+    out = {"error": None}
+    capture.retry_push(repo, out)  # the hourly retry
+    assert store.push_failure(repo) is None and out["error"] is None
+
+
 def test_a_launcher_at_another_path_running_the_same_code_is_not_old(world):
     repo, tmp = world["repo"], world["tmp"]
     other = tmp / "bin/engram"  # another install of the same checkout, as ~/.local/bin/engram is

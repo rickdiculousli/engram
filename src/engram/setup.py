@@ -314,7 +314,7 @@ def repair(domain: str) -> list[dict]:
 
 
 def status(root: Path | None = None) -> list[str]:
-    from engram import capture
+    from engram import capture, store
     c = capture.db()
     c.execute(REPAIR)
     rows = c.execute("SELECT domain, root, setup FROM repo" + (" WHERE root = ?" if root else ""),
@@ -334,13 +334,15 @@ def status(root: Path | None = None) -> list[str]:
         reps = c.execute("SELECT what, ok, error FROM repair WHERE domain = ? AND at = ?", (domain, at)).fetchall()
         out.append(f"  last repair: {at}" if reps else "  last repair: none")
         out += [f"    {w} — {'fixed' if ok else 'failed: ' + str(err)}" for w, ok, err in reps]
-        state = capture.record_state(domain, Path(r))
-        out.append("  record: " + ("matches what capture filed, all committed and pushed" if not state else state[0]))
+        state = capture.record_state(Path(r))
+        out.append("  record: " + ("all committed and pushed" if not state else state[0]))
         out += [f"  record: {x}" for x in state[1:]]
-        filed = c.execute("SELECT session, at, entries FROM filed WHERE domain = ? ORDER BY at DESC", (domain,)).fetchall()
-        out.append(f"  sessions filed: {len(filed)}, entries filed: {sum(len(json.loads(e)) for _, _, e in filed)}")
-        for sess, at, entries in filed[:10]:
-            out.append(f"    {sess[:8]}  last filed {at}  {len(json.loads(entries))} entries")
+        filed = c.execute("SELECT session, at FROM filed WHERE domain = ? ORDER BY at DESC", (domain,)).fetchall()
+        st = store.Store(Path(r))
+        n = {sess: len(capture.filed_from(st, sess)) for sess, _ in filed}
+        out.append(f"  sessions filed: {len(filed)}, entries filed: {sum(n.values())}")
+        for sess, at in filed[:10]:
+            out.append(f"    {sess[:8]}  last filed {at}  {n[sess]} entries")
     if last:
         out.append(f"last hourly run: {last[0]} {'ok' if last[1] else 'failed'}; {last[2]} sessions read, {last[3]} filed, "
                    f"{last[4]} dropped, ${last[5]:.2f}" + (f"; error: {last[6]}" if last[6] else ""))

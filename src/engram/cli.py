@@ -654,11 +654,6 @@ def cmd_capture(a):
             missing += [] if hits else [pre]
         if missing:
             sys.exit(f"no filed session starts with: {', '.join(missing)}")
-    elif a.action == "prune":
-        cleared = capture.prune()
-        for sess, ids in cleared.items():
-            print(f"{sess[:8]}: cleared {len(ids)} ids not in the repo: {', '.join(ids)}")
-        print(f"engram capture prune: {sum(map(len, cleared.values()))} ids cleared; every session's mark kept")
     elif a.action == "check":
         line = capture.session_start(_payload(a))
         if line:
@@ -1027,9 +1022,8 @@ def main(argv=None):
     s = sub.add_parser("capture", help="file what the owner says in a repo's sessions: run (the hourly job), check (the "
                                        "session-start health check and repair), status (whether it's running), "
                                        "refile <session-prefix>... (clear sessions' filed mark so the next run reads them "
-                                       "again; deletes nothing), prune (clear filed ids whose entry isn't in the repo; "
-                                       "marks kept)")
-    s.add_argument("action", choices=["run", "check", "status", "refile", "prune"])
+                                       "again; deletes nothing)")
+    s.add_argument("action", choices=["run", "check", "status", "refile"])
     s.add_argument("sessions", nargs="*", help="refile: session id prefixes")
     s.add_argument("--payload", help="check: the hook's JSON payload (default: stdin)")
     s.add_argument("--repo", help="status: just this repo")

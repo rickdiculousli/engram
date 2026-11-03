@@ -489,8 +489,7 @@ def test_refile_clears_the_mark_and_keeps_the_entries(world):
     assert capture.refile(["nomatch"]) == {"nomatch": []}
     assert capture.refile(["s"]) == {"s": ["s1"]}
     with capture.db() as c:
-        upto, entries = c.execute("SELECT upto, entries FROM filed").fetchone()
-    assert upto == 0 and len(json.loads(entries)) == 1  # the entries filed from it are kept
+        assert c.execute("SELECT upto FROM filed").fetchone() == (0,)
     run(calls, [])
     assert len(calls) == 2 and "after line 0" in calls[1] and "Ache is better" in calls[1]  # read again, its entries shown
     assert len(captured(world["repo"])) == 1  # nothing deleted
@@ -626,20 +625,6 @@ def test_same_occurrence_dates():
 ACHE = [{"line": 7, "text": "The ache is better.", "quote": "the ache is better", "date": "not-sure"}]
 
 
-def test_status_reports_filed_ids_missing_from_the_repo_and_prune_clears_them(world):
-    repo = world["repo"]
-    run([], ACHE)
-    eid = json.loads(capture.db().execute("SELECT entries FROM filed").fetchone()[0])[0]
-    assert any("matches what capture filed" in l for l in setup.status(repo))
-    git(repo, "rm", "-q", store.event_path(eid))  # removed by hand as a repeat
-    git(repo, "commit", "-q", "--no-verify", "-m", "drop a repeat")  # past the append-only check, as Sam did
-    assert any("1 filed entry ids aren't in the repo" in l and eid in l for l in setup.status(repo))
-    assert capture.prune() == {"s1": [eid]}
-    with capture.db() as c:
-        assert c.execute("SELECT upto, entries FROM filed").fetchone() == (7, "[]")  # the mark stays
-    assert any("matches what capture filed" in l for l in setup.status(repo))
-
-
 def test_a_reply_without_json_is_an_error_and_the_mark_stays(world):
     out = capture.run(ask=lambda p: ("I looked and there is nothing to file.", 0.01), summaries=False, now=LATER)
     assert out["sessions"] == 0 and "held no JSON" in out["error"]
@@ -749,3 +734,21 @@ def test_placement_with_unknown_ids_files_the_fact_unplaced(flare):
     interp = {**fact, "kind": "interpretation", "occurrence_of": "knee-stiffness"}  # not an occurrence kind
     assert capture.place(interp, {"kind": "interpretation"}, st, ["knee"], {"knee-stiffness": ("x", ["knee"])},
                          ["occurrence"])["occurrence"] is None
+
+
+def test_a_refiled_session_sees_its_facts_as_already_filed_from_the_store(flare):
+    fact = {"line": 1, "text": "Knee stiffness is back", "quote": "knee stiffness is back today", "date": "2026-11-05",
+            "kind": "symptom", "led_from": flare["drive"]}
+    assert capture.run(ask=fake([fact], []), summaries=False, now=NOV5)["filed"] == 1
+    st = store.Store(flare["repo"])
+    assert [l.fm["family"] for l in st.events(kind="link") if l.fm.get("author") == "engram-capture"] == ["timeline"]
+    with st.transaction() as tx:  # a renewal from the same session shares its source
+        tx.add({"title": "Orvexa: still on it", "date": "2026-11-05", "kind": "renewal", "thing": "orvexa",
+                "source": "said in session s6 on 2026-11-05", "author": "engram-capture"}, "- still on it\n")
+    with capture.db() as c, c:
+        c.execute("UPDATE filed SET entries = '[]'")  # nothing kept per session: the store is what's filed
+    assert capture.refile(["s6"]) == {"s6": ["s6"]}
+    calls = []
+    capture.run(ask=fake([], calls), summaries=False, now=NOV5)
+    assert "2026-11-05 Knee stiffness is back:" in calls[0]
+    assert "2026-11-05 led to:" not in calls[0] and "2026-11-05 Orvexa: still on it:" not in calls[0]

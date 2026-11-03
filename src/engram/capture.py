@@ -6,14 +6,14 @@ One timed job runs every hour (`engram capture run`, `engram.jobs`):
    repos set up; raw transcripts are never indexed.
 2. Each session started in a repo set up that has grown since it was last filed, and has been idle an hour (its last
    message at least 60 minutes old), is read whole by Opus at low effort: the owner's messages and Claude's written replies,
-   cleaned as for the summaries (no tool calls or output, reminders or hook text). With it go the entries already filed
-   from that session, every entry dated within a month of each of his messages, where every medication and treatment
+   cleaned as for the summaries (no tool calls or output, reminders or hook text). With it go the entries the store
+   holds as filed from that session, every entry dated within a month of each of his messages, where every medication and treatment
    stands, and search hits on his words, so a repeat in other words is seen. It files only what's worth keeping, each
    fact with a quote of the owner's words and a full date. A session still going is skipped, never read partly.
 3. It checks the install and repairs what's missing.
 
-No duplicates when a session comes back, enforced in code: each session keeps the message it was filed up to and the
-ids of the entries filed from it. A fact is filed only if its quote is found word for word in one of the owner's messages
+No duplicates when a session comes back, enforced in code: each session keeps the message it was filed up to, and the
+entries filed from it are read from the store by their source. A fact is filed only if its quote is found word for word in one of the owner's messages
 after that point (and, for a short answer, the question it answers in Claude's words); every number in it must be in
 those words or Claude's message just before his, and a date may also be the day he said it or follow from his words
 ("yesterday", "3 days ago"). A med-change to the status the medication already has is dropped as a repeat.
@@ -795,6 +795,14 @@ def reply_json(reply: str) -> dict:
     return out
 
 
+def filed_from(st: store.Store, stem: str) -> list:
+    """The entries filed from a session, read from the store by their source: facts, theory statuses and links, and
+    structural records; not the placement links filed with its facts, nor its renewals."""
+    mine = (f"said in session {stem[:8]} ", f"agreed in session {stem[:8]} ")
+    return [e for e in st.events() if str(e.fm.get("source", "")).startswith(mine)
+            and e.fm.get("family") != "timeline" and e.kind != now_mod.RENEWAL]
+
+
 def file_session(domain: str, root: Path, path: Path, ask=None, dry_run: bool = False, ask_structure=None,
                  ask_verify=None) -> dict:
     """Read one session whole and file what's new since it was last filed; returns counts and, for a dry run, what it
@@ -808,8 +816,7 @@ def file_session(domain: str, root: Path, path: Path, ask=None, dry_run: bool = 
     ask_verify = ask_verify or (ask if ask else _ask_verify)
     ask = ask or _ask
     with contextlib.closing(db()) as c:
-        row = c.execute("SELECT upto, entries FROM filed WHERE session = ?", (path.stem,)).fetchone()
-    upto, ids = (row[0], json.loads(row[1])) if row else (0, [])
+        upto = (c.execute("SELECT upto FROM filed WHERE session = ?", (path.stem,)).fetchone() or (0,))[0]
     size = path.stat().st_size
     s = _parse(path)
     later = owners(s, upto)
@@ -818,7 +825,7 @@ def file_session(domain: str, root: Path, path: Path, ask=None, dry_run: bool = 
         st = store.Store(root)
         kinds, abouts, home = shape(st, p.kinds)
         th = theory_shape(st, p.prompts.get("theory", ""))
-        mine = [e for e in st.events() if e.id in set(ids)]
+        mine = filed_from(st, path.stem)
         already = [f"{e.date} {e.fm.get('title', '')}: {' '.join(e.body.split())[:200]}" for e in mine]
         already += [r[:300] for x in s.exchanges for r in x.ran if r.startswith("Bash:") and FILED.search(r)]
         when = {x.line: sessions._local_date(x.ts) or _now().date().isoformat() for x in s.exchanges}
@@ -901,23 +908,21 @@ def file_session(domain: str, root: Path, path: Path, ask=None, dry_run: bool = 
             r = theorychange.apply(root, revision["ops"], by=config.owner_id() if not revision.get("answering") else "with-claude",
                                    why=str(revision.get("why", "")), said=said, date=when.get(line),
                                    source=f"agreed in session {path.stem[:8]} on {when.get(line)}")
-            ids += r.written
             res["filed"] += len(r.written)
         if entries:
             with st.transaction(message=commitmsg.message("facts", n=len(entries), session=path.stem[:8])) as tx:
                 dom = st.config.get("domain", {}).get("name", "")
                 for (fm, body), w in zip(entries, places):
                     eid = tx.add({**fm, "domain": dom}, body).id
-                    ids.append(eid)
                     for lfm, note in links_for(eid, fm, w[0], w[1], fm.get("source", ""), st) if w else []:
                         tx.add({**lfm, "domain": dom}, note)
         res["filed"] += len(entries)
     if not dry_run:
         with contextlib.closing(db()) as c, c:
-            c.execute("INSERT INTO filed (session, domain, path, upto, bytes, entries, at) VALUES (?, ?, ?, ?, ?, ?, ?) "
+            c.execute("INSERT INTO filed (session, domain, path, upto, bytes, at) VALUES (?, ?, ?, ?, ?, ?) "
                       "ON CONFLICT(session) DO UPDATE SET upto = excluded.upto, bytes = excluded.bytes, "
-                      "entries = excluded.entries, at = excluded.at, path = excluded.path",
-                      (path.stem, domain, str(path), max([upto, *later]), size, json.dumps(ids), _now().isoformat(timespec="seconds")))
+                      "at = excluded.at, path = excluded.path",
+                      (path.stem, domain, str(path), max([upto, *later]), size, _now().isoformat(timespec="seconds")))
     return res
 
 
@@ -1015,7 +1020,7 @@ def renew(domain: str, root: Path, path: Path, upto: int, ask=None, dry_run: boo
 
 def refile(prefixes: list[str]) -> dict[str, list[str]]:
     """Clear the filed mark of the sessions whose ids start with each prefix, so the next run reads them whole again.
-    Nothing is deleted: the ids of entries already filed from them are kept and shown to the model as already filed."""
+    Nothing is deleted: the entries already filed from them are shown to the model as already filed."""
     out = {}
     with contextlib.closing(db()) as c, c:
         for pre in prefixes:
@@ -1159,18 +1164,11 @@ def retry_push(root: Path, out: dict):
             _error(out, f"push {root.name}: {(store.push_failure(root) or ('', ''))[1]}")
 
 
-def record_state(domain: str, root: Path) -> list[str]:
-    """What's off between capture's state and the repo: filed ids with no entry in the repo, entry files written but
-    not committed (a failed transaction's leftovers), and commits not pushed. Empty when they agree."""
+def record_state(root: Path) -> list[str]:
+    """What's off in the repo: entry files written but not committed (a failed transaction's leftovers), commits not
+    pushed, and a failing push. Empty when all is committed and pushed."""
     st = store.Store(root)
-    have = {e.id for e in st.events()}
-    with contextlib.closing(db()) as c:
-        rows = c.execute("SELECT session, entries FROM filed WHERE domain = ?", (domain,)).fetchall()
-    gone = [(sess, i) for sess, ids in rows for i in json.loads(ids) if i not in have and not str(i).startswith("theory/")]
     out = []
-    if gone:
-        out.append(f"{len(gone)} filed entry ids aren't in the repo (`engram capture prune` clears them): "
-                   + ", ".join(f"{i} ({sess[:8]})" for sess, i in gone[:5]) + (" …" if len(gone) > 5 else ""))
     loose = [l[3:] for l in _git(root, "status", "--porcelain", "--untracked-files=all", "--", st.events_dir).splitlines() if l.strip()]
     if loose:
         out.append(f"{len(loose)} entry files aren't committed: " + ", ".join(loose[:5]) + (" …" if len(loose) > 5 else ""))
@@ -1180,23 +1178,6 @@ def record_state(domain: str, root: Path) -> list[str]:
     failed = store.push_failure(root)
     if failed:
         out.append(f"the last push failed (since {failed[0]}): {failed[1]}")
-    return out
-
-
-def prune() -> dict[str, list[str]]:
-    """Clear filed entry ids whose entry isn't in the repo (removed as a repeat, say), keeping every session's mark, so
-    status and the model's "already filed" list match the record. Returns session -> the ids cleared."""
-    out = {}
-    with contextlib.closing(db()) as c, c:
-        repos = dict(c.execute("SELECT domain, root FROM repo"))
-        for d, root in repos.items():
-            have = {e.id for e in store.Store(Path(root)).events()}
-            for sess, ids in c.execute("SELECT session, entries FROM filed WHERE domain = ?", (d,)).fetchall():
-                ids = json.loads(ids)
-                keep = [i for i in ids if i in have or str(i).startswith("theory/")]
-                if keep != ids:
-                    c.execute("UPDATE filed SET entries = ? WHERE session = ?", (json.dumps(keep), sess))
-                    out[sess] = [i for i in ids if i not in keep]
     return out
 
 

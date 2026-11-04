@@ -100,7 +100,7 @@ def stalled() -> str | None:
 
 def install(agents: Path | None = None, load: bool = True) -> Path:
     """The timed job that runs the copy at 04:00, or on wake if the box slept through it."""
-    from engram import jobs, setup
+    from engram import setup
     data_path("logs").mkdir(exist_ok=True)
-    return jobs.install(agents or jobs.default_dir(), LABEL, [*setup.engram_cmd(), "daily", "run"],
-                        data_path("logs") / "daily.log", load, at=[{"Hour": 4, "Minute": 0}])
+    return setup.timed_job(agents, LABEL, [*setup.engram_cmd(), "daily", "run"], data_path("logs") / "daily.log", load,
+                           at=[{"Hour": 4, "Minute": 0}])

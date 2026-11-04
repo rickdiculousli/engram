@@ -523,5 +523,5 @@ def install(agents: Path | None = None, load: bool = True) -> Path:
     """The timed job that runs the week's passes, kept awake until they end; a time missed asleep fires on wake.
     Running it again rewrites and reloads the same job."""
     from engram import jobs, setup
-    return jobs.install(agents or jobs.default_dir(), LABEL, jobs.awake([*setup.engram_cmd(), "refine", "run"]),
-                        _dir() / "launchd.log", load, at=SCHEDULE)
+    return setup.timed_job(agents, LABEL, jobs.awake([*setup.engram_cmd(), "refine", "run"]), _dir() / "launchd.log", load,
+                           at=SCHEDULE)

@@ -269,6 +269,19 @@ def test_only_the_release_repairs_a_loaded_install(world, loaded, monkeypatch):
     assert [a[1] for a in loaded["ran"] if a[1] in ("bootout", "bootstrap")] == ["bootout", "bootstrap"]
 
 
+def test_the_daily_and_weekly_jobs_are_installed_only_where_a_repair_would_be(world, loaded, monkeypatch):
+    from engram import daily, refine
+    agents = world["tmp"] / "LaunchAgents"
+    (world["tmp"] / "data/release").mkdir()
+    monkeypatch.setattr("engram.paths.default_data_dir", lambda: world["tmp"] / "data")
+    for install in (daily.install, refine.install):
+        with pytest.raises(SystemExit, match="not the release clone"):
+            install(agents, load=True)
+    assert not {p.name for p in agents.iterdir()} & {f"{daily.LABEL}.plist", f"{refine.LABEL}.plist"} and loaded["untouched"]()
+    monkeypatch.setattr("engram.review.release", lambda: Path(setup.this_code()).parents[1])  # running from the release
+    assert daily.install(agents, load=True).exists() and refine.install(agents, load=True).exists()
+
+
 def test_any_engram_repairs_a_loaded_install_with_no_release_clone(world, loaded, monkeypatch):
     monkeypatch.setattr("engram.paths.default_data_dir", lambda: world["tmp"] / "data")
     assert len([d for d in setup.repair("medical") if d["ok"]]) == 3 and loaded["plist"].exists()

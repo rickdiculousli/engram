@@ -170,6 +170,13 @@ def install_job(man: dict):
                  bool(man.get("load")), every=3600)
 
 
+def timed_job(agents: Path | None, label: str, args: list[str], log: Path, load: bool, **when) -> Path:
+    """A job no repo owns (the daily copy, the weekly pass), installed only where `refused()` lets the hourly job be."""
+    if why := refused().get("job"):
+        raise SystemExit(f"engram: {label} isn't installed from here: {why}")
+    return jobs.install(agents or jobs.default_dir(), label, args, log, load, **when)
+
+
 def settings(root: Path) -> dict:
     """The repo's .claude/settings.json; empty when it's missing or won't parse."""
     p = _settings_path(root)
@@ -225,16 +232,17 @@ def real_install() -> dict[str, dict]:
     return mans if any(m.get("load") for m in mans.values()) else {}
 
 
-def refused(root: Path) -> dict[str, str]:
+def refused(root: Path | None = None) -> dict[str, str]:
     """piece -> why this engram leaves it alone, so only the release repairs the box's real install. Under another data
     folder (a scratch copy holding the real rows): the job, whose file would carry that folder, and a real repo's
     settings and hooks. From any engram but the release clone's, when there is one: every piece, or a worktree's
-    `engram capture check` would call the release's hooks old and repoint the real repos and job at itself."""
+    `engram capture check` would call the release's hooks old and repoint the real repos and job at itself. With no
+    root, the jobs no repo owns (`timed_job`)."""
     if not (real := real_install()):
         return {}
     if paths.data_dir().resolve() != paths.default_data_dir().resolve():
         why = f"{paths.data_dir()} is a scratch data folder; the box's install is the release's"
-        return {p: why for p in ("settings", "git", "job") if p == "job" or str(Path(root).resolve()) in real}
+        return {p: why for p in ("settings", "git", "job") if p == "job" or root and str(Path(root).resolve()) in real}
     from engram import review
     rel = review.release()
     if rel.exists() and not Path(this_code()).is_relative_to(rel.resolve()):

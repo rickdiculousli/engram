@@ -29,8 +29,8 @@ by: owner
 ```
 
 The fields:
-- **`date`:** `YYYY`, `YYYY-MM`, `YYYY-MM-DD` or `not-sure`, as the local calendar date. `approx: true` prints the date with `~`; `reported` is when the owner said it; `until` closes a range; `onset_after` means "in the days after".
-- **Fuzzy dates:** `as_said` holds the owner's exact words, anchored to `reported`; `range_from` and `range_to` give the span; `landmark: <slug>` pins the date to a landmark. A narrowing is a new entry with `supersedes` and `narrowed_by: <source>`.
+- **`date`:** `YYYY`, `YYYY-MM`, `YYYY-MM-DD` or `not-sure`, as the local calendar date. `approx: true` prints the date with `~` and makes it a range anchored to `reported`, when the owner said it, else to the entry's id day ([search](search.md#periods-and-as-it-stood)).
+- **Fuzzy dates:** `as_said` holds the owner's exact words, anchored to `reported`; `range_from` and `range_to` give the span, and set the entry's range when both are there; `landmark: <slug>` pins the date to a landmark. A narrowing is a new entry with `supersedes` and `narrowed_by: <source>`.
 - **`by`:** whose claim it is: an outside source (`<role>:<name>`), the owner's id, `with-claude`, or `claude-suggestion` with `status: considering | adopted | dropped`, which only the owner changes. `confidence` holds the claimant's words, or the record's status.
 - **`author`:** who wrote the file: the owner, `claude` or `feed`.
 - **`supersedes`:** marks a correction; search ranks the superseded entry at half.

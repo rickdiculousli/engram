@@ -38,6 +38,30 @@ def span(value: str | None) -> tuple[date, date] | None:
     return start, start if d else _month_end(y, mo) if mo else date(y, 12, 31)
 
 
+FLOOR, SHARE = 7, 0.3  # a fuzzy date widens by 0.3 of how far back it reaches, at least a week (docs/search.md)
+
+
+def of(fm: dict, written: str) -> tuple[date, date] | None:
+    """An entry's date range: his own ends; else its date's span, widened both ways when approximate by a share of the
+    days from when it was said (`reported`, else `written`, its id day), and a recollection never ends after that."""
+    if (a := span(fm.get("range_from"))) and (b := span(fm.get("range_to"))):
+        return a[0], b[1]
+    if not (s := span(fm.get("date"))) or str(fm.get("approx")).lower() not in ("true", "yes"):
+        return s
+    said = (span(fm.get("reported")) or span(written))[1]
+    pad = timedelta(days=max(FLOOR, round(SHARE * abs((said - s[0]).days))))
+    return s[0] - pad, min(s[1] + pad, said) if s[0] <= said else s[1] + pad
+
+
+def mark(r: tuple[date, date] | None, p: tuple[date, date]) -> str | None:
+    """How much of a date range falls inside a period: in (all of it), probably (more than half), possibly (any)."""
+    if not r:
+        return None
+    inside = (min(r[1], p[1]) - max(r[0], p[0])).days + 1
+    share = inside / ((r[1] - r[0]).days + 1)
+    return "in" if share >= 1 else "probably" if share > 0.5 else "possibly" if inside > 0 else None
+
+
 def _when(phrase: str, today: date, bare: bool = False) -> tuple[date, date] | None:
     """A date-like phrase: a month (with or without its year), a season, a year, or a relative period."""
     p = phrase.lower()

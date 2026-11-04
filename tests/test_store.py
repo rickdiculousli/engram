@@ -446,6 +446,64 @@ def test_a_questions_period_is_read_from_its_words_and_a_written_date_spans_its_
     assert [periods.span(v) for v in ["2024-03 (approx.)", "soon", "2026-02-30", None]] == [None] * 4
 
 
+def test_a_fuzzy_date_is_a_range_anchored_to_when_it_was_said():
+    from datetime import date, timedelta
+    from engram import periods
+    day = date(2026, 1, 14)
+    assert periods.of({"date": "2026-01-14"}, "2026-07-15") == (day, day)
+    far = timedelta(days=55)  # 0.3 of the 182 days back from when said
+    assert periods.of({"date": "2026-01-14", "approx": "true", "reported": "2026-07-15"}, "2026-08-01") == (day - far, day + far)
+    assert periods.of({"date": "2026-01-14", "approx": "true"}, "2026-07-15") == (day - far, day + far)  # no reported: the id day
+    assert periods.of({"date": "2026-01-14", "approx": "True"}, "2026-07-15") == (day - far, day + far)
+    same = periods.of({"date": "2026-03-05", "approx": "true", "reported": "2026-03-05"}, "2026-03-05")
+    assert same == (date(2026, 2, 26), date(2026, 3, 5))  # never after he said it
+    assert periods.mark(same, (date(2026, 3, 6), date(2026, 3, 31))) is None
+    assert periods.of({"date": "2026-03-08", "approx": "true", "reported": "2026-03-05"}, "2026-03-05") == (
+        date(2026, 3, 1), date(2026, 3, 15))  # three days after when said: the floor, both ways
+    assert periods.of({"date": "2026-06-05", "approx": "true", "reported": "2026-03-05"}, "2026-03-05") == (
+        date(2026, 5, 8), date(2026, 7, 3))  # three months after: 0.3 of 92 days, both ways
+    assert periods.of({"date": "2026-03-05", "approx": "true", "range_from": "2026-02-20", "range_to": "2026-03-12"},
+                      "2026-03-20") == (date(2026, 2, 20), date(2026, 3, 12))  # his own ends
+    assert periods.of({"date": "not-sure", "approx": "true"}, "2026-03-20") is None
+
+
+def test_a_period_question_marks_each_row_by_how_much_of_its_date_falls_inside(tmp_path, env):
+    from engram import timeline
+    june = "20260612-090000-report-a1a1"
+    link = {"title": "led to", "date": "2026-06-10", "kind": "link", "about": ["story/ankle"], "from": june,
+            "to": f"{june}#Detail", "family": "timeline", "rel": "led-to"}
+    _searchable(tmp_path, env, "", {}, [
+        ({"id": june, "title": "Ankle sore after the run", "date": "2026-06-10", "kind": "report", "about": ["story/ankle"]},
+         "- sore\n\n### Detail\nSwelling by the evening.\n"),
+        ({"id": "20260710-090000-report-b2b2", "title": "Ankle gave way", "date": "2026-06-28", "approx": "true",
+          "reported": "2026-07-10", "kind": "report", "about": ["story/ankle"]}, "- gave way on stairs\n"),
+        ({"id": "20260805-090000-report-c3c3", "title": "Ankle fine on a hike", "date": "2026-08-05", "kind": "report",
+          "about": ["story/ankle"]}, "- fine\n"),
+        (link, "- the swelling followed")])
+    header, rows = timeline.chain("medical", ["ankle"], "how was my ankle in june 2026")
+    marks = {r["_ref"]: r.get("period") for r in rows}
+    assert list(marks) == [june, "20260710-090000-report-b2b2", "20260805-090000-report-c3c3", f"{june}#Detail"]
+    assert list(marks.values()) == ["in", "probably", None, None]  # 10 of its 15 days in June; August; undated
+    assert header["period"] == ("2026-06-01 to 2026-06-30 (the question's; nothing is cut); rows marked in, probably or possibly "
+                                "by how much of their date falls inside")
+    assert timeline.render(header, rows, "tsv").splitlines()[1].startswith("n\tdate\tperiod\t")
+    header, rows = timeline.chain("medical", ["ankle"])
+    assert "period" not in header and not any("period" in r for r in rows)
+    header, rows = timeline.chain("medical", ["ankle"], "how was my ankle in january 2026")
+    assert header["period"] == "2026-01-01 to 2026-01-31 (the question's; nothing is cut)"
+    assert not any("period" in r for r in rows) and "\tperiod" not in timeline.render(header, rows, "tsv")
+
+
+def test_a_not_sure_entry_its_title_dates_is_marked_by_the_date_it_prints(tmp_path, env):
+    from engram import timeline
+    ref = "20260701-090000-report-d4d4"
+    _searchable(tmp_path, env, "", {}, [
+        ({"id": ref, "title": "Ankle checked 2026-06-15", "date": "not-sure", "kind": "report", "about": ["story/ankle"]},
+         "- ankle checked\n")])
+    header, rows = timeline.chain("medical", ["ankle"], "how was my ankle in june 2026")
+    assert [(r["_ref"], r.get("period")) for r in rows] == [(ref, "in")]
+
+
 def test_a_record_as_it_stood_comes_from_git(tmp_path):
     import os
     from engram import asof

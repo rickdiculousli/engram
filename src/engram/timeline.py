@@ -5,12 +5,16 @@ gives, default values) is left out."""
 import json
 import re
 from datetime import date
+from pathlib import Path
 
-from engram import config, dates, labels, periods
+import yaml
+
+from engram import config, dates, frontmatter, labels, periods
 from engram.index import open_index
 from engram.paths import index_path, record_toml
 from engram.sources.events import is_event_ref
 
+MARKS = "; rows marked in, probably or possibly by how much of their date falls inside"  # the period line, when a row is marked
 APART = ("theory/", "now:")  # a theory thread shows in the theory block, and where things stand isn't history
 
 
@@ -156,11 +160,11 @@ def chain(domain: str, names: str | list[str], about: str | None = None) -> tupl
         src = db.execute("SELECT source FROM doc WHERE ref = ? OR parent = ? LIMIT 1", (ref, ref)).fetchone()
         if src and _excluded(src[0], ref):  # a session-origin question never sees its own session (eval runner)
             continue
-        d = db.execute("SELECT title, date, date_key, author, node, milestone, stories, nid FROM doc WHERE ref = ? OR parent = ? LIMIT 1",
+        d = db.execute("SELECT title, date, date_key, author, node, milestone, stories, nid, pointer FROM doc WHERE ref = ? OR parent = ? LIMIT 1",
                        (ref, ref)).fetchone()
         if d:
             rows.append({"ref": ref, "title": d[0], "date": d[1], "key": d[2], "who": labels.who(d[3], known), "kind": d[4], "m": d[5],
-                         "on": chains or [s for s in (d[6] or "").split(",") if s] or ["search match"], "nid": d[7]})
+                         "on": chains or [s for s in (d[6] or "").split(",") if s] or ["search match"], "nid": d[7], "pointer": d[8]})
     rows = _whole(db, rows, repo_conf(domain).get("timeline", {}).get("whole", []), known)
     rows.sort(key=lambda r: (r["key"] is None, r["key"] or "", r["date"] or ""))
     direct = set(hits)
@@ -195,6 +199,8 @@ def chain(domain: str, names: str | list[str], about: str | None = None) -> tupl
         if r["date"]:
             approx = re.search(re.escape(r["date"]) + r"\s*\(approx", r["title"], re.I)
             row["date"] = ("~" if approx else "") + r["date"]
+        if within and (m := periods.mark(_range(r), within)):
+            row["period"] = m
         if merged:
             row["on"] = ", ".join(r["on"])  # which complaints a row belongs to: one marks a lane, two or more an interleaving
         if r["who"]:
@@ -235,7 +241,8 @@ def chain(domain: str, names: str | list[str], about: str | None = None) -> tupl
     dated = sum(1 for r in rows if r["key"])
     header = {"chain": ", ".join(names), "kind": kinds[0] if len(set(kinds)) == 1 and len(kinds) == 1 else "merged",
               "picked from": f"search for {about!r}" if about else None,
-              "period": f"{within[0]} to {within[1]} (the question's; nothing is cut)" if within else None, "records": len(out),
+              "period": f"{within[0]} to {within[1]} (the question's; nothing is cut)" + MARKS * any("period" in r for r in out)
+              if within else None, "records": len(out),
               "from": next((r["date"] for r in rows if r["key"]), None), "to": rows[dated - 1]["date"] if dated else None,
               "undated after": dated if dated < len(out) else None,
               "theory": len(theory) or None,
@@ -244,6 +251,19 @@ def chain(domain: str, names: str | list[str], about: str | None = None) -> tupl
               "read a record": "engram show <id>" + (f" (as it stood: --as-of {then})" if then else ""),
               "key": config.voice(labels.KEY)}
     return {k: v for k, v in header.items() if v is not None}, out + theory
+
+
+def _range(r: dict):
+    """A row's date range, from the date it prints: on an entry's own first section, read with its front matter's
+    hedges (`periods.of`; a file gone since indexing has none); on any other row, its span."""
+    from engram import units
+    if not is_event_ref(r["ref"]) or "#" in r["ref"]:
+        return periods.span(r["date"])
+    try:
+        fm = frontmatter.split(Path(r["pointer"]).read_text())[0] or {}
+    except (OSError, ValueError, yaml.YAMLError):
+        fm = {}
+    return periods.of({**fm, "date": r["date"]}, units.said_on(r["ref"], None))
 
 
 def _then(domain: str, key: str, then: str) -> str:
@@ -465,7 +485,7 @@ def render(header: dict, rows: list[dict], fmt: str = "jsonl") -> str:
         theory = [r for r in rows if "theory" in r]
         rows = [r for r in rows if "theory" not in r]
         cell = lambda v: re.sub(r"\s+", " ", "; ".join(map(str, v)) if isinstance(v, list) else str(v))
-        lead = ["n", "date", "on", "who", "kind", "milestone", "what", "summary", "id", "after"]
+        lead = ["n", "date", "period", "on", "who", "kind", "milestone", "what", "summary", "id", "after"]
         cols = [c for c in lead + sorted({k for r in rows for k in r} - set(lead))
                 if not c.startswith("_") and any(cell(r.get(c, "")) for r in rows)]  # a column empty in every row goes
         lines = [json.dumps(header, ensure_ascii=False, separators=(",", ":"))] + (["\t".join(cols)] if rows else [])

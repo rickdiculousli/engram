@@ -158,8 +158,7 @@ def test_a_hit_on_an_old_version_returns_the_unit_with_the_current_version_first
     u = results[refs.index(fix.id)]["unit"]
     assert u["centre"] == fix.id and [l["ref"] for l in u["lines"]] == [rec["ankle"]]
     assert "corrected: when: all day became evening only" in u["text"][1]
-    from engram.cli import render
-    assert "other versions (current above):" in render(results)
+    assert "other versions (current above):" in search.render(results)
     _, rows = timeline.chain("medical", [], "ankle achy all day")
     by = {r["_ref"]: r for r in rows if "_ref" in r}
     assert fix.id in by and rec["ankle"] not in by  # the corrected row shows its correction inline, never twice

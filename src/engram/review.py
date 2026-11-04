@@ -168,8 +168,8 @@ def read(path: Path) -> dict:
 
 def held(domain: str, question: str, day: str | None) -> str:
     """What the record held on the day, through engram's own first call."""
-    from engram import cli, search
-    return cli.render(search.search(question, [domain], limit=10, as_of=day, as_it_stood=True))
+    from engram import search
+    return search.render(search.search(question, [domain], limit=10, as_of=day, as_it_stood=True))
 
 
 def prompt(domain: str, view: dict) -> str:

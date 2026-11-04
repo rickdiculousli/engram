@@ -6,7 +6,7 @@ from dataclasses import asdict
 from datetime import date
 from fnmatch import fnmatchcase
 
-from engram import config
+from engram import config, labels
 from engram.index import open_index
 from engram.paths import index_path, record_conf, record_toml
 from engram.sources.events import ID
@@ -397,3 +397,26 @@ def search(q: str, domains: list[str], limit: int = 10, **filters) -> list[dict]
     for i, r in enumerate(merged, 1):
         r["rank"] = i
     return merged
+
+
+def render(results: list[dict], explain: bool = False) -> str:
+    """What a search prints for Claude: each hit with its excerpt, whose claim it is, its ref, and its surroundings.
+    Replay measures its length, the tokens a search costs."""
+    out = [] if results else ["no matches"]
+    known = {d: labels_people(d) for d in {r["domain"] for r in results}}
+    whos = [labels.who(r.get("author", ""), known[r["domain"]]) for r in results]
+    if any(map(labels.coded, whos)):
+        out.append(config.voice(labels.KEY))
+    for r, who in zip(results, whos):
+        when = f"{r['date']}, " if r["date"] else ""
+        out.append(f"\n{r['rank']}. [{r['domain']}] {r['title']}  ({when}{r['kind']})")
+        out.append("   " + " ".join(r["snip"].split()))
+        if who:
+            out.append(f"   by: {who}")
+        out.append(f"   ref: {r['ref']}")
+        out += [f"   {l}" for l in (r.get("unit") or {}).get("text", [])]
+        for n in r.get("surroundings", []):
+            out.append(f"   {n['rel']} ({n['story']}): {n['title']}  ref: {n['ref']}")
+        if explain:
+            out.append(f"   score {r['score']}: " + ", ".join(f"{k} {v}" for k, v in r["factors"].items()))
+    return "\n".join(out)

@@ -615,14 +615,13 @@ def test_the_job_files_a_date_never_said_as_not_sure_and_an_undated_repeat_stays
             "date": "2026-10-07", "kind": "observation"}
     knee = {"line": 9, "text": "Bicycle knee is sore.", "quote": "the bicycle knee is sore again", "date": "2026-10-01",
             "kind": "observation"}
-    from engram import cli
-    from engram.sources import sections
+    from engram import ingest
     doc = world["repo"] / "reference/knee.md"
     doc.parent.mkdir(parents=True)
     doc.write_text("# Knee\n\nThe bicycle knee gets sore again now and then.\n")
     git(world["repo"], "add", "-A")
     git(world["repo"], "commit", "-qm", "doc")
-    cli._ingest("medical", sections)
+    ingest.record("medical")
     calls, verified = [], []
     out = capture.run(ask=fake([back, knee], calls, verified, stating("bicycle")), summaries=False,
                       now=LATER + timedelta(minutes=5), dry_run=True)
@@ -670,14 +669,13 @@ def stating(phrase):
 
 @pytest.fixture
 def ankle(world):
-    from engram import cli
-    from engram.sources import sections
+    from engram import ingest
     doc = world["repo"] / "reference/treatments/ankle.md"
     doc.parent.mkdir(parents=True)
     doc.write_text("# Ankle brace\n\nThe ankle injury dates from a bicycle fall on 2019-06-02, landing on the right side.\n")
     git(world["repo"], "add", "-A")
     git(world["repo"], "commit", "-qm", "doc")
-    cli._ingest("medical", sections)
+    ingest.record("medical")
     with world["path"].open("a") as f:
         f.write(said("my ankle started when I slid off my bicycle, and ice helped tonight", ts="2026-10-18T20:05:00Z") + "\n")
     return world
@@ -731,8 +729,7 @@ def naming(where):
 def tension(world):
     """Knee stiffness is in the record on 2026-10-13, as an entry and on its complaint page; a session on
     2026-11-05 says it's back."""
-    from engram import cli
-    from engram.sources import sections
+    from engram import ingest
     st = store.Store(world["repo"])
     with st.transaction() as tx:
         tx.add({"title": "Knee stiffness behind the kneecap", "date": "2026-10-13", "kind": "symptom",
@@ -744,7 +741,7 @@ def tension(world):
     doc.write_text("# Knee stiffness\n\nPast occurrences of knee stiffness:\n- 2026-10-13: knee stiffness, eased with heat\n")
     git(world["repo"], "add", "-A")
     git(world["repo"], "commit", "-qm", "tension")
-    cli._ingest("medical", sections)
+    ingest.record("medical")
     world["path"].unlink()
     add_session(world, "s4", ["knee stiffness is back, and it comes from my desk posture", "Noted."], "2026-11-05T20:00:00Z")
     return world
@@ -938,8 +935,7 @@ def test_a_launcher_at_another_path_running_the_same_code_is_not_old(world):
 @pytest.fixture
 def flare(world):
     """Knee stiffness is a recurring symptom with its own page; the record holds a long drive on 2026-11-04."""
-    from engram import cli
-    from engram.sources import sections
+    from engram import ingest
     repo = world["repo"]
     (repo / ".engram/engram.toml").write_text(TOML + '[index]\nevents = true\n[links.timeline]\nrels = ["led-to", "occurrence"]\n')
     (repo / "complaints").mkdir()
@@ -952,7 +948,7 @@ def flare(world):
     with st.transaction() as tx:
         drive = tx.add({"title": "Four-hour drive to Tahoe", "date": "2026-11-04", "kind": "observation",
                         "about": ["series/_observations", "story/knee"]}, "- long drive\n").id
-    cli._ingest("medical", sections)
+    ingest.record("medical")
     world["path"].unlink()
     add_session(world, "s6", ["knee stiffness is back today, it started after the long drive yesterday", "Noted."],
                 "2026-11-05T20:00:00Z")

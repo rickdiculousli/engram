@@ -71,8 +71,8 @@ def area(env, tmp_path):
 
 
 def ingest():
-    from engram import cli
-    cli._ingest("essays")
+    from engram import ingest
+    ingest.record("essays")
 
 
 def test_a_page_an_image_and_a_spark_are_kept_and_found_with_who_and_when(area, tmp_path):

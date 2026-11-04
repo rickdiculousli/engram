@@ -50,11 +50,10 @@ def _lint(repo, capsys):
 
 
 def _index_links(entry):
-    from engram import cli
+    from engram import ingest
     from engram.index import open_index
     from engram.paths import index_path
-    from engram.sources import sections
-    cli._ingest("medical", sections)
+    ingest.record("medical")
     db = open_index(index_path("medical"), readonly=True).db
     return sorted(r[0] for r in db.execute("SELECT to_ref FROM link WHERE from_ref = ?", (entry,)))
 
@@ -168,10 +167,9 @@ def test_capture_places_an_occurrence_on_the_complaint_pages_stable_id(rec):
 
 
 def test_a_document_by_id_opens_whole(rec, capsys):
-    from engram import cli
+    from engram import ingest
     from engram.cli import main
-    from engram.sources import sections
-    cli._ingest("medical", sections)
+    ingest.record("medical")
     doc = docreg.load(rec["repo"]).owner("plans/rehab.md")
     capsys.readouterr()
     main(["show", doc, "--domain", "medical"])

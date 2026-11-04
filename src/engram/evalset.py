@@ -264,12 +264,11 @@ def run_replay(qs: list[dict], domain: str, prior: Path, lens: str | None = None
     for q in qs:
         r = prior_rows.get(q["id"], {})
         queries = r.get("queries", [])
-        from engram.cli import render
         refs, chars = [], 0
         for qq, logged in zip(queries, r.get("lenses") or [None] * len(queries)):
             use = by_kind.get(q.get("kind", "lookup")) if lens == "auto" else None if lens == "none" else lens or logged
             hits = search.search(qq, [domain], limit=5, lens=use)
-            chars += len(render(hits))
+            chars += len(search.render(hits))
             for h in hits:
                 refs += result_refs(h)
         links = links_found(q, refs)

@@ -52,12 +52,11 @@ import os
 import re
 import sqlite3
 import subprocess
-import tempfile
 from collections import Counter
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-from engram import claude_env, commitmsg, config, daily, dates, pack, recsum, refine, review, store, summarize
+from engram import commitmsg, config, daily, dates, llm, pack, recsum, refine, review, store, summarize
 from engram import now as now_mod
 from engram import theory as theory_mod
 from engram.paths import data_path, record_conf, record_toml
@@ -158,15 +157,9 @@ STRENGTHS = theory_mod.STRENGTHS
 
 
 def _ask(prompt: str, effort: str = recsum.EFFORT) -> tuple[str, float]:
-    cmd = ["claude", "-p", "--model", recsum.MODEL, "--effort", effort, "--output-format", "json", "--setting-sources",
-           "project", "--strict-mcp-config", "--no-session-persistence", "--tools", "", "--system-prompt",
-           "You file what a person said into their record, carefully and literally."]
-    with tempfile.TemporaryDirectory(prefix="engram-capture-") as cwd:
-        r = subprocess.run(cmd, input=prompt, cwd=cwd, env=claude_env.clean(), capture_output=True, text=True, timeout=1800)
-    out = json.loads(r.stdout)
-    if r.returncode or out.get("is_error"):
-        raise RuntimeError(str(out.get("result") or f"exit {r.returncode}")[:300])
-    return out.get("result") or "", out.get("total_cost_usd", 0) or 0
+    text, used = llm.ask(prompt, "You file what a person said into their record, carefully and literally.",
+                         model=recsum.MODEL, effort=effort)
+    return text, used["usd"] or 0
 
 
 def prompt_only(prompt: str) -> tuple[str, float]:

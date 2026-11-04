@@ -15,12 +15,10 @@ change runs once; its outcome is one line in the next session's `engram now` (th
 import hashlib
 import json
 import re
-import subprocess
-import tempfile
 from datetime import datetime
 from pathlib import Path
 
-from engram import commitmsg, config, docreg, claude_env, frontmatter, pack, recsum, theory, theorychange
+from engram import commitmsg, config, docreg, frontmatter, llm, pack, recsum, theory, theorychange
 from engram.paths import data_path
 from engram.store import Store
 from engram.now import RENEWAL
@@ -35,14 +33,8 @@ def _asker(system: str, effort: str = "low"):
 
 
 def _ask(prompt: str, system: str, effort: str = "low") -> tuple[str, float]:
-    cmd = ["claude", "-p", "--model", recsum.MODEL, "--effort", effort, "--output-format", "json", "--setting-sources",
-           "project", "--strict-mcp-config", "--no-session-persistence", "--tools", "", "--system-prompt", system]
-    with tempfile.TemporaryDirectory(prefix="engram-relink-") as cwd:
-        r = subprocess.run(cmd, input=prompt, cwd=cwd, env=claude_env.clean(), capture_output=True, text=True, timeout=1800)
-    out = json.loads(r.stdout)
-    if r.returncode or out.get("is_error"):
-        raise RuntimeError(str(out.get("result") or f"exit {r.returncode}")[:300])
-    return out.get("result") or "", out.get("total_cost_usd", 0) or 0
+    text, used = llm.ask(prompt, system, model=recsum.MODEL, effort=effort)
+    return text, used["usd"] or 0
 
 
 def records(repo: Path, skip: tuple[str, ...] = ()) -> list[tuple[str, str, str]]:

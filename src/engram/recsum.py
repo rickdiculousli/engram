@@ -8,10 +8,8 @@ record's text, so an unchanged record isn't summarized twice; the cache lives in
 import hashlib
 import json
 import re
-import subprocess
-import tempfile
 
-from engram import claude_env, config, dates, pack
+from engram import config, dates, llm, pack
 from engram.index import open_index
 from engram.paths import data_path, index_path
 
@@ -86,16 +84,7 @@ def wanted(domain: str) -> list[tuple[str, str, str]]:
 
 
 def _ask(prompt: str, system: str = SYSTEM) -> tuple[str, dict]:
-    cmd = ["claude", "-p", "--model", MODEL, "--effort", EFFORT, "--output-format", "json", "--setting-sources", "project",
-           "--strict-mcp-config", "--no-session-persistence", "--tools", "", "--system-prompt", system]
-    with tempfile.TemporaryDirectory(prefix="engram-recsum-") as cwd:
-        r = subprocess.run(cmd, input=prompt, cwd=cwd, env=claude_env.clean(), capture_output=True, text=True, timeout=1800)
-    out = json.loads(r.stdout)
-    if r.returncode or out.get("is_error"):
-        raise RuntimeError(str(out.get("result") or f"exit {r.returncode}")[:300])
-    u = out.get("usage") or {}
-    return out.get("result") or "", {"in": sum(u.get(k, 0) for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")),
-                                     "out": u.get("output_tokens", 0), "usd": out.get("total_cost_usd", 0)}
+    return llm.ask(prompt, system, model=MODEL, effort=EFFORT)
 
 
 def _summaries(reply: str) -> list[dict]:

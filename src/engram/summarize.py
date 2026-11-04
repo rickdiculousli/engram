@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from engram import claude_env, config, daily, dates, pack
+from engram import config, daily, dates, llm, pack
 from engram.index import Doc, now, open_index
 from engram.paths import data_path, index_path
 from engram.sources import sessions
@@ -77,8 +77,7 @@ AUTOMATED = [(re.compile(p, re.S), label) for p, label in [
      r"|You are (executor|the |a buildermesh)|YOUR PREVIOUS ANSWER WAS REJECTED)", "Prompt")]]
 
 
-class Unavailable(Exception):
-    """A call to Claude failed instead of answering (a usage limit, most often). The run stops; done sessions are kept."""
+Unavailable = llm.Unavailable  # a call failed instead of answering: run() stops on it and keeps done sessions; tests raise it
 
 
 @dataclass
@@ -577,31 +576,8 @@ Reply with JSON only, in this shape:
 
 def _claude(prompt: str, model: str) -> tuple[str, dict]:
     effort = STITCH_EFFORT if model == STITCH_MODEL and model != SEGMENT_MODEL else SEGMENT_EFFORT
-    cmd = ["claude", "-p", "--model", model, "--effort", effort, "--output-format", "json", "--setting-sources", "project",
-           "--strict-mcp-config", "--no-session-persistence", "--tools", "", "--system-prompt", SYSTEM]
-    try:
-        with tempfile.TemporaryDirectory(prefix="engram-summarize-") as cwd:
-            r = subprocess.run(cmd, input=prompt, cwd=cwd, env=claude_env.clean(), capture_output=True, text=True, timeout=1800)
-    except subprocess.TimeoutExpired:
-        raise Unavailable("timed out")
-    try:
-        out = json.loads(r.stdout)
-    except json.JSONDecodeError:
-        raise Unavailable((r.stderr or r.stdout).strip()[:300] or f"exit {r.returncode}")
-    if r.returncode or out.get("is_error"):
-        raise Unavailable(str(out.get("result") or f"exit {r.returncode}")[:300])
-    u = out.get("usage") or {}
-    used = {"in": sum(u.get(k, 0) for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")),
-            "out": u.get("output_tokens", 0), "usd": out.get("total_cost_usd", 0)}
-    return (out.get("result") or "").strip(), used
-
-
-def _parse(reply: str):
-    m = re.search(r"\{.*\}", reply, re.S)
-    try:
-        return json.loads(m.group(0)) if m else None
-    except json.JSONDecodeError:
-        return None
+    text, used = llm.ask(prompt, SYSTEM, model=model, effort=effort)
+    return text.strip(), used
 
 
 def _add(a: dict, b: dict) -> dict:
@@ -636,7 +612,7 @@ def _ask(prompt: str, model: str, turns: dict[int, str], text: str, vocab: set[s
          reach: dict[int, str] | None = None) -> dict:
     """One call, linted; a failure is retried once with its errors; a second failure flags it."""
     reply, used = _claude(prompt, model)
-    out = characterize(_parse(reply), turns, stitched)
+    out = characterize(llm.parse(reply), turns, stitched)
     errs = lint(out, turns, text, vocab, stitched, cap, reach) if out is not None else ["the reply is not JSON"]
     tries = 1
     if errs:
@@ -644,7 +620,7 @@ def _ask(prompt: str, model: str, turns: dict[int, str], text: str, vocab: set[s
                  + "\n- ".join(errs[:40]) + "\n\nYour previous reply:\n" + reply[:20000])
         reply2, used2 = _claude(retry, model)
         used = _add(used, used2)
-        out2 = characterize(_parse(reply2), turns, stitched)
+        out2 = characterize(llm.parse(reply2), turns, stitched)
         errs2 = lint(out2, turns, text, vocab, stitched, cap, reach) if out2 is not None else ["the reply is not JSON"]
         tries = 2
         if out2 is not None or out is None:

@@ -83,7 +83,7 @@ def peers_of(g: Graph, ref: str, seen: set[str]) -> list[str]:
 
 def _doc(db, ref: str):
     return db.execute("SELECT title, date, date_key, author, nid, source, ref FROM doc WHERE ref = ? OR parent = ? "
-                      "OR (? GLOB '[0-9]*' AND ref LIKE ? || '#%') ORDER BY rowid LIMIT 1", (ref, ref, ref, ref)).fetchone()
+                      "ORDER BY rowid LIMIT 1", (ref, ref)).fetchone()
 
 
 def said_on(ref: str, date_key: str | None) -> str | None:

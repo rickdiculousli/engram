@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS doc (
 );
 CREATE INDEX IF NOT EXISTS doc_source ON doc(source);
 CREATE INDEX IF NOT EXISTS doc_nid ON doc(nid);
+CREATE INDEX IF NOT EXISTS doc_parent ON doc(parent);
 CREATE VIRTUAL TABLE IF NOT EXISTS doc_fts USING fts5(title, body, tags, content='doc', content_rowid='id',
   tokenize='porter unicode61 remove_diacritics 2');
 CREATE TRIGGER IF NOT EXISTS doc_ai AFTER INSERT ON doc BEGIN

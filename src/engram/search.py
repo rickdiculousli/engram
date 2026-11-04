@@ -232,8 +232,7 @@ def centre_row(db, ref: str, expr: str, hit: dict) -> dict:
     """A unit's current version as a result, in the detail a hit has: its title, date, kind, whose claim, an excerpt
     (the question's words where it has them, else its opening words), keeping the hit's score."""
     row = db.execute("SELECT id, ref, class, kind, date, date_key, title, author, superseded, pointer, node, milestone, body "
-                     "FROM doc WHERE ref = ? OR parent = ? OR (? GLOB '[0-9]*' AND ref LIKE ? || '#%') ORDER BY rowid LIMIT 1",
-                     (ref, ref, ref, ref)).fetchone()
+                     "FROM doc WHERE ref = ? OR parent = ? ORDER BY rowid LIMIT 1", (ref, ref)).fetchone()
     if row is None:
         return hit
     snip = db.execute(f"SELECT snippet(doc_fts, 1, '[', ']', '…', {SNIP}) FROM doc_fts WHERE doc_fts MATCH ? AND rowid = ?",

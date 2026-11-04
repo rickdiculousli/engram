@@ -10,7 +10,7 @@ from engram import config
 
 os.environ.pop("ENGRAM_CONFIG", None)  # the box's own config: a weekly pass fences repos off in an overlay
 
-PUBLIC = ["src", "tests", "docs", "bench", "skills", "examples", "reviews", "README.md"]
+PUBLIC = ["src", "tests", "docs", "bench", "skills", "examples", "README.md"]
 
 
 def git(*args: str) -> str:

@@ -319,7 +319,7 @@ _MONTH = (r"\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|
 MONTH_DAY = re.compile(_MONTH + r"\s+(\d{1,2})(?:st|nd|rd|th)?\b|\b(\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?" + _MONTH, re.I)
 MONTH_NAME = re.compile(_MONTH, re.I)
 DATE_TOKEN = re.compile(r"\b\d{1,4}(?:[-/]\d{1,2}){1,2}(?:[-/]\d{2,4})?\b")
-PAST = re.compile(r"\b(last time|the time before|before that|the other day|once|previously|back then|used to)\b", re.I)
+PAST = re.compile(r"\b(last time|the time before|before that|the other day|previously|back then|used to)\b", re.I)
 WEEKDAY = re.compile(r"\b(" + "|".join(WEEKDAYS) + r")\b", re.I)
 
 
@@ -359,8 +359,8 @@ def full_date(fact: dict, said_on: str, words: str | None = None) -> tuple[str, 
     """The fact's date and whether it's an estimate. The model gives a full day; when it gave only a month (or no
     date) and the quote or text has a relative phrase, code counts the day back from when he said it. Given what he
     said (`words`: his message and what he was answering), a date that doesn't rest on it narrows to the month or year
-    that does, else "never-said": the model counted a day he never gave (a "last time" placed on a date, or on the
-    day he said it)."""
+    that does, else "never-said": the model counted a day he never gave (a "last time" placed on a date, on the day
+    he said it, or left not sure)."""
     date, approx = str(fact.get("date") or "not-sure"), fact.get("approx") in (True, "true", "yes")
     if not dates.valid(date):
         date = "not-sure"
@@ -370,8 +370,8 @@ def full_date(fact: dict, said_on: str, words: str | None = None) -> tuple[str, 
             if found and (date == "not-sure" or found[0][0].startswith(date)):
                 return found[0][0], approx or found[0][1]
     quote = str(fact.get("quote", ""))
-    if words is not None and date == said_on and PAST.search(quote) and not relative_days(quote, said_on):
-        return "never-said", False  # "last time" dated the day he said it
+    if words is not None and date in (said_on, "not-sure") and PAST.search(quote) and not relative_days(quote, said_on):
+        return "never-said", False  # a "last time" never happened the day he said it
     if words is None or date == "not-sure" or said_date(date, words, said_on):
         return date, approx
     for part in (date[:7], date[:4]):
@@ -457,7 +457,7 @@ def cut_title(text: str, limit: int = 120) -> str:
 def entry(fact: dict, said_on: str, stem: str, kinds: list[str], abouts: list[str], home: str,
           words: str | None = None, cur: pack.Current = pack.NONE.current, other: str = "observation") -> tuple[dict, str]:
     """The event front matter and body for a checked fact, in one of the kinds offered, else `other`. A date he never
-    gave is filed as not sure, never guessed."""
+    gave is filed as not sure, never guessed; a fact with no date and no past wording is filed at the day he said it."""
     date, approx = full_date(fact, said_on, words)
     kind = fact.get("kind") if fact.get("kind") in kinds else other
     if kind == cur.entity_kind and (not fact.get("entity") or fact.get("status") not in cur.statuses):

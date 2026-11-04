@@ -621,6 +621,20 @@ def test_a_past_episode_dated_the_day_he_said_it_is_not_sure_and_a_month_is_the_
     assert not capture.said_date("2025-10", "in October", said) and not capture.said_date("2026-11", "in November", said)
 
 
+def test_a_past_episode_left_not_sure_is_never_filed_at_the_day_he_said_it():
+    said, past = "2026-10-24", "Last time I was going to sleep my back got tweaked"
+    assert capture.full_date({"date": "not-sure", "quote": past}, said, past) == ("never-said", False)
+    assert capture.full_date({"date": "not-sure", "quote": "my back is tight"}, said, "my back is tight") == ("not-sure", False)
+    for often in ("I take magnesium once a day", "I run once or twice a week", "once again my back is tight"):
+        assert capture.full_date({"date": "not-sure", "quote": often}, said, often) == ("not-sure", False)  # how often, not when
+    counted = "last time, 3 days ago, my back got tweaked"
+    assert capture.full_date({"date": "not-sure", "quote": counted}, said, counted) == ("2026-10-21", False)
+    note = lambda quote: (lambda fm: (fm["date"], fm["date_note"]))(capture.entry(
+        {"text": "Back cramp", "quote": quote, "date": "not-sure"}, said, "s1", ["observation"], [], "", quote)[0])
+    assert note(past) == ("not-sure", "reported; when it happened wasn't said")
+    assert note("my back is tight") == (said, "reported")
+
+
 def test_the_job_files_a_date_never_said_as_not_sure_and_an_undated_repeat_stays_dropped(world):
     with world["path"].open("a") as f:
         f.write(said("last time my back got tweaked going to sleep, and the bicycle knee is sore again", ts="2026-10-18T20:05:00Z") + "\n")

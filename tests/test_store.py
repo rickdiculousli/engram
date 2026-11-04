@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 
+from conftest import git, make_repo
+from engram import dates, frontmatter, lint
 from engram.store import Store, event_id
 
 LOG = textwrap.dedent("""\
@@ -720,3 +722,79 @@ def test_what_a_question_asks_for_weighs_kinds_of_record(tmp_path, env):
     visit = next(h for h in top if "-visit-" in h["ref"])
     assert visit["factors"]["ask"] == 1.3 and brief["factors"]["ask"] == 0.7
     assert "ask" not in search.search("when is the knee consult", ["medical"], limit=1, surround=False)[0]["factors"]
+
+
+def test_frontmatter_keeps_text():
+    fields, body = frontmatter.split("---\nticker: NO\ndate: 2026-10\nprice: 1.50\nflag: yes\nabout: [a/b, c]\n---\nbody\n")
+    assert fields == {"ticker": "NO", "date": "2026-10", "price": "1.50", "flag": "yes", "about": ["a/b", "c"]}
+    assert body == "body\n"
+    again, _ = frontmatter.split(frontmatter.dump(fields) + "x")
+    assert again == fields
+
+
+def test_dates_at_any_precision():
+    assert all(dates.valid(v) for v in ("2026", "2026-10", "2026-10-18", "not-sure"))
+    assert not any(dates.valid(v) for v in ("~2026-10", "2026-13", "Oct 2026", "2026-10-32", "2026-02-30", "2025-02-29"))
+    assert dates.key("2026-02-30") is None
+    assert dates.key("2026-10") == "2026-10-01" and dates.key("not-sure") is None
+
+
+def test_append_only_rejects_edits_and_deletes(tmp_path):
+    repo = make_repo(tmp_path / "r", {"events/2026/10/a.md": "a\n", "events/2026/10/b.md": "b\n"})
+    (repo / "events/2026/10/c.md").write_text("c\n")
+    git(repo, "add", "-A")
+    assert lint.staged_event_violations(repo) == []
+    git(repo, "commit", "-q", "-m", "add c")
+    (repo / "events/2026/10/a.md").write_text("changed\n")
+    git(repo, "rm", "-q", "events/2026/10/b.md")
+    git(repo, "add", "-A")
+    bad = lint.staged_event_violations(repo)
+    assert any(b.startswith("M") and b.endswith("a.md") for b in bad)
+    assert any(b.startswith("D") and b.endswith("b.md") for b in bad)
+
+
+def test_engram_link_joins_two_records_about_the_stories_of_its_ends(tmp_path):
+    from engram.cli import main
+    from engram.store import Store
+    repo = tmp_path / "r"
+    repo.mkdir()
+    (repo / ".engram").mkdir(exist_ok=True)
+    (repo / ".engram/engram.toml").write_text('schema_version = 1\n[domain]\nname = "medical"\nevents_dir = "events"\ncommit = "none"\n'
+                                      '[about]\nprefixes = ["story", "node"]\n[links.evidence]\nrels = ["disagrees"]\n')
+    a = Store(repo).add({"title": "x", "date": "2026-01-10", "kind": "plan", "about": ["story/knee", "series/x"]}, "plan started 1/10\n")
+    main(["link", a.id, "evidence:disagrees", "reference/brace.md#Notes", "--why", "- plan start: 01-10 against 2026-02", "--repo", str(repo)])
+    [link] = Store(repo).events(kind="link")
+    assert (link.fm["from"], link.fm["to"], link.fm["rel"], link.fm["author"]) == (a.id, "reference/brace.md#Notes", "disagrees", "claude")
+    assert link.about == ["story/knee"]  # an entry end's stories; a document section isn't an about value
+    main(["link", a.id, "evidence:disagrees", "node/C", "--why", "-", "--repo", str(repo)])
+    assert Store(repo).events(kind="link")[-1].about == ["story/knee", "node/C"]
+    with pytest.raises(SystemExit, match="already filed"):  # the same link twice is refused
+        main(["link", a.id, "evidence:disagrees", "node/C", "--why", "again", "--repo", str(repo)])
+
+
+def test_links_append_to_one_file_and_lint_allows_only_appends(tmp_path):
+    import subprocess
+    from engram import lint
+    from engram.store import Store
+    repo = tmp_path / "r"
+    repo.mkdir()
+    (repo / ".engram").mkdir(exist_ok=True)
+    (repo / ".engram/engram.toml").write_text('schema_version = 1\n[domain]\nname = "medical"\nevents_dir = "events"\n')
+    st = Store(repo)
+    a = st.add({"title": "x", "date": "2026-03-01", "kind": "symptom", "about": ["story/knee"]}, "sore\n")
+    st.add({"title": "led to", "date": "2026-03-02", "kind": "link", "about": ["story/knee"], "from": a.id, "to": "b",
+            "family": "timeline", "rel": "led-to"}, "- worse after")
+    assert not list((repo / "events").rglob("*link*.md"))  # no file per link
+    links = [e for e in Store(repo).events(kind="link")]
+    assert len(links) == 1 and links[0].fm["from"] == a.id and links[0].body == "- worse after"
+    env = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t", "PATH": "/usr/bin:/bin"}
+    for c in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "one"]):
+        subprocess.run(["git", "-C", str(repo), *c], check=True, env=env)
+    Store(repo).add({"title": "led to", "date": "2026-03-03", "kind": "link", "about": [], "from": "b", "to": "c",
+                     "family": "timeline", "rel": "led-to"}, "")
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True, env=env)
+    assert lint.staged_event_violations(repo) == []  # an appended line is fine
+    p = repo / "events/links.jsonl"
+    p.write_text(p.read_text().replace("worse after", "better after"))
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True, env=env)
+    assert lint.staged_event_violations(repo)  # an edited line isn't

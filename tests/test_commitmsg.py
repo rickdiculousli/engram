@@ -1,4 +1,4 @@
-"""The commit check (build group 6a) on synthetic fixtures: the number matcher's money forms, every commit template,
+"""The commit check on synthetic fixtures: the number matcher's money forms, every commit template,
 strip on the hourly path and refuse elsewhere, medical's messages unchanged."""
 from decimal import Decimal
 

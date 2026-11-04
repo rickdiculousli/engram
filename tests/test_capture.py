@@ -1016,3 +1016,16 @@ def test_a_failed_renewal_leaves_the_mark_so_the_next_run_reads_the_session_agai
     assert run(calls)["sessions"] == 1 and len(calls) == 2  # read again
     with capture.db() as c:
         assert c.execute("SELECT upto FROM filed").fetchone() == (7,)
+
+
+def test_near_matches_a_month_dated_entry_only_within_its_month_and_skips_year_and_not_sure_dates(world):
+    st = store.Store(world["repo"])
+    with st.transaction() as tx:
+        ids = {d: tx.add({"title": f"entry {d}", "date": d, "kind": "observation",
+                          "about": ["series/_observations", "story/ankle"]}, "- x\n").id
+               for d in ["2026-06-17", "2026-06", "2026-05", "2026-07", "2026", "not-sure"]}
+    got = {e.id for e in capture.near(store.Store(world["repo"]), {"2026-06-15"}, span=3)}
+    assert ids["2026-06-17"] in got  # a day, 2 days off
+    assert ids["2026-06"] in got  # the message day is inside the month
+    assert ids["2026-05"] not in got and ids["2026-07"] not in got  # 15 and 16 days off
+    assert ids["2026"] not in got and ids["not-sure"] not in got

@@ -429,7 +429,7 @@ def test_what_sam_said_in_a_session_is_a_row_on_its_story(repo, env):
     assert d.stories == "ankle"  # placed by the stories its words find
 
 
-def test_a_question_about_a_period_keeps_what_led_in_and_what_changed_it():
+def test_a_questions_period_is_read_from_its_words_and_a_written_date_spans_its_day_month_or_year():
     from datetime import date
     from engram import periods
     today = date(2026, 10, 21)
@@ -440,8 +440,10 @@ def test_a_question_about_a_period_keeps_what_led_in_and_what_changed_it():
     assert periods.period("since the brace", today, dated=lambda w: date(2026, 6, 4)) == (date(2026, 6, 4), today)
     assert periods.period("soreness after the session", today, dated=lambda w: date(2026, 6, 4)) is None  # a cause
     assert periods.period("before August", today)[1] == date(2026, 8, 1)
-    a, b = periods.span("2024-03 (approx.)", today)
-    assert a < date(2024, 3, 1) and b > date(2024, 3, 31)  # a fuzzy date widens, more the further back
+    assert periods.span("2024-03-05") == (date(2024, 3, 5), date(2024, 3, 5))
+    assert periods.span("2024-02") == (date(2024, 2, 1), date(2024, 2, 29))
+    assert periods.span("2024") == (date(2024, 1, 1), date(2024, 12, 31))
+    assert [periods.span(v) for v in ["2024-03 (approx.)", "soon", "2026-02-30", None]] == [None] * 4
 
 
 def test_a_record_as_it_stood_comes_from_git(tmp_path):

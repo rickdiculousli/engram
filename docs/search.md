@@ -115,7 +115,7 @@ A record and every version of it come back as one unit that counts as one result
 ## Periods and as it stood
 
 - **The parser** (`periods.py`, deterministic) reads a month after "in", "since", "before" and the like or with a year; seasons, years, "last month", "past 3 months", "lately"; and "since", "before" or "until" a thing, dated by the first dated record of the way in it names, else of its top hits. "After" a thing reads as a cause, so it starts a period only when a date follows.
-- **A written date's span** is a day, a month or a year; "~", "approx" and "around" widen it by a month, plus a further month per year before today.
+- **A written date's span** is its day, month or year (`YYYY-MM-DD`, `YYYY-MM`, `YYYY`); anything else has none.
 - **No cut:** a period question isn't cut to the period, which is named in the header and sets the date for the theory's `then` column. The decided rule, that a record lights by how much of its date range falls inside the question's period, isn't built yet. A strict cut lost the standing analyses, later events and older background its answers needed.
 - **As it stood:** for a question about the past, the theory list gains a `then` column from git. `engram show <id> --as-of <date>` reads the text as committed by then (`asof.py`), following a moved record to its old home through the move's map (`moved/<domain>.json` in the data folder).
 

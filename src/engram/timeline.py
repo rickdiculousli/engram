@@ -354,7 +354,7 @@ def _first_date(domain: str, phrase: str):
     keys = sorted(k for r in refs for (k,) in idx.db.execute(
         "SELECT date_key FROM doc WHERE (ref = ? OR parent = ?) AND date_key IS NOT NULL", (r, r)))
     idx.close()
-    return periods.span(keys[0])[0] if keys else None
+    return date.fromisoformat(keys[0]) if keys else None
 
 
 JOIN_FOCUS = 5  # joins are shown on the loops shown, what the question names, and the five theories cited most

@@ -1,9 +1,10 @@
-"""A period a question names, and the dates a row spans (.engram/README.md: a question about a period is cut to it, plus
-what led into it; fuzzy dates are ranges that widen the further back they reach). Deterministic: month and season
-names, years, "last month" and the like, and "since/after/before <something>", where the something is a date or a
-thing the record dates (its first dated record)."""
+"""A period a question names, and the dates a row spans (.engram/README.md: a period is named in the answer's header,
+never cut to). Deterministic: month and season names, years, "last month" and the like, and "since/after/before
+<something>", where the something is a date or a thing the record dates (its first dated record)."""
 import re
 from datetime import date, timedelta
+
+from engram import dates
 
 MONTHS = {m: i for i, m in enumerate(["january", "february", "march", "april", "may", "june", "july", "august", "september",
                                       "october", "november", "december"], 1)}
@@ -27,25 +28,14 @@ def _past(y: int | None, m: int, today: date) -> int:
     return y or (today.year if m <= today.month else today.year - 1)
 
 
-def span(text: str | None, today: date | None = None) -> tuple[date, date] | None:
-    """The dates a written date covers: a day, a month, a year; `~`, "approx" or "around" widen it by a month, and a
-    further month for each year before today."""
-    if not text:
-        return None
-    today = today or date.today()
-    m = re.search(r"(20\d\d)(?:-(\d\d)(?:-(\d\d))?)?", text)
-    if not m:
+def span(value: str | None) -> tuple[date, date] | None:
+    """The dates a written date covers: its day, month or year; None for anything else or a day that doesn't exist."""
+    m = dates.DATE.match(value or "")
+    if not m or not dates.valid(value):
         return None
     y, mo, d = int(m.group(1)), m.group(2) and int(m.group(2)), m.group(3) and int(m.group(3))
-    try:  # "2026-02-30" names no day
-        start = date(y, mo or 1, d or 1)
-    except ValueError:
-        return None
-    end = date(y, mo, d) if d else _month_end(y, mo) if mo else date(y, 12, 31)
-    if re.search(r"~|approx|around|about|early|mid|late", text, re.I):
-        pad = timedelta(days=30 * (1 + max(0, (today - start).days // 365)))
-        start, end = start - pad, end + pad
-    return start, end
+    start = date(y, mo or 1, d or 1)
+    return start, start if d else _month_end(y, mo) if mo else date(y, 12, 31)
 
 
 def _when(phrase: str, today: date, bare: bool = False) -> tuple[date, date] | None:
@@ -66,7 +56,7 @@ def _when(phrase: str, today: date, bare: bool = False) -> tuple[date, date] | N
             y = _past(int(m.group(3)) if m.group(3) else None, mo, today)
             return date(y, mo, 1), _month_end(y, mo)
     if m := re.search(r"\b(20\d\d)-(\d\d)(?:-(\d\d))?\b", p):
-        return span(m.group(0), today)
+        return span(m.group(0))
     if m := re.search(r"\b(?:in|during|since|after|before|until|throughout)\s+" + YEAR + r"\b", p):
         y = int(m.group(1))
         return date(y, 1, 1), date(y, 12, 31)

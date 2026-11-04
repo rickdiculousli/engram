@@ -45,7 +45,7 @@ from collections import Counter
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-from engram import commitmsg, config, dates, llm, pack, recsum, store, summarize, verbatim
+from engram import commitmsg, config, dates, llm, pack, periods, recsum, store, summarize, verbatim
 from engram import now as now_mod
 from engram import theory as theory_mod
 from engram.paths import data_path, record_conf, record_toml
@@ -184,24 +184,14 @@ WINDOW_FULL = 250  # past this many entries in the window, titles only
 WINDOW_MAX = 600  # and past this many, the ones nearest his messages
 
 
-def _span(value: str) -> tuple[date, date] | None:
-    """The days a record date covers: a day or a month (a year or no date is too vague to place)."""
-    k = dates.key(value)
-    if not k or len(value) < 7:
-        return None
-    start = date.fromisoformat(k)
-    if len(value) == 7:
-        return start, (start.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
-    return start, start
-
-
 def near(st: store.Store, days: set[str], span: int = WINDOW) -> list[store.Event]:
     """Every entry dated within `span` days either side of any of the days, nearest first: what the record already
     holds around when he spoke, whatever words it used."""
     centres = [date.fromisoformat(d) for d in days if d and len(d) == 10 and dates.valid(d)]
     out = []
     for e in st.events():
-        sp = None if e.kind == "link" else _span(str(e.fm.get("date") or ""))
+        v = str(e.fm.get("date") or "")
+        sp = None if e.kind == "link" or len(v) < 7 else periods.span(v)  # a year is too vague to place
         if not sp or not centres:
             continue
         gap = min(max((sp[0] - c).days, (c - sp[1]).days, 0) for c in centres)

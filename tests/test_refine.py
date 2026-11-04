@@ -79,6 +79,9 @@ def test_a_pass_runs_engram_on_a_scratch_copy_and_a_config_fenced_to_its_repo(se
         c.execute("CREATE TABLE repo (domain TEXT PRIMARY KEY, root TEXT NOT NULL, setup TEXT NOT NULL, at TEXT)")
         c.execute("INSERT INTO repo VALUES ('med', ?, 'hooks', NULL)", (str(served["med"]),))
         c.commit()
+    for f in ("summaries/med/s.md", "record-summaries/med/r.json", "moved/med.json", "sessions-last.txt"):
+        (data / f).parent.mkdir(parents=True, exist_ok=True)
+        (data / f).write_text("x")
     left = data / "scratch/refine-data/2000-01-01-med"  # a killed pass's copy
     left.mkdir(parents=True)
     seen = {}
@@ -93,6 +96,7 @@ def test_a_pass_runs_engram_on_a_scratch_copy_and_a_config_fenced_to_its_repo(se
                 m.setenv("ENGRAM_CONFIG", env["ENGRAM_CONFIG"])
                 repos = {n: d.repo for n, d in config.load().items()}
             seen[Path(name).name] = (copy, rows, env["ENGRAM_GATE"], repos, left.exists())
+            assert all((copy / f).exists() for f in ("summaries/med/s.md", "record-summaries/med/r.json", "moved/med.json", "sessions-last.txt"))
             assert env["ENGRAM_REFINE"] == "1"  # engram's pre-commit refuses the pass its off-limits paths
         return type("P", (), {"returncode": 0, "stdout": json.dumps({"total_cost_usd": 1.0, "result": "ok"}), "stderr": ""})()
     refine.run(runner=runner)
@@ -490,3 +494,13 @@ def test_a_failed_sweep_is_told_in_health_and_counts_its_cap(served, monkeypatch
     monkeypatch.setattr(relink, "sweep", sweep)
     refine.run(runner=lambda cmd, **kw: type("P", (), {"returncode": 0, "stdout": json.dumps({"total_cost_usd": 1.0}), "stderr": ""})())
     assert "evidence sweep on med: FAILED (RuntimeError: usage limit), $10.00" in refine.status()
+
+
+def test_a_pass_whose_data_copy_fails_is_a_pass_that_never_started(served, monkeypatch):
+    import sqlite3
+
+    def broken(to):
+        raise sqlite3.DatabaseError("file is not a database")
+    monkeypatch.setattr(refine, "copy_data", broken)
+    refine.run("med", runner=lambda cmd, **kw: None, attached=True)
+    assert [(r["repo"], r["ok"], r["cost_usd"], r.get("running")) for r in refine.ledger()] == [("med", False, 0.0, None)]

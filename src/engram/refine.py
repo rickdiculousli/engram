@@ -153,15 +153,19 @@ def _work() -> Path:
 
 def copy_data(to: Path):
     """The data folder's SQLite files (the value review's too), each through SQLite's backup (whole, while a writer
-    runs), and its moved refs."""
+    runs), and what a search reads beside them: the session and record summaries, when sessions were last read (else
+    the first search re-reads them), and the moved refs."""
     to.mkdir(parents=True, exist_ok=True)
     for f in [*data_dir().glob("*.sqlite"), *data_dir().glob("review/*.sqlite")]:
         (to / f.relative_to(data_dir())).parent.mkdir(parents=True, exist_ok=True)
         with contextlib.closing(sqlite3.connect(f"file:{f}?mode=ro", uri=True)) as src, \
                 contextlib.closing(sqlite3.connect(to / f.relative_to(data_dir()))) as dst:
             src.backup(dst)
-    if data_path("moved").is_dir():
-        shutil.copytree(data_path("moved"), to / "moved", dirs_exist_ok=True)
+    for d in ("summaries", "record-summaries", "moved"):
+        if data_path(d).is_dir():
+            shutil.copytree(data_path(d), to / d, dirs_exist_ok=True)
+    if data_path("sessions-last.txt").exists():
+        shutil.copy2(data_path("sessions-last.txt"), to / "sessions-last.txt")
 
 
 def fenced(name: str, repo: Path, wk: str) -> dict:
@@ -275,7 +279,7 @@ def run(only: str | None = None, dry_run: Path | None = None, show: bool = False
                               env=claude_env.clean(**fenced(name, repo, wk)), timeout=s["hours"] * 3600)
             except subprocess.TimeoutExpired:  # an unknown cost is the whole cap
                 cost, error, said = cap, f"timed out after {s['hours']:g} hours", ""
-            except OSError as e:  # never started: nothing spent
+            except (OSError, sqlite3.Error) as e:  # never started (its data copy failed, say): nothing spent
                 cost, error, said = 0.0, f"didn't start: {type(e).__name__}: {e}", ""
             else:
                 try:

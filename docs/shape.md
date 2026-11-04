@@ -124,7 +124,7 @@ Onboarding is the first rewiring. The `engram-rewire` skill (`skills/engram-rewi
 
 - **A doc saying it's done isn't evidence.** Audit claims against code and live data.
 - **A filter in front of judgment loses silently.** The judge reads everything; the volume is small.
-- **A test or a gate must be able to fail.** Judging against today's record hid every catch, and judging by event date leaked answers; a dry replay or an eval over live data passes whatever changed. Freeze the inputs, and pass twice on unchanged code before trusting it.
+- **A test or a gate must be able to fail.** Judged against today's record, the catches are already in it, and judged by event date, answers leak; a dry replay or an eval over live data passes whatever changed. Freeze the inputs, and pass twice on unchanged code before trusting it.
 - **Measure the interface as used:** the advisor starts with the current picture and writes its own search.
 - **Keys drift when files move.** Narrow a key to what carries the fact, with a reason, never touching question wording.
 - **Live runs cost the owner's quota:** zero-cost scripts first, then a small live run with a hypothesis, its cost reported ([technical](technical.md#how-work-is-measured)).

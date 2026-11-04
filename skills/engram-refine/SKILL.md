@@ -23,8 +23,8 @@ The prompt names `repo=<path>`, `mode=land` or `mode=dry-run <file>`, and `workt
 
 ## Find
 
-1. Use `pick-principles` at this design threshold.
-2. Read pocock's `retro` and `improve-codebase-architecture` by path (`ls -d ~/.claude/plugins/cache/*/pocock/*/skills/<name>/SKILL.md | sort -V | tail -1`; both are explicit-only). Apply retro's categories to the conversations and the architecture scan's step 1 (hot spots from the week's `git log`, the deletion test) to the code. Skip their reports, questions and grilling: findings go through the landing line below, never to the user as a list.
+1. If `pick-principles` is installed, use it at this design threshold.
+2. If pocock's `retro` and `improve-codebase-architecture` are installed, read them by path (`ls -d ~/.claude/plugins/cache/*/pocock/*/skills/<name>/SKILL.md | sort -V | tail -1`; both are explicit-only). Apply retro's categories to the conversations and the architecture scan's step 1 (hot spots from the week's `git log`, the deletion test) to the code. Skip their reports, questions and grilling: findings go through the landing line below, never to the user as a list.
 3. Keep a finding only if it names the job it serves (from the Jobs section) and its evidence: a dated moment in the conversations or a hot spot. Something that serves no job is a candidate to delete.
 
 ## The landing line

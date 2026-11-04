@@ -829,7 +829,7 @@ def main(argv=None):
 
     s = sub.add_parser("timeline", help="whole chains in time order, merged into one: name stories or recurring things, or "
                        "give free text to pick them by search; no argument lists them")
-    s.add_argument("name", nargs="*")
+    s.add_argument("name", nargs="*", help="story or recurring-thing names, or free text to pick them by search")
     s.add_argument("--domain")
     s.add_argument("--format", choices=["jsonl", "tsv"], default=os.environ.get("ENGRAM_TIMELINE_FORMAT", "tsv"))
     s.set_defaults(fn=cmd_timeline)

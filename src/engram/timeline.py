@@ -166,6 +166,10 @@ def chain(domain: str, names: str | list[str], about: str | None = None) -> tupl
     direct = set(hits)
     direct |= {r["ref"] for r in rows if direct & set(r.get("parts", []))}
     rows, folded = _units(rows, unit_of, direct)
+    found = direct | {into for m, into in folded.items() if m in direct}  # a hit folded into its current version
+    for r in rows:  # what no chain or story brought: the search's own find, else a record a led-to link here brought
+        if r["ref"] not in found:
+            r["on"] = ["linked to a row" if c == "search match" else c for c in r["on"]]
     num = {r["ref"]: i for i, r in enumerate(rows, 1)}
     num |= {p: num[r["ref"]] for r in rows for p in r.get("parts", [])}  # a link to a consult's section points at its row
     num |= {m: num[r] for m, r in folded.items()}  # a version shown on its unit's row points at that row
@@ -460,11 +464,11 @@ def render(header: dict, rows: list[dict], fmt: str = "jsonl") -> str:
     if fmt == "tsv":
         theory = [r for r in rows if "theory" in r]
         rows = [r for r in rows if "theory" not in r]
-        lead = [c for c in ("n", "date", "on", "who", "kind", "milestone", "what", "summary", "id", "after")
-                if c not in ("on", "summary") or any(c in r for r in rows)]
-        cols = lead + sorted({k for r in rows for k in r if not k.startswith("_")} - set(lead))
         cell = lambda v: re.sub(r"\s+", " ", "; ".join(map(str, v)) if isinstance(v, list) else str(v))
-        lines = [json.dumps(header, ensure_ascii=False, separators=(",", ":")), "\t".join(cols)]
+        lead = ["n", "date", "on", "who", "kind", "milestone", "what", "summary", "id", "after"]
+        cols = [c for c in lead + sorted({k for r in rows for k in r} - set(lead))
+                if not c.startswith("_") and any(cell(r.get(c, "")) for r in rows)]  # a column empty in every row goes
+        lines = [json.dumps(header, ensure_ascii=False, separators=(",", ":"))] + (["\t".join(cols)] if rows else [])
         lines += ["\t".join(cell(r.get(c, "")) for c in cols) for r in rows]
         if theory:
             tcols = ["theory", "status"] + (["then"] if any("then" in r for r in theory) else []) + ["what", "for", "against", "id"]

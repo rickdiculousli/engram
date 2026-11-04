@@ -79,7 +79,7 @@ n  date        on            who  kind         what                             
 6              search match                    The beds                                                      33pj7d
 ```
 
-<sub>From the example garden in this repo; header shortened, empty columns dropped.</sub>
+<sub>From the example garden in this repo; header shortened.</sub>
 
 Corrections never erase. Fix a fact → engram keeps both and links them, and you get them back as one result: the current version in full, older ones on one line (row 2: `corrected: July → late June`).
 

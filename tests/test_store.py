@@ -220,6 +220,35 @@ def test_show_opens_a_document_whole_within_the_window_else_lists_its_sections(e
     assert "- Part 0\n  ref: garden/long.md#Part 0" in out and "  ref: garden/long.md#Part 2" in out
 
 
+
+def test_timeline_rows_say_what_they_are_and_drop_columns_empty_in_every_row(env, tmp_path, capsys, monkeypatch):
+    import shutil
+    from conftest import make_repo
+    from engram import timeline
+    from engram.cli import main
+    garden = tmp_path / "garden"
+    shutil.copytree(Path(__file__).resolve().parents[1] / "examples/notes", garden)  # ingest never writes into the checkout's copy
+    link = {"id": "20260929-090000-link-c0c0", "date": "2026-09-29", "recorded": "2026-09-29T09:00:00-07:00", "kind": "link",
+            "author": "sam", "from": "20260928-090030-harvest-42d9", "to": "garden/compost.md#Heap", "family": "timeline", "rel": "led-to"}
+    (garden / "events/links.jsonl").write_text((garden / "events/links.jsonl").read_text() + json.dumps(link) + "\n")
+    make_repo(garden, {"garden/compost.md": "# Compost\n\n## Heap\nTurned the heap; the worms are back.\n"})  # on no story
+    env["set_repo"]("garden", garden)
+    main(["ingest", "--domain", "garden"])
+    monkeypatch.setattr(timeline, "SEEDS", 4)  # the four records the question's words match; this small record would fill 20
+    _, rows = timeline.chain("garden", [], "what happened with the north bed this season?")
+    on = {r["_ref"]: r["on"] for r in rows}
+    assert on["garden/beds.md#North bed"] == "search match"  # the search found it
+    assert on["garden/compost.md#Heap"] == "linked to a row"  # only the harvest's led-to brought it
+    capsys.readouterr()
+    main(["timeline", "north-bed", "--domain", "garden"])
+    assert capsys.readouterr().out.splitlines()[1] == "n\tdate\twho\tkind\twhat\tid"  # no milestone, no after: empty in every row
+    main(["timeline", "what happened with the north bed this season?", "--domain", "garden"])
+    assert capsys.readouterr().out.splitlines()[1] == "n\tdate\ton\twho\tkind\twhat\tid\tafter"
+    assert timeline.render({"records": 0}, [], "tsv") == '{"records":0}'  # no rows, no column line
+    with pytest.raises(SystemExit):
+        main(["timeline", "--help"])
+    assert "name  " in (h := capsys.readouterr().out) and "free text" in h.split("name  ", 1)[1].split("\n", 1)[0]
+
 def test_a_whole_section_matches_any_of_its_chunks():
     from engram.evalset import matches
     assert matches("evidence/_staging.md#P-x@2", "evidence/_staging.md#P-x")

@@ -451,7 +451,7 @@ def landmarks(st: store.Store) -> dict[str, str]:
     return {k: v for k, v in out.items() if v}
 
 
-def full_date(fact: dict, said_on: str, words: str | None = None, birth: str | None = None) -> tuple[str, bool, dict]:
+def full_date(fact: dict, said_on: str, words: str | None = None, marks: dict | None = None) -> tuple[str, bool, dict]:
     """The fact's date, whether it's an estimate, and what code read of how he said it (`as_said`, and a span's
     `range_from` and `range_to`). Code's reading of his quote wins: one phrase it reads ("yesterday", "about six months
     ago", "last spring", "two or three weeks ago", or a day written with its year) gives the date, or a span's first day,
@@ -461,8 +461,8 @@ def full_date(fact: dict, said_on: str, words: str | None = None, birth: str | N
     given what he said (`words`: his message and what he was answering), a date that doesn't rest on it narrows to the
     month or year that does, else "never-said": the model counted a day he never gave (a "last time" or an "ago" code
     can't count placed on a date, on the day he said it, or left not sure). An age ("when I was 12") the model's date
-    doesn't rest on runs from that birthday of `birth` (the birth landmark's date) to the day before the next one past
-    it; without `birth`, or before that birthday, it's never-said, its words kept."""
+    doesn't rest on runs from that birthday (`marks`, the landmarks' dates: its `birth`) to the day before the next one
+    past it; without a birth date, or before that birthday, it's never-said, its words kept."""
     date, approx = str(fact.get("date") or "not-sure"), fact.get("approx") in (True, "true", "yes")
     if not dates.valid(date):
         date = "not-sure"
@@ -478,7 +478,7 @@ def full_date(fact: dict, said_on: str, words: str | None = None, birth: str | N
     if n > 1 and date == "not-sure":
         return "never-said", False, {}  # his words say when, more than one way, and the model didn't pick
     if (m := AGE.search(quote)) and not (date != said_on and said_date(date, quote, said_on)):
-        if not (born := periods.span(birth)):
+        if not (born := periods.span((marks or {}).get("birth"))):
             return "never-said", False, {"as_said": m[0]}
         n = [int(x) if x.isdigit() else sum((AGES | TENS)[w] for w in re.split(r"[- ]", x.lower()))
              for x in (m[1] or m[3], m[2] or m[1] or m[3]) if x]
@@ -573,10 +573,24 @@ def cut_title(text: str, limit: int = 120) -> str:
 
 def entry(fact: dict, said_on: str, stem: str, kinds: list[str], abouts: list[str], home: str,
           words: str | None = None, cur: pack.Current = pack.NONE.current, other: str = "observation",
-          birth: str | None = None) -> tuple[dict, str]:
+          marks: dict | None = None) -> tuple[dict, str]:
     """The event front matter and body for a checked fact, in one of the kinds offered, else `other`. A date he never
-    gave is filed as not sure, never guessed; a fact with no date and no past wording is filed at the day he said it."""
-    date, approx, said = full_date(fact, said_on, words, birth)
+    gave is filed as not sure, never guessed; a fact with no date and no past wording is filed at the day he said it.
+    A fact the reply ties to a life event (`landmark`, a slug) dates it when his quote dates it firmly; one his quote
+    doesn't date (the model's day said is no date) takes the date `marks` gives the slug, approximate, else not sure; his
+    own hedge leaves it unpinned. The reply's `as_said` is kept when code read no phrase and it's in his own message."""
+    date, approx, said = full_date(fact, said_on, words, marks := marks or {})
+    if pin := str(fact.get("landmark") or ""):
+        quote = str(fact.get("quote", ""))
+        if not ("as_said" in said and "range_from" in said) and not (said_date(date, quote, said_on) and (
+                date != said_on or relative_days(quote, said_on) or written(date, quote))):
+            date, approx = (marks[pin], True) if pin in marks else ("never-said", False)
+        elif approx:
+            pin = ""
+    mine = str(fact.get("as_said") or "")
+    if mine and "as_said" not in said and words and verbatim.found(mine, words.removesuffix(str(fact.get("answering", "")))):
+        said["as_said"] = mine
+    said |= {"landmark": pin} if pin else {}
     kind = fact.get("kind") if fact.get("kind") in kinds else other
     if kind == cur.entity_kind and (not fact.get("entity") or fact.get("status") not in cur.statuses):
         kind = other
@@ -944,13 +958,14 @@ def file_session(domain: str, root: Path, path: Path, ask=None, dry_run: bool = 
         already = [f"{e.date} {e.fm.get('title', '')}: {' '.join(e.body.split())[:200]}" for e in mine]
         already += [r[:300] for x in s.exchanges for r in x.ran if r.startswith("Bash:") and FILED.search(r)]
         when = {x.line: sessions._local_date(x.ts) or _now().date().isoformat() for x in s.exchanges}
-        stands, birth = standing(st), landmarks(st).get("birth")
+        stands, marks = standing(st), landmarks(st)
         stories, complaints = placement_shape(st)
         rels = list(st.config.get("links", {}).get("timeline", {}).get("rels") or [])
         reply, res["usd"] = ask(config.voice(p.prompts["file"]).format(domain=domain, upto=upto, kinds=", ".join(kinds), abouts=", ".join(abouts),
                                               stories=", ".join(stories) or "none",
                                               complaints="; ".join(f"{k} ({v[0]})" for k, v in complaints.items()) or "none",
                                               conversation=conversation(s, upto), window=WINDOW,
+                                              landmarks=", ".join(f"{k} ({v})" for k, v in marks.items()) or "none",
                                               theory=th[3].replace("{upto}", str(upto)) if th else "", already="\n".join(already) or "nothing",
                                               record=record_context(domain, st, later, when, stands, p.prompts.get("record", ""))))
         parsed = reply_json(reply)
@@ -970,7 +985,7 @@ def file_session(domain: str, root: Path, path: Path, ask=None, dry_run: bool = 
             else:
                 fm, body = entry(f, when[int(f["line"])], path.stem, kinds, abouts, home,
                                  "\n".join([later[line], str(f.get("answering", ""))]), cur,
-                                 p.kinds[0] if p.kinds else "observation", birth)
+                                 p.kinds[0] if p.kinds else "observation", marks)
                 if thing and fm["kind"] == cur.entity_kind:  # an existing chain: "Pataday" joins "Pataday 0.7%"
                     fm["thing"] = thing
                 where = place(f, fm, st, stories, complaints, rels, p.occurrence_kinds)

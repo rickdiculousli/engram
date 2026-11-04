@@ -692,7 +692,8 @@ def test_a_landmark_is_dated_by_the_firm_entry_heading_its_chain(tmp_path):
 
 def test_an_age_is_years_from_the_birth_landmark_else_not_sure():
     age = lambda quote, birth=BORN, model="not-sure": when(capture.entry(
-        {"text": "Knee ached", "quote": quote, "date": model}, SAID, "s1", ["observation"], [], "", quote, birth=birth)[0])
+        {"text": "Knee ached", "quote": quote, "date": model}, SAID, "s1", ["observation"], [], "", quote,
+        marks={"birth": birth} if birth else {})[0])
     assert age("when I was 12 my knee ached") == ("2002-06-15", "true", "2002-06-15", "2003-06-14", "when I was 12")
     assert age("it ached at age 12") == age("aged 12, it ached")[:4] + ("at age 12",)
     assert age("ages 12-14 it ached")[2:4] == ("2002-06-15", "2005-06-14")
@@ -712,6 +713,49 @@ def test_an_age_is_years_from_the_birth_landmark_else_not_sure():
                          ("when I was 2 years into treatment", SAID), ("when I was 10 km into the run", SAID),
                          ("when I was 80 kg it ached", SAID)):
         assert age(quote, model=model)[0] == SAID and "as_said" not in filed(quote, model), quote
+
+
+MOVED = "2016-10-01"  # made up
+
+
+def test_a_landmark_pins_a_memory_and_a_firm_fact_dates_it():
+    from engram import periods
+    pin = lambda quote, marks={"move": MOVED}, **f: capture.entry(
+        {"text": "Knee ached", "quote": quote, "date": "not-sure", "landmark": "move", **f}, SAID, "s1", ["observation"], [],
+        "", quote, marks=marks)[0]
+    dating = pin("we moved to the coast on 2016-10-01", marks={})
+    assert (dating["date"], dating.get("approx"), dating["landmark"]) == (MOVED, None, "move")  # it dates the move
+    memory = pin("it started around when I moved", as_said="around when I moved")
+    assert when(memory) == (MOVED, "true", None, None, "around when I moved") and memory["landmark"] == "move"
+    a, b = periods.of(memory, SAID)  # the move's date plus a fixed pad, not a share of ten years
+    assert (date(2016, 10, 1) - a).days == (b - date(2016, 10, 1)).days == periods.PAD
+    assert pin("it started around when I moved", date=MOVED)["date"] == MOVED  # the model copying the list's date
+    undated = pin("it started around when I moved", marks={}, as_said="around when I moved")
+    assert (undated["date"], undated["landmark"], undated["as_said"]) == ("not-sure", "move", "around when I moved")
+    assert "as_said" not in pin("it started around when I moved", as_said="right after the move")  # not his words
+    assert pin("yesterday, around when I moved", as_said="around when I moved")["as_said"] == "yesterday"  # code's phrase wins
+    assert "landmark" not in pin("about ten years ago, around when I moved")  # his own hedge dates it
+    assert periods.of({"date": BORN, "landmark": "birth"}, SAID) == (date(1990, 6, 15),) * 2  # a dating entry is its own day
+    # a dating entry's date rests on his quote: the model's day said is no date of the move's, and pins like any memory
+    for marks, got in (({"move": MOVED}, (MOVED, "true")), ({}, ("not-sure", None))):
+        fm = pin("the itch started around when I moved", marks=marks, date=SAID, approx=False)
+        assert (fm["date"], fm.get("approx"), fm["landmark"]) == (*got, "move")
+    assert pin("the itch started around when I moved", date=SAID, approx=True)["date"] == MOVED
+    assert (lambda fm: (fm["date"], fm.get("approx")))(pin("we moved today", marks={}, date=SAID)) == (SAID, None)
+    assert pin(f"we moved on {SAID}", marks={}, date=SAID)["landmark"] == "move"  # a written day is his word for it
+    assert pin("we moved", marks={}, text="Moved yesterday")["date"] == "not-sure"  # the model's text alone rests on nothing
+    assert "as_said" not in capture.entry(  # his own message, not the question he answered
+        {"text": "Knee ached", "quote": "yes", "date": "not-sure", "answering": "Did it start around the move?",
+         "as_said": "around the move"}, SAID, "s1", ["observation"], [], "", "yes\nDid it start around the move?")[0]
+
+
+def test_the_filer_is_shown_each_landmark_and_its_date(world):
+    with store.Store(world["repo"]).transaction() as tx:
+        tx.add({"title": "Moved to the coast", "date": MOVED, "kind": "observation", "landmark": "move",
+                "about": ["series/_observations"]}, "- moved\n")
+    calls = []
+    run(calls, [], dry_run=True)
+    assert f"move ({MOVED})" in calls[0]
 
 
 def test_a_two_ended_row_prints_both_ends(tmp_path, env):

@@ -7,7 +7,10 @@ number in brackets. File each new fact about the garden that {owner} states afte
 picked, watered or lost, and when. Leave out questions, plans and anything already filed or already in the notes.
 
 For each fact give "line", "text" (a headline), "quote" ({owner}'s words, copied exactly), "date" (YYYY-MM-DD,
-YYYY-MM, YYYY or "not-sure"), "kind" (one of {kinds}), "about" (from {abouts}) and "stories" (from {stories}).
+YYYY-MM, YYYY or "not-sure"), "kind" (one of {kinds}), "about" (from {abouts}) and "stories" (from {stories}). When
+{owner}'s words say when other than as a plain date, give "as_said" (those words, copied exactly). When he dates a fact
+by a life event, or the fact is one (a move, a new job), give "landmark": its name from these ({landmarks}), else a new
+short one. "birth" is {owner}'s own; another person's event names them ("son-born").
 {theory}
 Reply with JSON only: {{"facts": [...], "theory": []}}.
 

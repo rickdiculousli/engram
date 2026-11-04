@@ -125,18 +125,6 @@ def _header(domains: list[str]) -> str:
     return "engram · " + " · ".join(parts)
 
 
-WHO = {"with-claude": "worked out with Claude", "claude-suggestion": "a Claude suggestion"}  # and the owner, by name
-
-
-def _who(author: str) -> str:
-    """Whose claim a record is, in words; nothing for records with no attribution."""
-    if not author or author in ("repo", "migrated"):
-        return ""
-    if author == config.owner_id():
-        return config.owner()
-    return WHO.get(author, author.split(":", 1)[1] if ":" in author else author)
-
-
 def cmd_search(a):
     domains = resolve(Path.cwd(), config.load(), a.domain)
     _refresh_if_stale(domains)
@@ -156,11 +144,15 @@ def render(results: list[dict], explain: bool = False) -> str:
     """What a search prints for Claude: each hit with its excerpt, whose claim it is, its ref, and its surroundings.
     Replay measures its length, the tokens a search costs."""
     out = [] if results else ["no matches"]
-    for r in results:
+    known = {d: search.labels_people(d) for d in {r["domain"] for r in results}}
+    whos = [labels.who(r.get("author", ""), known[r["domain"]]) for r in results]
+    if any(map(labels.coded, whos)):
+        out.append(config.voice(labels.KEY))
+    for r, who in zip(results, whos):
         when = f"{r['date']}, " if r["date"] else ""
         out.append(f"\n{r['rank']}. [{r['domain']}] {r['title']}  ({when}{r['kind']})")
         out.append("   " + " ".join(r["snip"].split()))
-        if who := _who(r.get("author", "")):
+        if who:
             out.append(f"   by: {who}")
         out.append(f"   ref: {r['ref']}")
         out += [f"   {l}" for l in (r.get("unit") or {}).get("text", [])]
@@ -275,8 +267,9 @@ def cmd_show(a):
             idx.close()
         if row:
             usage.log_open(d, row["ref"], a.search)
-            who = _who(row.get("author", ""))
-            print(f"{row['title']}\nref: {row['ref']}\nfrom: {row['pointer']}" + (f"\nby: {who}" if who else "") + "\n")
+            who = labels.who(row.get("author", ""), search.labels_people(d))
+            print(f"{row['title']}\nref: {row['ref']}\nfrom: {row['pointer']}" + (f"\nby: {who}" if who else "")
+                  + (f"\n{config.voice(labels.KEY)}" if labels.coded(who) else "") + "\n")
             if a.as_of:  # as it stood then, from git: its own file, or the old home it moved from
                 from engram import asof
                 repo = config.load()[d].repo

@@ -247,7 +247,11 @@ def test_a_timeline_is_a_storys_records_in_time_order_cleaned_for_reading(repo, 
     assert header["records"] == 3 and header["undated after"] == 2 and "me = Sam" in header["key"]
     capsys.readouterr()
     main(["show", first["id"], "--domain", "medical"])
-    assert "First session" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "First session" in out and "by: Dr. A (PT)?" in out and "who: me = Sam" in out  # the timeline's label, with its key
+    main(["search", "soreness gone", "--domain", "medical"])
+    out = capsys.readouterr().out
+    assert "by: me" in out and "Sam" not in out.replace("who: me = Sam", "") and out.count("who: me = Sam") == 1
     monkeypatch.setenv("ENGRAM_TAG", "tl-test")
     main(["timeline", "ankle", "--domain", "medical", "--format", "tsv"])
     out = capsys.readouterr().out.splitlines()

@@ -43,6 +43,11 @@ def by_pattern() -> re.Pattern:
     return re.compile(rf"^({re.escape(config.owner_id())}|with-claude|claude-suggestion|clinician:.+|other:.+)$")
 
 
+def coded(label: str) -> bool:
+    """Whether a printed label needs the key to read: a source's code, or an outside source marked `?`."""
+    return label in ("me", *SOURCES.values()) or label.endswith("?")
+
+
 def who(author: str, known: dict[str, str]) -> str:
     """Whose claim a record is, short; nothing for records with no attribution. An outside source not on the people
     list prints as written, marked `?` so it shows up for the list."""

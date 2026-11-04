@@ -72,7 +72,7 @@ The layout every record takes in engram, and the lessons learned getting real re
 ## Integrity
 
 - **The git check refuses** edits to committed entries and links, and moves or heading changes that would orphan a link without recording where it went.
-- **Setup is one command;** it repairs itself at session start and says one line only when it can't.
+- **Setup is one command;** it repairs itself at session start and says one line only when it can't ([technical](technical.md#setup)).
 - **Nothing is deleted on hope:** a file goes only after a check shows everything in it lives elsewhere, and every link into it is repointed.
 
 ## What a repo keeps in `.engram/`
@@ -84,7 +84,7 @@ Everything engram and its weekly pass keep in a repo, and nothing else, except t
 | `README.md` | the one page: Jobs, Decisions, Design (if any), and how the weekly pass may change the repo | rewiring, from [`page.md`](../skills/engram-rewire/page.md); the agent when the owner decides | rewiring and its drift check (Jobs), the weekly pass (Jobs and rules), agents |
 | `engram.toml` | the record's data, its rewiring (`[rewire]`, `[departures]`), `[refine] paused` | rewiring, `engram exclude`, the agent | every command |
 | `__init__.py`, `tests/` | the pack (below) | the agent, in a release | engram at the pinned commit |
-| `hooks/` | git's pre-commit: `engram lint` and the drift check | `engram setup` | git |
+| `hooks/` | git's pre-commit: `engram lint` and the drift check ([data model](data-model.md#the-pre-commit)) | `engram setup` | git |
 | `specs/` | the weekly pass's proposals, one file each | the weekly pass | its page, the owner's sessions |
 
 ## A pack
@@ -127,7 +127,7 @@ Onboarding is the first rewiring. The `engram-rewire` skill (`skills/engram-rewi
 - **A test or a gate must be able to fail.** Judging against today's record hid every catch, and judging by event date leaked answers; a dry replay or an eval over live data passes whatever changed. Freeze the inputs, and pass twice on unchanged code before trusting it.
 - **Measure the interface as used:** the advisor starts with the current picture and writes its own search.
 - **Keys drift when files move.** Narrow a key to what carries the fact, with a reason, never touching question wording.
-- **Live runs cost the owner's quota:** zero-cost scripts first, then a small live run with a hypothesis, its cost reported.
+- **Live runs cost the owner's quota:** zero-cost scripts first, then a small live run with a hypothesis, its cost reported ([technical](technical.md#how-work-is-measured)).
 - **A question set only measures what it asks.** Write it from the kinds of ask, never before them.
 - **A loop gets its gate and its stop rule before round 1.** Two rounds that fail the same way change the approach, not the wording; a gate moved after the fact closes on a measure that can't see what's still failing.
 - **Prove the scorer before the verdict.** An oracle run (the key itself as the answer) must score 100% first.

@@ -42,7 +42,7 @@ To release:
 1. A pack change is committed in its record repo first and pushed; it's inert until pinned.
 2. From the engram commit to release: `uv run python bench/gate.py run <out.json> --pack <record repo>@<pack commit>`, then `compare <baseline.json> <out.json>` says "same".
 3. Tag the commit `release-<date>` and push the tag.
-4. Set `pack = "<pack commit>"` in the config, then `uv run engram review --release <tag> --gate <out.json>` from that commit: it refuses unless the pin's pack (its `.engram/` without the page, specs, settings and hooks) is the one the gate measured, moves the release clone to the tag, and logs the tag with its pins.
+4. Set `pack = "<pack commit>"` in the config, then `uv run engram review --release <tag> --gate <out.json>` from that commit: it refuses unless the pin's pack tree ([technical](technical.md#packs)) is the one the gate measured, moves the release clone to the tag, and logs the tag with its pins.
 5. Check `engram health` and capture after the next hourly run.
 6. When the release changes what setup writes into a record repo's tracked `.claude/settings.json`, the next repair writes it there: check the diff is only that, and commit it on its own in each set-up repo, so one revert undoes it. Where setup widened the Bash window, a Bash result over 30,000 characters in that repo's next sessions arrives inline, not as a preview and a file; if it still comes back as a preview, Claude Code is overriding the setting.
 

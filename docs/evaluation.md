@@ -49,7 +49,7 @@ How retrieval is measured. The sets are an alarm run by script, never a target: 
 
 **When a question misses,** the cause is fixed in the split, the ranking, the summaries or the vocabulary. Questions are never reworded to pass. Changing a frozen question needs a written reason the reviewer accepts and the owner's sign-off. When the held-out set fails, its questions count as seen: the technique gets fixed, a fresh held-out third is written, and the gate runs again.
 
-**Zero quota first:** a change is measured with scripts that cost no model usage before any live run. A live run is a small sample with a stated question it settles, its cost reported afterwards. When a call to Claude fails, usually at a usage limit, the question is marked unrun and counts toward no rate; the run stops starting new questions, and `--resume <results file>` later asks only the ones left over.
+**Scripts come before any live run** ([technical](technical.md#how-work-is-measured)). When a call to Claude fails, usually at a usage limit, the question is marked unrun and counts toward no rate; the run stops starting new questions, and `--resume <results file>` later asks only the ones left over.
 
 ## Running it
 
@@ -79,7 +79,7 @@ Every change must pass it before it lands, since the hourly job runs what's rele
   - `measure16` on the newer set (frame, single facts both ways, waxing, tokens), with its miss ids and a row hash
   - `engram now`'s picture, its index rows and the standing line of each entry
   - the theory graph's text, diagram and git history now and as of two fixed days; a fixed revision checked without writing, a status change, and a refused one; the evidence re-check against fixed replies
-  - the tree id of the pack it ran with (`.engram/` without the page, specs, settings and hooks, which change while the pack doesn't); `check-pin <out.json>` says whether the box's pin is that tree
+  - the tree id of the pack it ran with ([technical](technical.md#packs)); `check-pin <out.json>` says whether the box's pin is that tree
 - **Re-freezing** (a new record commit, new sessions) is a new baseline: it starts from an empty gate folder, reports the recording's model cost, and passes twice before it's trusted. So does a new measure, or a fix to what the gate pins: the baseline is made again on unchanged code, twice.
 
 ## Against grep

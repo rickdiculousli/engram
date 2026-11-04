@@ -1,6 +1,6 @@
 # Technical decisions
 
-The machinery calls, made without the owner (they read outcomes, not machinery), each with its why. The owner's own calls are under Decisions in the private `.engram/README.md`; this doc implements them. Before changing any of this, read the entry, and add each new machinery decision here with its why. How search and the timeline work is in [search](search.md); summaries in [summaries](summaries.md).
+The machinery calls, made without the owner (they read outcomes, not machinery), each with its why. The owner's own calls are under Decisions in the private `.engram/README.md`; this doc implements them. How search and the timeline work is in [search](search.md); summaries in [summaries](summaries.md).
 
 ## How work is measured
 

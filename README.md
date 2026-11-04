@@ -165,7 +165,7 @@ More in [the example's rules](examples/notes/.engram/README.md#lands-on-its-own-
 
 - **Your records:** your repos, plain files ([data model](docs/data-model.md)); pushed only if a repo sets `push = true`, to its own remote
 - **`.engram/`:** engram's folder in each repo: its shape, your jobs and rules, and the pack, the repo's words for engram's model calls ([shape](docs/shape.md#a-pack), [example](examples/notes/.engram/))
-- **The index:** `~/.local/share/engram/`, rebuilt from your files at will
+- **The index:** `~/.local/share/engram/`, rebuilt from your files plus the session summaries kept there; a lost summary is made again from the session files or their mirror, at model cost
 - **Model calls:** filing sends each finished session in a set-up repo through your own Claude Code (`claude -p`)
 
 > **Not goals:** embeddings (unless [this rule](docs/evaluation.md#embeddings-the-rule) fires), breaking arguments into fragments, multiple users, a web UI.

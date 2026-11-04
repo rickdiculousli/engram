@@ -37,9 +37,9 @@ The fields:
 - **`recorded`:** when it was filed. A migrated entry uses the author time of the first commit that held it, so reruns give the same ids.
 - **Prospective items:** kind `plan`, with `target` and `as_of`.
 - **Append-only:** a commit may add files under `events/` but never modify or delete one. The only exception is `engram fix`, for a mechanical error ([technical](technical.md#mechanical-errors)); something learned later is a new entry and a `revises` link.
-- **Frontmatter** is YAML, because GitHub mobile renders it as a table. It's parsed with PyYAML's `BaseLoader`, so `NO` stays a string, `1.50` keeps its zero, and dates stay text. The repo's schema types each field.
+- **Frontmatter** is YAML, because GitHub mobile renders it as a table. It's parsed with PyYAML's `BaseLoader`, so `NO` stays a string, `1.50` keeps its zero, and dates stay text.
 
-Each repo names its own entry kinds in its `engram.toml`; `interpretation`, `plan`, `revision`, `status` and `link` serve every area.
+Each repo names its own entry kinds in its pack (`kinds`); `interpretation`, `plan`, `revision`, `status` and `link` serve every area.
 
 ## Documents
 
@@ -69,17 +69,12 @@ An area whose knowledge needs ingesting (the owner hands things over rather than
 ## `.engram/engram.toml` (one per record repo)
 
 ```toml
-schema_version = 1
-
 [domain]
 name = "notes"
 events_dir = "events"
 commit = "per-write"                     # commit every write, so a phone shows it at once
 commit_message = "engram: {kind} {date}"
 push = true
-
-[kinds.change]
-fields = { entity = "str", status = "enum:started|paused|stopped|planned", detail = "str?" }
 
 [about]
 prefixes = ["story", "series", "node", "loop"]
@@ -93,4 +88,4 @@ weights = ["high", "medium", "low", "open"]
 rels = ["strengthens", "weakens", "supersedes"]
 ```
 
-The same file holds the index's settings (`[index]`, `[weights]`, `[lenses.*]`, `[ways.*]`, `[people.*]`, `[asks.*]`, `[synonyms]`, `[folders]`, `[timeline]`, `[nodes]`, `[review]`; see [search](search.md)), and what the last rewiring settled ([shape](shape.md#rewiring-a-repo)): `[rewire]` with the jobs it answers (`at`, the id of the names and quotes in `.engram/README.md`'s Jobs section), its kinds of ask (`[[rewire.asks]]`: `kind`, `axis`, `piece`, `jobs`, `turns`) and each copy's one home (`[rewire.homes]`, a folder or file and why), and `[departures]`, each canon anchor the repo departs from with its reason. A compiled area adds `[wiki]` ([above](#sources-sparks-and-the-wiki)). `[refine] paused` stops the weekly pass in the repo. `examples/notes/.engram/engram.toml` is the smallest working one. A schema change is additive; a breaking change gets a new kind.
+The same file holds the index's settings (`[index]`, `[weights]`, `[lenses.*]`, `[ways.*]`, `[people.*]`, `[asks.*]`, `[synonyms]`, `[folders]`, `[timeline]`, `[nodes]`, `[review]`; see [search](search.md)), and what the last rewiring settled ([shape](shape.md#rewiring-a-repo)): `[rewire]` with the jobs it answers (`at`, the id of the names and quotes in `.engram/README.md`'s Jobs section), its kinds of ask (`[[rewire.asks]]`: `kind`, `axis`, `piece`, `jobs`, `turns`) and each copy's one home (`[rewire.homes]`, a folder or file and why), and `[departures]`, each canon anchor the repo departs from with its reason. A compiled area adds `[wiki]` ([above](#sources-sparks-and-the-wiki)). `[refine] paused` stops the weekly pass in the repo. `examples/notes/.engram/engram.toml` is the smallest working one.

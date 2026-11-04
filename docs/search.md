@@ -4,7 +4,7 @@ How a record is indexed, searched and returned as a timeline. Why each piece is 
 
 ## The index
 
-One SQLite file per domain, in WAL mode, rebuilt from git at will (`engram index --rebuild`). Why SQLite: the data is small, and every call is a command that must start instantly with no server ([alternatives](alternatives.md)).
+One SQLite file per domain, in WAL mode, rebuilt by `engram ingest --source all` from the record and the session summaries kept in the data folder. Why SQLite: the data is small, and every call is a command that must start instantly with no server ([alternatives](alternatives.md)).
 
 ```sql
 CREATE TABLE doc (
@@ -87,7 +87,7 @@ A record and every version of it come back as one unit that counts as one result
 
 - **The parser** (`periods.py`, deterministic) reads a month after "in", "since", "before" and the like or with a year; seasons, years, "last month", "past 3 months", "lately"; and "since", "before" or "until" a thing, dated by the first dated record of the way in it names, else of its top hits. "After" a thing reads as a cause, so it starts a period only when a date follows.
 - **A written date's span** is a day, a month or a year; "~", "approx" and "around" widen it by a month, plus a further month per year before today.
-- **No cut:** a period question isn't cut to the period, which is named in the header and sets the date for the theory's `then` column. A strict cut lost the standing analyses, later events and older background its answers needed.
+- **No cut:** a period question isn't cut to the period, which is named in the header and sets the date for the theory's `then` column. The decided rule, that a record lights by how much of its date range falls inside the question's period, isn't built yet. A strict cut lost the standing analyses, later events and older background its answers needed.
 - **As it stood:** for a question about the past, the theory list gains a `then` column from git. `engram show <id> --as-of <date>` reads the text as committed by then (`asof.py`), following a moved record to its old home through the move's map (`moved/<domain>.json` in the data folder).
 
 ## Weights and lenses
@@ -102,7 +102,7 @@ A weight's key says which records it fits: `milestone`; `day-to-day` (a record o
 
 - **Folder, then repo, then remote.** The deepest configured folder holding the working directory decides, so a record folder inside another git repo resolves; else the configured repo the git checkout belongs to, so worktrees resolve like the main checkout; else a configured remote the `origin` URL ends with, from a path boundary on.
 - **Each repo searches only itself** (an owner's decision, in the private `.engram/README.md`): inside a configured domain's repo, that domain. Elsewhere a scope-wide read (search, timeline, now, theory, lenses) refuses, naming the domains to pass with `--domain` (`general` among them); `show` by ref looks in every domain, its own repo's first.
-- **`--domain` widens scope, by name** (`--domain notes,general`, or `all`). An index file outside scope is never opened.
+- **`--domain` widens scope, by name** (`--domain notes,general`, or `all`). A search's session refresh opens every configured domain's index to file new sessions' summaries there, but no result comes from outside scope.
 
 ## Logging
 

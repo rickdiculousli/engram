@@ -23,11 +23,10 @@ st.events(kind="observation", about="story/frost")
 ## A transaction
 
 1. Take an exclusive `flock` on `<repo>/.git/engram.lock`.
-2. Validate every entry against `engram.toml`.
-3. Write each entry to a temporary file, then rename it into place.
-4. `git commit --only` those paths, so anything else that's staged stays out.
-5. Release the lock and update the index.
-6. Push, outside the lock.
+2. Write each entry to a temporary file, then rename it into place.
+3. `git commit --only` those paths, so anything else that's staged stays out.
+4. Release the lock; the next search's refresh takes the entries into the index.
+5. Push, outside the lock.
 
 If the commit fails (a refusing pre-commit, say), the transaction's new files are deleted, links.jsonl is cut back to its old length, and a tracked file it rewrote is put back, before it raises.
 

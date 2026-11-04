@@ -34,7 +34,7 @@ DuckDB suits an area's own analytics over rows it keeps; a pack can read those r
 
 ## The index store
 
-Whether SQLite is still right, since it began as a full-text-search pick. The problem's shape: a few thousand records per area, growing to tens of thousands; an index rebuilt from git at will; a command called several times per conversation on more than one box, so no server and an instant start; and lookups by words, by labelled ways in, by links, by date ranges, and as things stood on a date (append-only entries carry when they were recorded).
+Whether SQLite is still right, since it began as a full-text-search pick. The problem's shape: a few thousand records per area, growing to tens of thousands; an index rebuilt from the record and the session summaries kept in the data folder; a command called several times per conversation on more than one box, so no server and an instant start; and lookups by words, by labelled ways in, by links, by date ranges, and as things stood on a date (append-only entries carry when they were recorded).
 
 | Option | Good at | Against it here |
 |---|---|---|

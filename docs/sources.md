@@ -3,12 +3,12 @@
 ## The connector contract
 
 Every source is a `pull(state) -> Iterable[Row]` with a declared freshness. Each source must be:
-- **Idempotent.** A rerun inserts nothing. Row identity depends on the source: an entry by its id, a document by its path plus the commit, a session turn by the session, the line and a prefix hash, a store record by the store's own key, an immutable file by its sha256.
+- **Idempotent.** A rerun inserts nothing. Row identity depends on the source: an entry by its id, a document by its path plus the commit, a session's summary by its session, a store record by the store's own key, an immutable file by its sha256.
 - **Incremental.** Watermarks live in `ingest_state`.
 - **Watchful.** If an append-only file's earlier bytes change, it's re-ingested as a new version, and `engram health` counts it.
 - **Isolated.** A failing source records its error, and the others continue.
-- **Safe with text.** Results come back as quoted data, and secrets are masked at ingest.
-- **Loud when stale.** A stale source puts "could not check <source> since <time>" in every search header.
+- **Quoted.** Results come back as quoted data. Text is indexed as written: nothing masks a secret.
+- **Loud when failing.** Every search header gives each domain's last ingest and names a source whose last read failed ("errors in <source>"); `engram health` gives its error.
 
 ## The sources
 
@@ -27,8 +27,7 @@ Each session goes to exactly one index file: the repo it was started in (an owne
 
 - **Skipped:** title-generator sessions, and sessions that touched `~/.local/share/engram/eval/`, along with their subagents: they build or review the question sets and hold the answer keys, so indexing them would let a test run read the keys back.
 - **A classifier change refiles every known session** on the next ingest.
-- **Continuation summaries** are indexed as `kind summary`, not as the owner's turns.
-- **Spilled `tool-results/` files** aren't indexed.
+- **No session turn is indexed,** nor a spilled `tool-results/` file: a session is searched through its checked summary ([summaries](summaries.md)).
 
 ## The archive
 

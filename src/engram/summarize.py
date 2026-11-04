@@ -74,7 +74,7 @@ AUTOMATED = [(re.compile(p, re.S), label) for p, label in [
     (r"^Another Claude session sent a message:", "Another Claude session"),
     (r"^(=== QUEUED CONVERSATION SPANS|You generate concise git branch names|Review the change at this commit"
      r"|(TODAY IS|Today is) \d{4}-\d{2}-\d{2}|# Scout packet|Build what's accepted in|Please analyze this codebase"
-     r"|You are (executor|the |a buildermesh)|YOUR PREVIOUS ANSWER WAS REJECTED)", "Prompt")]]
+     r"|You are (executor|the )|YOUR PREVIOUS ANSWER WAS REJECTED)", "Prompt")]]
 
 
 Unavailable = llm.Unavailable  # a call failed instead of answering: run() stops on it and keeps done sessions; tests raise it

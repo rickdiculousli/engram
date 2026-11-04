@@ -23,7 +23,7 @@ PART = re.compile(NUM)
 
 NOT_FIGURES = [re.compile(p) for p in (
     r"https?://\S+",
-    r"\S*(?:_harness|desk|reports|ledger|journal|threads|cache|runs|store|record|judgment|intel|pages|sessions)/\S*",  # paths, a ledger row's ref
+    r"\S*(?:_harness|reports|ledger|journal|threads|cache|runs|store|record|judgment|intel|pages|sessions)/\S*",  # paths, a ledger row's ref
     r"\S+\.(?:md|jsonl?|txt|csv|py|toml)\b\S*",
     r"\d{4}-(?:0[1-9]|1[0-2])-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)?",  # ISO dates and stamps
     r"(?<!\d)\d{4}-(?:0[1-9]|1[0-2])(?![\d-])",  # "2025-26" is a range, not a month

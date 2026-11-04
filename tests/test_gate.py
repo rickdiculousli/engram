@@ -59,6 +59,7 @@ def test_a_replayed_session_is_stable_and_a_changed_reply_shows(world):
                 {"kind": "verify", "prompt": "", "reply": json.dumps({"repeats": []})}]
     one = replay(recorded)
     assert one == replay(recorded) and one["would_file"]["n"] == 1 and one["asks"] == 2 and one["unrecorded"] == 0
-    other = replay([{**recorded[0], "reply": json.dumps({"facts": [{**facts[0], "date": "2026-10-14"}]})}, recorded[1]])
+    other = replay([{**recorded[0], "reply": json.dumps({"facts": [{**facts[0], "text": "Sam began Orvexa, 1 tablet 40 mg."}]})},
+                    recorded[1]])  # the quote's written date gives the date whatever the model says, so the text changes
     changed = [d.split(":")[0] for d in gate.compare({"filer": one}, {"filer": other})]
-    assert changed == ["filer.prompts", "filer.would_file.hash"]  # the verify prompt shows the date; the entry holds it
+    assert changed == ["filer.prompts", "filer.would_file.hash"]  # the verify prompt shows the title; the entry holds it

@@ -271,56 +271,131 @@ def conversation(s: sessions.Session, upto: int) -> str:
 
 
 DATEISH = re.compile(r"^(\d{4}-\d{1,2}(-\d{1,2})?|\d{1,2}[-/]\d{1,2}([-/]\d{2,4})?)$")
-WORDS = {"a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "couple": 2,
-         "a couple": 2, "couple of": 2, "a couple of": 2, "few": 3, "a few": 3}
-_N = r"(\d+|a couple(?: of)?|couple(?: of)?|a few|few|an?|one|two|three|four|five|six|seven)"
+WORDS = {"a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9,
+         "ten": 10, "few": 3, "a few": 3}  # "a couple of" is a span of its own
+_N = r"(\d+|a few|few|an?|one|two|three|four|five|six|seven|eight|nine|ten)"
+_ABOUT = r"\b(?:(?:about|around|roughly|approximately|maybe)\s+)?"
+_UNIT = r"(day|week|month|year)s?"
 WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
 HEDGE = re.compile(r"\b(about|around|roughly|approximately|maybe|or so|ish)\b|~", re.I)
-# (pattern, days back or a function of the match and the day, estimated?)
+MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
+_MONTH = (r"\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sept?(?:ember)?|"
+          r"oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b\.?")
+DATE_WORD = re.compile(r"\b(?:in|on|by|until|since|of|during|around|from|before|after|the)\s+$", re.I)  # before May, not the verb
+
+
+def _count(word: str) -> int:
+    return WORDS.get(word.lower(), 0) or int(word)
+
+
+def _back(day: date, n: int, unit: str) -> date:
+    """n days, weeks, calendar months or years before the day; a month before March 31 is February's last day."""
+    if unit in ("day", "week"):
+        return day - timedelta(days=n * (7 if unit == "week" else 1))
+    y, m = divmod(day.year * 12 + day.month - 1 - n * (12 if unit == "year" else 1), 12)
+    return date(y, m + 1, min(day.day, periods._month_end(y, m + 1).day))
+
+
+def _third(m: re.Match, day: date) -> tuple[date, date] | None:
+    """Early, mid or late: days 1-10, 11-20 or 21 to the end of a month (the latest one begun by the day said, without
+    its year); January to April, May to August or September to December of a year. A bare "late may" is mostly the verb:
+    May without its year needs a word like "in" before it."""
+    i = ("early", "mid", "late").index(m[1].lower())
+    if m[4]:
+        return date(int(m[4]), 4 * i + 1, 1), periods._month_end(int(m[4]), 4 * i + 4)
+    mo = MONTHS.index(m[2].lower()[:3]) + 1
+    if mo == 5 and not m[3] and not DATE_WORD.search(m.string[:m.start()]):
+        return None
+    y = int(m[3]) if m[3] else day.year - (date(day.year, mo, 10 * i + 1) > day)
+    return date(y, mo, 10 * i + 1), date(y, mo, 10 * i + 10) if i < 2 else periods._month_end(y, mo)
+
+
+def _either(m: re.Match, day: date) -> tuple[date, date]:
+    """"two or three weeks ago", "a year or two ago": from the farther back to the nearer."""
+    n = sorted((_count(m[1]), _count(m[3] or m[4])))
+    unit = (m[2] or m[5]).lower()
+    return _back(day, n[1], unit), _back(day, n[0], unit)
+
+
+_SEASON = "|".join(periods.SEASONS)
+# (pattern, the day or (first day, last day) from the match and the day said, estimated?); the ends come first, and a
+# point inside a span already read ("three weeks ago" in "two or three weeks ago") isn't read again
 RELATIVE = [
-    (re.compile(r"\b(today|this morning|this afternoon|this evening|tonight|just now)\b", re.I), lambda m, d: 0, False),
-    (re.compile(r"\b(yesterday|last night)\b", re.I), lambda m, d: 1, False),
-    (re.compile(_N + r"\s+days?\s+ago\b", re.I), lambda m, d: WORDS.get(m.group(1).lower(), 0) or int(m.group(1)), None),
-    (re.compile(_N + r"\s+weeks?\s+ago\b", re.I), lambda m, d: 7 * (WORDS.get(m.group(1).lower(), 0) or int(m.group(1))), True),
+    (re.compile(rf"\b(?:(?:last|this|past)\s+(?:{_SEASON})|(?:{_SEASON})\s+(?:of\s+)?{periods.YEAR})\b", re.I),
+     lambda m, d: periods._when(m[0], d), True),
+    (re.compile(r"\b(early|mid|late)[\s-]+(?:" + _MONTH + r"(?:,?\s*(?:of\s+)?((?:19|20)\d\d))?|((?:19|20)\d\d)\b)", re.I),
+     _third, True),
+    (re.compile(_ABOUT + _N + r"\s+(?:" + _UNIT + r"\s+or\s+" + _N + r"(?:\s+(?:day|week|month|year)s?)?|or\s+" + _N +
+                r"\s+" + _UNIT + r")\s+ago\b", re.I), _either, True),
+    (re.compile(_ABOUT + r"(?:a\s+)?couple(?:\s+of)?\s+" + _UNIT + r"\s+ago\b", re.I),
+     lambda m, d: (_back(d, 4, m[1].lower()), _back(d, 1, m[1].lower())), True),
+    (re.compile(r"\b(today|this morning|this afternoon|this evening|tonight|just now|\w+(?: or \w+)? (?:hour|minute)s?(?: or \w+)? ago)\b", re.I),
+     lambda m, d: d, False),
+    (re.compile(r"\b(yesterday|last night)\b", re.I), lambda m, d: d - timedelta(days=1), False),
+    (re.compile(_ABOUT + _N + r"\s+(day)s?\s+ago\b", re.I), lambda m, d: _back(d, _count(m[1]), "day"), None),
+    (re.compile(_ABOUT + _N + r"\s+(week|month|year)s?\s+ago\b", re.I), lambda m, d: _back(d, _count(m[1]), m[2].lower()), True),
     (re.compile(r"\bsince (?:last )?(" + "|".join(WEEKDAYS) + r")\b", re.I),
-     lambda m, d: (d.weekday() - WEEKDAYS.index(m.group(1).lower())) % 7 or 7, False),
-    (re.compile(r"\bthis week\b", re.I), lambda m, d: d.weekday(), True),
-    (re.compile(r"\blast week\b", re.I), lambda m, d: 7, True),
+     lambda m, d: d - timedelta(days=(d.weekday() - WEEKDAYS.index(m[1].lower())) % 7 or 7), False),
+    (re.compile(r"\bthis week\b", re.I), lambda m, d: d - timedelta(days=d.weekday()), True),
+    (re.compile(r"\blast week\b", re.I), lambda m, d: d - timedelta(days=7), True),
 ]
 
 
-def relative_days(words: str, said_on: str | None) -> list[tuple[str, bool]]:
-    """The days a message's relative date words name, counted back from the day it was sent, each with whether it's
-    an estimate: "about 2 days ago" on 2026-09-23 is (2026-09-21, True); "since Monday", the latest Monday before."""
+def relative_days(words: str, said_on: str | None) -> list[tuple[str, str, bool, str]]:
+    """What a message's own date words name, counted back from the day it was sent: each phrase's first and last day
+    (one day for a point), whether it's an estimate, and the phrase as he said it. "about 2 days ago" on 2026-09-23 is
+    (2026-09-21, 2026-09-21, True, "about 2 days ago"); "since Monday", the latest Monday before; "last spring", "late
+    September", "two or three weeks ago" and "a couple of weeks ago" (1 to 4 weeks back) are spans."""
     if not said_on or len(said_on) != 10 or not dates.valid(said_on):
         return []
     day = datetime.fromisoformat(said_on).date()
-    out = []
-    for pat, back, est in RELATIVE:
+    out, taken = [], []
+    for pat, when, est in RELATIVE:
         for m in pat.finditer(words):
-            n = back(m, day)
-            hedged = est if est is not None else bool(HEDGE.search(words[max(0, m.start() - 12):m.start()])) or \
-                m.group(1).lower() in ("couple", "couple of", "a couple", "a couple of", "few", "a few")
-            out.append(((day - timedelta(days=n)).isoformat(), bool(hedged)))
+            if any(a < m.end() and m.start() < b for a, b in taken) or (got := when(m, day)) is None:
+                continue
+            taken.append(m.span())
+            a, b = got if isinstance(got, tuple) else (got, got)
+            hedged = est if est is not None else bool(HEDGE.search(words[max(0, m.start() - 12):m.end()])) or \
+                m[1].lower() in ("few", "a few")
+            out.append((a.isoformat(), b.isoformat(), bool(hedged), m[0]))
     return out
 
 
 def dates_said(words: str, said_on: str | None) -> set[str]:
-    """The days a message's date words can mean: the day it was sent, and what "yesterday", "last night" or "3 days
-    ago" count back from it."""
+    """The days a message's date words can mean: the day it was sent, and the days "yesterday", "last night" or "3
+    days ago" count back to, or a span's ends."""
     if not said_on or not dates.valid(said_on) or len(said_on) != 10:
         return set()
-    return {said_on} | {d for d, _ in relative_days(words, said_on)}
+    return {said_on} | {d for a, b, *_ in relative_days(words, said_on) for d in (a, b)}
 
 
-MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
-_MONTH = (r"\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sept?(?:ember)?|"
-          r"oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b\.?")
-MONTH_DAY = re.compile(_MONTH + r"\s+(\d{1,2})(?:st|nd|rd|th)?\b|\b(\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?" + _MONTH, re.I)
+MONTH_DAY = re.compile(r"(?:" + _MONTH + r"\s+(\d{1,2})(?:st|nd|rd|th)?\b|\b(\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?" + _MONTH +
+                       r")(?:,?\s+((?:19|20)\d\d)\b)?", re.I)
 MONTH_NAME = re.compile(_MONTH, re.I)
 DATE_TOKEN = re.compile(r"\b\d{1,4}(?:[-/]\d{1,2}){1,2}(?:[-/]\d{2,4})?\b")
-PAST = re.compile(r"\b(last time|the time before|before that|the other day|previously|back then|used to)\b", re.I)
+PAST = re.compile(r"\b(last time|the time before|before that|the other day|previously|back then|used to|ago)\b", re.I)
 WEEKDAY = re.compile(r"\b(" + "|".join(WEEKDAYS) + r")\b", re.I)
+
+
+def month_days(words: str) -> list[tuple[int, int, int | None]]:
+    """The days written by their month's name ("Oct 7", "the 7th of October", "Sept 3 2019"): month, day and the year
+    when written. A bare "may" is the verb unless its year or a word like "on" or "since" comes with it ("I may 5 times")."""
+    return [(MONTHS.index((m[1] or m[4]).lower()[:3]) + 1, int(m[2] or m[3]), m[5] and int(m[5])) for m in MONTH_DAY.finditer(words)
+            if m[5] or (m[1] or m[4]).lower() != "may" or DATE_WORD.search(words[:m.start()])]
+
+
+def written(value: str, words: str) -> bool:
+    """Whether a day is written out in the words: "2026-10-07", "10/7", "Oct 7", "the 7th of October"."""
+    when = date.fromisoformat(value)
+    return any(_date_fits(t, {value}) for t in DATE_TOKEN.findall(words)) or \
+        any((mo, n) == (when.month, when.day) and y in (None, when.year) for mo, n, y in month_days(words))
+
+
+def written_days(words: str) -> list[tuple[str, str, bool, None]]:
+    """The days written out with their year, as phrases with no words to keep: 2026-09-03, "Sept 3 2019"."""
+    out = [m[0] for m in re.finditer(r"\b\d{4}-\d\d-\d\d\b", words)] + [f"{y}-{mo:02}-{n:02}" for mo, n, y in month_days(words) if y]
+    return [(v, v, False, None) for v in out if dates.valid(v)]
 
 
 def said_date(value: str, words: str, said_on: str | None) -> bool:
@@ -331,13 +406,9 @@ def said_date(value: str, words: str, said_on: str | None) -> bool:
         return False
     day, low = date.fromisoformat(said_on), words.lower()
     if len(value) == 10:
-        if value in dates_said(words, said_on) or any(_date_fits(t, {value}) for t in DATE_TOKEN.findall(words)):
+        if value == said_on or any(a <= value <= b for a, b, *_ in relative_days(words, said_on)) or written(value, words):
             return True
         when = date.fromisoformat(value)
-        for m in MONTH_DAY.finditer(words):
-            name, n = (m.group(1), m.group(2)) if m.group(1) else (m.group(4), m.group(3))
-            if MONTHS.index(name.lower()[:3]) + 1 == when.month and int(n) == when.day:
-                return True
         back = (day - when).days
         return 0 < back <= 14 and any(WEEKDAYS.index(w.lower()) == when.weekday() for w in WEEKDAY.findall(words)) or \
             0 < back <= 13 and when.weekday() >= 5 and "weekend" in low
@@ -355,29 +426,38 @@ def said_date(value: str, words: str, said_on: str | None) -> bool:
         ("last year" in low and int(value) == day.year - 1)
 
 
-def full_date(fact: dict, said_on: str, words: str | None = None) -> tuple[str, bool]:
-    """The fact's date and whether it's an estimate. The model gives a full day; when it gave only a month (or no
-    date) and the quote or text has a relative phrase, code counts the day back from when he said it. Given what he
-    said (`words`: his message and what he was answering), a date that doesn't rest on it narrows to the month or year
-    that does, else "never-said": the model counted a day he never gave (a "last time" placed on a date, on the day
-    he said it, or left not sure)."""
+def full_date(fact: dict, said_on: str, words: str | None = None) -> tuple[str, bool, dict]:
+    """The fact's date, whether it's an estimate, and what code read of how he said it (`as_said`, and a span's
+    `range_from` and `range_to`). Code's reading of his quote wins: one phrase it reads ("yesterday", "about six months
+    ago", "last spring", "two or three weeks ago", or a day written with its year) gives the date, or a span's first day,
+    whatever the model gave; with two or more, the model's date must fall in one, and a not-sure one stays not sure. A day
+    written without its year counts as one of them, but only confirms the model's date. The model's
+    text is read when the quote holds none, but only his quote gives `as_said`. Else,
+    given what he said (`words`: his message and what he was answering), a date that doesn't rest on it narrows to the
+    month or year that does, else "never-said": the model counted a day he never gave (a "last time" or an "ago" code
+    can't count placed on a date, on the day he said it, or left not sure)."""
     date, approx = str(fact.get("date") or "not-sure"), fact.get("approx") in (True, "true", "yes")
     if not dates.valid(date):
         date = "not-sure"
-    if date == "not-sure" or len(date) == 7:
-        for said in (str(fact.get("quote", "")), str(fact.get("text", ""))):
-            found = relative_days(said, said_on)
-            if found and (date == "not-sure" or found[0][0].startswith(date)):
-                return found[0][0], approx or found[0][1]
-    quote = str(fact.get("quote", ""))
-    if words is not None and date in (said_on, "not-sure") and PAST.search(quote) and not relative_days(quote, said_on):
-        return "never-said", False  # a "last time" never happened the day he said it
+    quote, s = str(fact.get("quote", "")), periods.span(date)
+    mine = bool(found := relative_days(quote, said_on) + written_days(quote))
+    found = found or relative_days(str(fact.get("text", "")), said_on)
+    n = len(found) + sum(not y for *_, y in month_days(quote))  # a day without its year only confirms the model's
+    fits = [f for f in found if n == 1 or s and s[0].isoformat() <= f[1] and f[0] <= s[1].isoformat()]
+    if fits:
+        a, b, hedged, said = fits[0]
+        return a, approx or hedged or a < b, ({"as_said": said} if mine and said else {}) | \
+            ({"range_from": a, "range_to": b} if a < b else {})
+    if n > 1 and date == "not-sure":
+        return "never-said", False, {}  # his words say when, more than one way, and the model didn't pick
+    if words is not None and date in (said_on, "not-sure") and PAST.search(quote) and not found:
+        return "never-said", False, {}  # a "last time" never happened the day he said it
     if words is None or date == "not-sure" or said_date(date, words, said_on):
-        return date, approx
+        return date, approx, {}
     for part in (date[:7], date[:4]):
         if len(part) < len(date) and said_date(part, words, said_on):
-            return part, approx
-    return "never-said", False
+            return part, approx, {}
+    return "never-said", False, {}
 
 
 WRAPPED = re.compile(r"^[\"'“”‘’«»](.*)[\"'“”‘’«»]\.?$", re.S)
@@ -458,7 +538,7 @@ def entry(fact: dict, said_on: str, stem: str, kinds: list[str], abouts: list[st
           words: str | None = None, cur: pack.Current = pack.NONE.current, other: str = "observation") -> tuple[dict, str]:
     """The event front matter and body for a checked fact, in one of the kinds offered, else `other`. A date he never
     gave is filed as not sure, never guessed; a fact with no date and no past wording is filed at the day he said it."""
-    date, approx = full_date(fact, said_on, words)
+    date, approx, said = full_date(fact, said_on, words)
     kind = fact.get("kind") if fact.get("kind") in kinds else other
     if kind == cur.entity_kind and (not fact.get("entity") or fact.get("status") not in cur.statuses):
         kind = other
@@ -476,6 +556,7 @@ def entry(fact: dict, said_on: str, stem: str, kinds: list[str], abouts: list[st
         fm["date"], fm["date_note"] = "not-sure", "reported; when it happened wasn't said"
     elif approx:
         fm["date_note"], fm["approx"] = "approx", "true"
+    fm |= said
     if kind == cur.entity_kind:
         fm.update(entity=fact["entity"], status=fact["status"], **({cur.detail: fact.get(cur.detail) or ""} if cur.detail else {}),
                   reason=" ".join(str(fact.get("reason") or "").split())[:200])

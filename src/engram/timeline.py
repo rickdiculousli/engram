@@ -43,15 +43,11 @@ def _what(title: str, ref: str, date: str | None) -> str:
     its heading, the date dropped."""
     path = title.split(" › ")[1:] or [title]
     head = path[-1]
-    if date and head.startswith(date):
-        head = re.sub(r"^\(approx(imate|\.)?\)\s*", "", head[len(date):].lstrip(" —-:"), flags=re.I)  # the date column says ~
+    if date and head.startswith(date):  # the date column says ~, and both ends
+        head = re.sub(r"^(to [\d-]+\s*)?\(approx(imate|\.)?\)\s*", "", head[len(date):].lstrip(" —-:"), flags=re.I)
     file = ref.split("#", 1)[0]
     if is_event_ref(ref):  # an entry: its treatment or series, as its log's name once was
-        path = title.split(" › ")
-        head = path[-1]
-        if date and head.startswith(date):
-            head = re.sub(r"^\(approx(imate|\.)?\)\s*", "", head[len(date):].lstrip(" —-:"), flags=re.I)
-        return " › ".join(x for x in dict.fromkeys((path[0], head)) if x)
+        return " › ".join(x for x in dict.fromkeys((title.split(" › ")[0], head)) if x)
     context = file.rsplit("/", 1)[-1].rsplit(".", 1)[0] if file.startswith("logs/") else path[0] if len(path) > 1 else ""
     if not context and not head:
         return file
@@ -197,8 +193,7 @@ def chain(domain: str, names: str | list[str], about: str | None = None) -> tupl
     for i, r in enumerate(rows, 1):
         row = {"n": i, "_ref": r["ref"], **({"_parts": r["parts"]} if r.get("parts") else {})}
         if r["date"]:
-            approx = re.search(re.escape(r["date"]) + r"\s*\(approx", r["title"], re.I)
-            row["date"] = ("~" if approx else "") + r["date"]
+            row["date"] = dates.printed(r["date"], r["title"])
         if within and (m := periods.mark(_range(r), within)):
             row["period"] = m
         if merged:

@@ -21,13 +21,15 @@ def enabled(conf: dict) -> bool:
 
 
 def heading(e) -> str:
-    """The entry's heading as written; an entry filed since migration gets the log template's form."""
+    """The entry's heading as written; an entry filed since migration gets the log template's form, both ends when it
+    has two."""
     fm = e.fm
     if fm.get("heading"):
         return fm["heading"]
     note = f" ({fm['date_note']})" if fm.get("date_note") else ""
     title = f" — {fm['title']}" if fm.get("title") else ""
-    return f"{'#' * int(fm.get('level', 3))} {fm.get('date', '')}{note}{title}".rstrip()
+    to = f" to {fm['range_to']}" if fm.get("range_to") else ""  # his two ends: `date` is the first
+    return f"{'#' * int(fm.get('level', 3))} {fm.get('date', '')}{to}{note}{title}".rstrip()
 
 
 def series(e) -> str:

@@ -43,3 +43,10 @@ def numbers(text: str) -> set[str]:
     for n in NUMBER.findall(text):
         out |= {n, *filter(None, re.split(r"[/:-]", n))}
     return out
+
+
+def printed(value: str, title: str) -> str:
+    """A row's date as printed, read from the heading the index built: "~<from> to <to>" for the owner's two ends,
+    "~<date>" for an approximate date, else the date."""
+    m = re.search(re.escape(value) + r"( to [\d-]+)?\s*\(approx", title, re.I)
+    return f"~{value}{m[1] or ''}" if m else value

@@ -580,7 +580,7 @@ def test_a_relative_day_is_counted_from_when_he_said_it_and_a_bare_month_stays(k
 
 
 def test_relative_phrases():
-    days = lambda w: capture.relative_days(w, "2026-09-23")  # a Wednesday
+    days = lambda w: [(a, est) for a, b, est, _ in capture.relative_days(w, "2026-09-23")]  # a Wednesday
     assert days("about 2 days ago") == [("2026-09-21", True)]
     assert days("3 days ago") == [("2026-09-20", False)]
     assert days("last night") == [("2026-09-22", False)]
@@ -588,13 +588,106 @@ def test_relative_phrases():
     assert days("since Wednesday") == [("2026-09-16", False)]
     assert days("this week") == [("2026-09-21", True)]
     assert days("a few days ago") == [("2026-09-20", True)]
+    assert capture.relative_days("3 months ago", "2026-05-31") == [("2026-02-28", "2026-02-28", True, "3 months ago")]  # by calendar months
+
+
+SAID = "2026-10-24"  # a Saturday
+
+
+def filed(quote: str, date: str = "not-sure") -> dict:
+    """The front matter a fact with this quote and the model's date files as, said on SAID."""
+    return capture.entry({"text": "Knee ached", "quote": quote, "date": date}, SAID, "s1", ["observation"], [], "", quote)[0]
+
+
+def when(fm: dict) -> tuple:
+    return tuple(fm.get(k) for k in ("date", "approx", "range_from", "range_to", "as_said"))
+
+
+def test_his_date_words_are_kept_and_his_hedges_set_the_ends():
+    from engram import periods
+    assert when(filed("a couple of weeks ago my knee ached")) == ("2026-09-26", "true", "2026-09-26", "2026-10-17", "a couple of weeks ago")
+    assert when(filed("two or three weeks ago it ached")) == ("2026-10-03", "true", "2026-10-03", "2026-10-10", "two or three weeks ago")
+    assert when(filed("a year or two ago it ached")) == ("2024-10-24", "true", "2024-10-24", "2025-10-24", "a year or two ago")
+    assert when(filed("one or two years ago it ached")) == ("2024-10-24", "true", "2024-10-24", "2025-10-24", "one or two years ago")
+    assert when(filed("it ached last spring")) == ("2026-03-01", "true", "2026-03-01", "2026-05-31", "last spring")
+    assert when(filed("it ached in late September")) == ("2026-09-21", "true", "2026-09-21", "2026-09-30", "late September")
+    assert when(filed("it ached early 2024")) == ("2024-01-01", "true", "2024-01-01", "2024-04-30", "early 2024")
+    assert when(filed("it ached mid-1998")) == ("1998-05-01", "true", "1998-05-01", "1998-08-31", "mid-1998")
+    six = filed("about six months ago it ached")  # a point, widened when read: about two months either way
+    assert when(six) == ("2026-04-24", "true", None, None, "about six months ago")
+    a, b = periods.of(six, SAID)
+    assert 50 <= (date(2026, 4, 24) - a).days <= 70 and b - date(2026, 4, 24) == date(2026, 4, 24) - a
+    ten = filed("about ten years ago it ached")
+    assert when(ten)[:2] == ("2016-10-24", "true")
+    a, _ = periods.of(ten, SAID)
+    assert 2 * 365 <= (date(2016, 10, 24) - a).days <= 3 * 366
+    assert when(filed("yesterday it ached", SAID)) == ("2026-10-23", None, None, None, "yesterday")
+    for quote in ("a couple of weeks ago my knee ached", "two or three weeks ago", "a year or two ago", "last spring", "late September"):
+        fm = filed(quote)
+        assert fm["range_from"] <= fm["range_to"] and fm["date"] == fm["range_from"], quote
+    for quote in ("a couple of weeks ago", "two or three weeks ago", "a year or two years ago"):  # one span, no point inside it
+        assert [a < b for a, b, *_ in capture.relative_days(quote, SAID)] == [True], quote
+
+
+def test_a_written_date_or_a_month_stays_as_said_and_code_counts_over_the_model():
+    assert when(filed("on the 3rd of September it ached", "2026-09-03")) == ("2026-09-03", None, None, None, None)
+    assert when(filed("on the 3rd of September, about six months ago", "2026-09-03"))[:3] == ("2026-09-03", None, None)
+    for quote in ("in September it ached", "before September it was fine", "since September it aches"):
+        assert when(filed(quote, "2026-09")) == ("2026-09", None, None, None, None), quote
+    assert when(filed("3 weeks ago it ached", "2026-10-10"))[:2] == ("2026-10-03", "true")  # code's count, not the model's day
+    assert filed("yesterday, and 3 days ago", "2026-10-21")["date"] == "2026-10-21"  # two phrases: the model's day must be one
+    assert filed("yesterday, and 3 days ago", "2026-10-23")["date"] == "2026-10-23"
+    for model in ("not-sure", SAID, "2016"):
+        fm = filed("it ached ages ago", model)  # an "ago" code can't count is not sure, never the day said
+        assert (fm["date"], "as_said" in fm) == ("not-sure", False), model
+    assert when(filed("two hours ago it ached", SAID))[:2] == (SAID, None)  # counted: today
+
+
+def test_the_verb_may_a_later_third_his_words_in_the_text_and_a_written_day_over_a_count():
+    assert when(filed("staying up late may be why it aches", SAID)) == (SAID, None, None, None, None)
+    assert when(filed("it ached in late May"))[2:] == ("2026-05-21", "2026-05-31", "late May")
+    assert when(filed("it ached late May 2024"))[2:4] == ("2024-05-21", "2024-05-31")
+    assert capture.relative_days("late October", "2026-10-05")[0][:2] == ("2025-10-21", "2025-10-31")  # the latest one up to then
+    assert capture.relative_days("early October", "2026-10-05")[0][:2] == ("2026-10-01", "2026-10-10")
+    fm = capture.entry({"text": "Knee ached yesterday", "quote": "my knee ached", "date": "not-sure"}, SAID, "s1",
+                       ["observation"], [], "", "my knee ached")[0]
+    assert when(fm) == ("2026-10-23", None, None, None, None)  # read from the text; as_said only from his quote
+    assert when(filed("on the 3rd of September, about six months ago", "2026-09-03")) == ("2026-09-03", None, None, None, None)
+    assert when(filed("on the 3rd of September it ached", "2026-09-03")) == ("2026-09-03", None, None, None, None)
+    # a day written without its year only confirms the model's date, never sets one; "may" alone is mostly the verb
+    assert filed("on March 15th it ached", "2025-03-15")["date"] == "2025-03-15"
+    assert filed("I booked the scan for Nov 12", SAID)["date"] == SAID
+    assert filed("I may 5 times a day", SAID)["date"] == SAID
+    assert filed("since 3 May I take 20 mg", "2025-05-03")["date"] == "2025-05-03"
+    assert when(filed("it ached on September 3rd 2019")) == ("2019-09-03", None, None, None, None)  # its own year
+    # a written date is one of the quote's phrases: with two or more, the model's date must fall in one
+    assert filed("my appointment is on Nov 12, and yesterday my knee ached", "2026-10-23")["date"] == "2026-10-23"
+    assert filed("on September 3rd 2019, about seven years ago", "2019-09-03")["date"] == "2019-09-03"
+    assert filed("since Oct 1, and it ached yesterday", "2026-10-23")["date"] == "2026-10-23"
+    assert filed("on the 3rd of September, about six months ago")["date"] == "not-sure"  # a not-sure model stays not sure
+    assert when(filed("an hour or two ago it ached", SAID))[:2] == (SAID, None)
+
+
+def test_a_two_ended_row_prints_both_ends(tmp_path, env):
+    from engram import search, timeline
+    from test_store import _searchable
+    _searchable(tmp_path, env, "", {}, [
+        ({"id": "20261024-090000-report-e5e5", "title": "Knee ached on the stairs", "date": "2026-03-01", "date_note": "approx",
+          "approx": "true", "range_from": "2026-03-01", "range_to": "2026-05-31", "kind": "report", "about": ["story/knee"]}, "- ached\n"),
+        ({"id": "20261024-090000-report-f6f6", "title": "Knee swelled after the walk", "date": "2026-04-24", "date_note": "approx",
+          "approx": "true", "kind": "report", "about": ["story/knee"]}, "- swelled\n")])
+    _, rows = timeline.chain("medical", ["knee"])
+    assert [r["date"] for r in rows] == ["~2026-03-01 to 2026-05-31", "~2026-04-24"]
+    assert rows[0]["what"].endswith("— Knee ached on the stairs") and "2026" not in rows[0]["what"]
+    out = search.render(search.search("knee ached stairs", ["medical"], limit=5))
+    assert "(~2026-03-01 to 2026-05-31, " in out
 
 
 def test_a_date_he_never_gave_is_not_sure_and_a_named_month_is_kept():
     said = "2026-10-24"  # a Saturday
     last_time = {"date": "2026-10-07", "quote": "Last time I was going to sleep"}
-    assert capture.full_date(last_time, said, "Last time I was going to sleep and my back got tweaked") == ("never-said", False)
-    assert capture.full_date({"date": "2026-10-07"}, said, "it was sometime in October") == ("2026-10", False)
+    assert capture.full_date(last_time, said, "Last time I was going to sleep and my back got tweaked") == ("never-said", False, {})
+    assert capture.full_date({"date": "2026-10-07"}, said, "it was sometime in October") == ("2026-10", False, {})
     for day, words in [("2026-10-24", "my back is tight"), ("2026-10-23", "yesterday it hurt"), ("2026-10-07", "on Oct 7th"),
                        ("2026-10-07", "on 10/7"), ("2026-10-07", "7 October"), ("2026-10-20", "on Tuesday it flared"),
                        ("2026-10-18", "last weekend"), ("2026-10-10", "a couple of weeks ago")]:
@@ -607,7 +700,7 @@ def test_a_date_he_never_gave_is_not_sure_and_a_named_month_is_kept():
 
 
 def test_an_impossible_day_is_never_filed():
-    assert capture.full_date({"date": "2026-02-30"}, "2026-03-02") == ("not-sure", False)
+    assert capture.full_date({"date": "2026-02-30"}, "2026-03-02") == ("not-sure", False, {})
     fm, _ = capture.entry({"text": "Knee ached", "quote": "knee ached", "date": "2026-02-30"},
                           "2026-03-02", "s1", ["observation"], [], "", "knee ached")
     assert fm["date"] != "2026-02-30"
@@ -615,20 +708,20 @@ def test_an_impossible_day_is_never_filed():
 
 def test_a_past_episode_dated_the_day_he_said_it_is_not_sure_and_a_month_is_the_latest_one():
     said, words = "2026-10-24", "Last time I was going to sleep and my back got tweaked"
-    assert capture.full_date({"date": said, "quote": words}, said, words) == ("never-said", False)
-    assert capture.full_date({"date": said, "quote": "it hurts again today"}, said, "it hurts again today") == (said, False)
+    assert capture.full_date({"date": said, "quote": words}, said, words) == ("never-said", False, {})
+    assert capture.full_date({"date": said, "quote": "it hurts again today"}, said, "it hurts again today") == (said, False, {"as_said": "today"})
     assert capture.said_date("2026-10", "in October", said) and capture.said_date("2025-11", "in November", said)
     assert not capture.said_date("2025-10", "in October", said) and not capture.said_date("2026-11", "in November", said)
 
 
 def test_a_past_episode_left_not_sure_is_never_filed_at_the_day_he_said_it():
     said, past = "2026-10-24", "Last time I was going to sleep my back got tweaked"
-    assert capture.full_date({"date": "not-sure", "quote": past}, said, past) == ("never-said", False)
-    assert capture.full_date({"date": "not-sure", "quote": "my back is tight"}, said, "my back is tight") == ("not-sure", False)
+    assert capture.full_date({"date": "not-sure", "quote": past}, said, past) == ("never-said", False, {})
+    assert capture.full_date({"date": "not-sure", "quote": "my back is tight"}, said, "my back is tight") == ("not-sure", False, {})
     for often in ("I take magnesium once a day", "I run once or twice a week", "once again my back is tight"):
-        assert capture.full_date({"date": "not-sure", "quote": often}, said, often) == ("not-sure", False)  # how often, not when
+        assert capture.full_date({"date": "not-sure", "quote": often}, said, often) == ("not-sure", False, {})  # how often, not when
     counted = "last time, 3 days ago, my back got tweaked"
-    assert capture.full_date({"date": "not-sure", "quote": counted}, said, counted) == ("2026-10-21", False)
+    assert capture.full_date({"date": "not-sure", "quote": counted}, said, counted) == ("2026-10-21", False, {"as_said": "3 days ago"})
     note = lambda quote: (lambda fm: (fm["date"], fm["date_note"]))(capture.entry(
         {"text": "Back cramp", "quote": quote, "date": "not-sure"}, said, "s1", ["observation"], [], "", quote)[0])
     assert note(past) == ("not-sure", "reported; when it happened wasn't said")

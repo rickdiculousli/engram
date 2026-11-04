@@ -6,7 +6,7 @@ from dataclasses import asdict
 from datetime import date
 from fnmatch import fnmatchcase
 
-from engram import config, labels
+from engram import config, dates, labels
 from engram.index import open_index
 from engram.paths import index_path, record_conf, record_toml
 from engram.sources.events import ID
@@ -408,7 +408,7 @@ def render(results: list[dict], explain: bool = False) -> str:
     if any(map(labels.coded, whos)):
         out.append(config.voice(labels.KEY))
     for r, who in zip(results, whos):
-        when = f"{r['date']}, " if r["date"] else ""
+        when = f"{dates.printed(r['date'], r['title'])}, " if r["date"] else ""
         out.append(f"\n{r['rank']}. [{r['domain']}] {r['title']}  ({when}{r['kind']})")
         out.append("   " + " ".join(r["snip"].split()))
         if who:

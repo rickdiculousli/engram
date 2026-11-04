@@ -16,7 +16,7 @@ import time
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-from engram import commitmsg, config, llm, pack, recsum, store, wiki
+from engram import commitmsg, config, llm, pack, recsum, store, verbatim, wiki
 from engram.paths import data_path
 
 ENTRIES = ("source", "spark")
@@ -503,9 +503,9 @@ def label(b: Book, it: Item) -> str:
 
 def loose(b: Book) -> list[wiki.Spark]:
     """The sparks no concept has taken yet."""
-    taken = {recsum._norm(sp.text) for c in b.concepts.values() for sp in c.sparks}
+    taken = {verbatim.norm(sp.text) for c in b.concepts.values() for sp in c.sparks}
     sparks = sorted((it for it in b.its.values() if it.kind == "spark"), key=lambda it: (it.fm.get("date", ""), it.key))
-    return [wiki.Spark(it.fm.get("date", ""), it.text.strip("\n")) for it in sparks if recsum._norm(it.text) not in taken]
+    return [wiki.Spark(it.fm.get("date", ""), it.text.strip("\n")) for it in sparks if verbatim.norm(it.text) not in taken]
 
 
 def index_page(b: Book) -> str:

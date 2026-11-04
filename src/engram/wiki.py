@@ -24,7 +24,7 @@ import json
 import re
 from dataclasses import dataclass, field, replace
 
-from engram import recsum
+from engram import recsum, verbatim
 
 DIR = "wiki"
 CONCEPTS, SOURCES = f"{DIR}/concepts", f"{DIR}/sources"
@@ -65,8 +65,8 @@ def sentences(s: str) -> list[str]:
 
 def transcribed_note(text: str, quote: str) -> str:
     """For a quote from a transcribed source: check it against the original, at the nearest earlier time it gives."""
-    body = recsum._norm(text)
-    at = TIME.findall(body[:max(body.find(recsum._norm(quote)), 0)])
+    body = verbatim.norm(text)
+    at = TIME.findall(body[:max(body.find(verbatim.norm(quote)), 0)])
     return f"(check the original{', at ' + at[-1] if at else ''})"
 
 
@@ -338,7 +338,7 @@ class Vault:
 
     def quoted(self, quote: str, target: str) -> bool:
         path = self.resolve(target)
-        return bool(path and quote.strip() and path in self.texts and recsum._norm(quote) in recsum._norm(self.texts[path]))
+        return bool(path and quote.strip() and path in self.texts and verbatim.found(quote, self.texts[path]))
 
     def answered(self, s: Steelman) -> bool:
         """A steelman counts as answered only while its answer's quote checks against what it links."""
@@ -373,7 +373,7 @@ def check_concept(c: Concept, v: Vault) -> list[str]:
         if s.answer and not v.answered(s):
             out.append(f"an answer's quote isn't in {s.answer.label} word for word")
     for sp in c.sparks:
-        if not any(recsum._norm(sp.text) in recsum._norm(x) for x in v.sparks if sp.text.strip()):
+        if not any(verbatim.found(sp.text, x) for x in v.sparks if sp.text.strip()):
             out.append("a spark isn't the owner's words")
     for t in _links(render_concept(c)):
         if not v.resolve(t):
@@ -393,7 +393,7 @@ def check_source(s: Source, v: Vault, sentences_checked: list[dict] = ()) -> lis
         if why := recsum.check(x, text):
             out.append(f"a summary sentence: {why}")
     for sp in s.sparks:
-        if not any(recsum._norm(sp.text) in recsum._norm(x) for x in v.sparks if sp.text.strip()):
+        if not any(verbatim.found(sp.text, x) for x in v.sparks if sp.text.strip()):
             out.append("a spark isn't the owner's words")
     for t in _links(render_source(s)):
         if not v.resolve(t):

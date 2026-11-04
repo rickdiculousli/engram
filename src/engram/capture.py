@@ -56,7 +56,7 @@ from collections import Counter
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-from engram import commitmsg, config, daily, dates, llm, pack, recsum, refine, review, store, summarize
+from engram import commitmsg, config, daily, dates, llm, pack, recsum, refine, review, store, summarize, verbatim
 from engram import now as now_mod
 from engram import theory as theory_mod
 from engram.paths import data_path, record_conf, record_toml
@@ -442,9 +442,9 @@ def _his(item: dict, later: dict[int, str], turns: dict[int, str]) -> str | None
     quote, asked = str(item.get("quote", "")), str(item.get("answering", ""))
     if words is None:
         return f"not one of {config.owner()}'s new messages"
-    if not quote.strip() or recsum._norm(quote) not in recsum._norm(words):
+    if not quote.strip() or not verbatim.found(quote, words):
         return f"quote not in {config.owner()}'s words"
-    if asked and recsum._norm(asked) not in recsum._norm(turns.get(line, "")):
+    if asked and not verbatim.found(asked, turns.get(line, "")):
         return "question not in Claude's words"
     return None
 
@@ -1016,7 +1016,7 @@ def renew(domain: str, root: Path, path: Path, upto: int, ask=None, dry_run: boo
             line = int(r.get("line"))
         except (TypeError, ValueError, AttributeError):
             line = -1
-        if isinstance(r, dict) and r.get("answering") and recsum._norm(str(r["answering"])) not in recsum._norm(before.get(line, "")):
+        if isinstance(r, dict) and r.get("answering") and not verbatim.found(str(r["answering"]), before.get(line, "")):
             r = {k: v for k, v in r.items() if k != "answering"}  # a question not in Claude's message before his isn't kept
         why = ("not a thing marked as not mentioned for a while" if t not in named else
                "not an exchange that names it" if line not in named[t] else

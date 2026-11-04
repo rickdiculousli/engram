@@ -7,9 +7,8 @@ and a sentence fails if it's over 40 words. A failing sentence is dropped, never
 record's text, so an unchanged record isn't summarized twice; the cache lives in the data folder, never in a repo."""
 import hashlib
 import json
-import re
 
-from engram import config, dates, llm, pack
+from engram import config, dates, llm, pack, verbatim
 from engram.index import open_index
 from engram.paths import data_path, index_path
 
@@ -31,24 +30,12 @@ Reply with JSON only: {{"summaries": [{{"id": "<id>", "sentences": [{{"text": ".
 {records}"""
 
 
-DASHES = re.compile(r"\s*[-\u2010-\u2015\u2212]\s*")
-BROKEN = re.compile(r"(\w)[-\u00ad]\s*\n\s*(\w)")  # a word hyphenated across a line
-
-
-def _norm(s: str) -> str:
-    """Text as a quote is matched: curly quotes straight, a word hyphenated across lines joined, every dash one hyphen
-    with no spaces round it, an ellipsis three dots, soft hyphens gone, spaces collapsed, lower case."""
-    s = BROKEN.sub(r"\1\2", s.replace("\u00ad", "")).replace("…", "...")
-    s = DASHES.sub("-", s.replace("’", "'").replace("‘", "'").replace("“", '"').replace("”", '"'))
-    return re.sub(r"\s+", " ", s).strip().lower()
-
-
 def check(sentence: dict, body: str) -> str | None:
     """Why a summary sentence fails, or None."""
     text, quote = sentence.get("text", ""), sentence.get("quote", "")
     if not text or not quote:
         return "missing text or quote"
-    if _norm(quote) not in _norm(body):
+    if not verbatim.found(quote, body):
         return "quote not in the record"
     if len(text.split()) > 40:
         return "over 40 words"

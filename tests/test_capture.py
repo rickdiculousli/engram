@@ -828,6 +828,24 @@ def test_a_summaries_run_that_stops_is_the_runs_error(world, monkeypatch):
     assert any("out of quota" in l for l in capture.problems("medical"))
 
 
+def test_the_hourly_run_summarizes_the_records_of_an_area_it_files_for(world, monkeypatch):
+    got = []
+    monkeypatch.setattr(capture.recsum, "run", lambda d: got.append(d) or {"usd": 0.5})
+    assert run([], dry_run=True)["error"] is None and got == []  # a dry run spends nothing
+    out = run([])
+    assert got == ["medical"] and out["error"] is None and out["usd"] >= 0.5
+    monkeypatch.setattr(capture.pack, "load", lambda d: pack.NONE)  # its pack says nothing to write down: not filed for
+    run([], now=LATER + timedelta(days=1))
+    assert got == ["medical"]
+
+
+def test_a_record_summaries_failure_is_the_runs_error(world, monkeypatch):
+    def fail(d):
+        raise RuntimeError("usage limit")
+    monkeypatch.setattr(capture.recsum, "run", fail)
+    assert "record summaries medical: RuntimeError: usage limit" in run([])["error"]
+
+
 def test_a_daily_copy_that_failed_or_went_quiet_is_its_own_line(world):
     cfg, daily_json = world["tmp"] / "config.toml", world["tmp"] / "data/daily.json"
     def last(ok, ago):

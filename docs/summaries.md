@@ -64,6 +64,7 @@ They make what was said findable even when the owner's wording, the advisor's an
 
 ## Record summaries
 
+- **An area engram files for gets them** (its pack has `file` words): the hourly job summarizes its new and changed records after filing, from the index as last refreshed. A failed call stops it and is the run's error; what was summarized before it is kept. An area engram doesn't file for gets none.
 - **Only records over 600 characters get one** (`recsum.py`); a shorter record is cheaper to open whole.
 - **Opus at low effort reads about 20 records per call,** writing one to three sentences per record, each with a quote copied from the record.
 - **Code checks every sentence:** the quote must be in the record word for word, every number in the record as written, and a sentence 40 words or fewer. A failing sentence is dropped, never kept.

@@ -444,6 +444,20 @@ def test_a_summary_sentence_must_quote_the_record_and_keep_its_numbers():
     assert check({"text": "The dose was cut to 0mg.", "quote": "Dose reduced"}, body) == "number 0 not in the record"
 
 
+def test_record_summaries_count_each_dropped_sentence_by_why(env, monkeypatch):
+    from engram import recsum
+    body = "2026-04-27 evening: dose reduced 20mg to 10mg after the dizzy spell, and the spell did not come back. " * 8
+    monkeypatch.setattr(recsum, "wanted", lambda domain: [("log.md#Dose", "Dose", body)])
+    said = [{"text": "The dose went to 5mg.", "quote": "dose reduced"}, {"text": "The dose went to 7mg.", "quote": "dose reduced"},
+            {"text": "Then 5mg again.", "quote": "dose reduced"}, {"text": "It was halved.", "quote": "dose halved"},
+            {"text": "The dose went from 20mg to 10mg.", "quote": "dose reduced 20mg to 10mg"}]
+    reply = json.dumps({"summaries": [{"id": "0", "sentences": said}]})
+    monkeypatch.setattr(recsum, "_ask", lambda prompt, system: (reply, {"in": 1, "out": 1, "usd": 0.01}))
+    stats = recsum.run("notes")
+    assert stats["dropped"] == {"number not in the record": 3, "quote not in the record": 1}
+    assert stats["sentences"] == 5 and stats["kept"] == 1
+
+
 def test_a_consult_is_one_row_opened_whole(repo, env, capsys):
     import json as _json
     from engram import timeline

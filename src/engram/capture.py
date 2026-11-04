@@ -1142,6 +1142,11 @@ def run(ask=None, dry_run: bool = False, summaries: bool = True, now: datetime |
                     out["usd"] += compile_mod.run(d)["usd"]
                 except Exception as e:
                     _error(out, f"compile {d}: {type(e).__name__}: {e}")
+            if not dry_run and pack.load(d).prompts.get("file"):  # an area engram files for: its long records summarized
+                try:  # a failed call stops it, as it stops the session summaries; what's summarized before it is kept
+                    out["usd"] += recsum.run(d)["usd"]
+                except Exception as e:
+                    _error(out, f"record summaries {d}: {type(e).__name__}: {e}")
             if not dry_run and review.on(root):  # the value review, behind its switch; off leaves the job as it was
                 try:
                     out["usd"] += (review.hourly(d, root, idle, now) or {}).get("usd", 0.0)

@@ -74,6 +74,8 @@ def _key(body: str) -> str:
 def wanted(domain: str) -> list[tuple[str, str, str]]:
     """(ref, title, body) for every record long enough to summarize, whole sections with their chunks joined."""
     idx = open_index(index_path(domain), readonly=True)
+    if idx is None:  # an area not indexed yet has no records to summarize
+        return []
     out = []
     for (ref,) in idx.db.execute("SELECT DISTINCT coalesce(parent, ref) FROM doc WHERE source IN ('repo-sections', 'events')"):
         row = idx.get(ref) or idx.section(ref)
@@ -116,7 +118,8 @@ def run(domain: str, limit: int | None = None) -> dict:
                 why = check(s, body)
                 stats["sentences"] += 1
                 if why:
-                    stats["dropped"][why.split(" not")[0] if "number" in why else why] = stats["dropped"].get(why, 0) + 1
+                    why = "number not in the record" if why.startswith("number") else why
+                    stats["dropped"][why] = stats["dropped"].get(why, 0) + 1
                 else:
                     keep.append(s["text"].strip())
             (cache / f"{_key(body)}.json").write_text(json.dumps({"ref": ref, "summary": " ".join(keep)}))

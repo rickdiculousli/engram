@@ -32,6 +32,10 @@ def make_repo(path: Path, files: dict[str, str], origin: str | None = None) -> P
     return path
 
 
+def _no_model(*a, **k):
+    raise AssertionError("a test called a model")
+
+
 @pytest.fixture(autouse=True)
 def box_config(tmp_path, monkeypatch):
     """Every test sees its own box config, naming the owner and no domain, never this box's."""
@@ -45,6 +49,7 @@ def box_config(tmp_path, monkeypatch):
         monkeypatch.delenv(v, raising=False)
     monkeypatch.setattr("engram.jobs.KIND", "launchd")  # the same job files on every platform; test_jobs covers systemd
     monkeypatch.setattr("engram.paths.default_data_dir", lambda: tmp_path / "box-data")  # never this box's real install
+    monkeypatch.setattr("engram.recsum._ask", _no_model)  # the hourly run summarizes records; a test never calls a model
 
 
 @pytest.fixture

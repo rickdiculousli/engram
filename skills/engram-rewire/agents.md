@@ -1,3 +1,12 @@
+# Searching the record
+
+<the owner>'s <record> is read through engram, this repo's own record first.
+
+- **Which command:** a single fact, `engram search "<the question in their words>"`; a history or the frame around something, `engram timeline <thing>`; a record or a document, `engram show <ref>`; where things stand, `engram now`; the theory, `engram theory`.
+- **Another domain's hit is a lead:** open it with `engram show` before stating it.
+- **What <the owner> hands over whole** (a letter, a report, a result) is saved as its own file. Facts from talk are left to the hourly job, which files them from the session.
+- <only where engram files for the repo> **Read engram's output whole:** don't pipe or cut it, and run one engram command per Bash call.
+
 # The weekly refinement
 
 A weekly pass keeps this setup lean against <the owner>'s jobs (the Jobs section of `.engram/README.md`); it never touches the record. What it brings <the owner> to decide opens as a page in their browser, never in a session: "I'll bring it back to a regular session when I want to deal with it." When they do, read the item from disk (a spec in `.engram/specs/`, the portrait in `.engram/README.md`'s front matter, a change by its `Refinement:` line in `git log`). Commit each change below.

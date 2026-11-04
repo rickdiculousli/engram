@@ -82,15 +82,18 @@ def _last() -> dict | None:
 
 def status() -> str | None:
     if not (s := _last()):
-        return None
+        return f"daily copy to {box()}: never run" if box() else None
     return (f"daily copy to {box() or 'the second box'}: last run {s.get('finished')}, "
             + ("ok" if s.get("ok") else f"FAILED at {s.get('failed_step')}"))
 
 
 def stalled() -> str | None:
-    """While a daily copy is configured: what's wrong when its last run failed or is over STALE old; None otherwise."""
-    if not box() or not (s := _last()):
+    """While a daily copy is configured: what's wrong when it has never run, or its last run failed or is over STALE
+    old; None otherwise."""
+    if not box():
         return None
+    if not (s := _last()):
+        return "has never run"
     if not s.get("ok"):
         return f"failed at {s.get('failed_step')} on {s.get('finished')}"
     if datetime.now().astimezone() - datetime.fromisoformat(s["finished"]) > STALE:

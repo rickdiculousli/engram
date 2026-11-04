@@ -62,7 +62,7 @@ How the pass behaves is each repo's rules section of `.engram/README.md` and `sk
 - a pack that didn't load, and why (the session-start hook shows it too)
 - each domain's rewiring drift, or that it's current
 - re-ingests caused by changed file prefixes
-- the daily copy's last run, when there is one; while `[daily]` is set, a failed run or none in two days is also a line at session start, apart from capture's
+- while `[daily]` is set, the daily copy's last run, or that it has never run; a failed run, none in two days or none yet is also a line at session start, apart from capture's
 - this week's weekly pass on each repo: landed, running or stopped, or failed and why; a failure is told here and never at session start
 - any push left failing, or a rebase left for the owner
 - each entry at the top of the data folder that `paths.DATA` doesn't list: a leftover to clear, or a writer missing from the table

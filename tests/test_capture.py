@@ -886,7 +886,8 @@ def test_a_record_summaries_failure_is_the_runs_error(world, monkeypatch):
     assert "record summaries medical: RuntimeError: usage limit" in run([])["error"]
 
 
-def test_a_daily_copy_that_failed_or_went_quiet_is_its_own_line(world):
+def test_a_daily_copy_that_failed_went_quiet_or_never_ran_is_its_own_line(world):
+    from engram import daily
     cfg, daily_json = world["tmp"] / "config.toml", world["tmp"] / "data/daily.json"
     def last(ok, ago):
         at = (datetime.now().astimezone() - ago).isoformat(timespec="seconds")
@@ -894,6 +895,9 @@ def test_a_daily_copy_that_failed_or_went_quiet_is_its_own_line(world):
         return hourly.session_start(world["payload"])
     assert last(False, timedelta(hours=1)) == hourly.READ_WHOLE  # no daily copy configured: nothing to say
     cfg.write_text(cfg.read_text() + '[daily]\nbox = "spare"\n')
+    daily_json.unlink()
+    assert hourly.session_start(world["payload"]).startswith("engram's daily copy has never run: run `engram health`")
+    assert daily.status() == "daily copy to spare: never run"
     failed = last(False, timedelta(hours=1))
     assert failed.startswith("engram's daily copy") and "pull backups" in failed and "capture" not in failed
     quiet = last(True, timedelta(days=3))

@@ -3,7 +3,8 @@ one command sets a repo up, one tears it down without touching records, one (`en
 
 Setup installs three pieces, each idempotent and each repairable on its own:
 - settings: the repo's .claude/settings.json gets a SessionStart hook (`engram capture check`: the health check and
-  self-repair), tagged so teardown finds it, and `Bash(engram:*)` in its allow list.
+  self-repair), tagged so teardown finds it, `Bash(engram:*)` in its allow list, and a Bash window that fits engram's
+  output (`bashOutputMaxChars`), unless the repo sets its own.
 - git: core.hooksPath points at a tracked .engram/hooks/ whose pre-commit runs `engram lint --staged` and the rewiring's
   drift check, after any pre-commit the repo already had.
 - job: one timed job for every repo set up (`engram.jobs`: launchd on macOS, systemd on Linux), running
@@ -29,6 +30,7 @@ from engram.paths import HOOKS as HOOKS_DIR, RECORD_TOML, data_path, record_toml
 TAG = "# engram-setup"
 LABEL = "engram.capture"
 ALLOW = "Bash(engram:*)"
+WINDOW_KEY, BASH_BUDGET = "bashOutputMaxChars", 100_000  # Claude Code's Bash window: 30,000 unless set, 4,000 to 128,000
 HOOKS = {"SessionStart": "capture check"}
 PRE_COMMIT = ("lint --staged", "rewire check --drift")  # what every commit in a record repo passes
 REPAIR = "CREATE TABLE IF NOT EXISTS repair (at TEXT, domain TEXT, what TEXT, ok INTEGER, error TEXT)"
@@ -109,8 +111,10 @@ def _without_ours(conf: dict) -> dict:
 
 
 def _norm(conf: dict, man: dict) -> dict:
-    """Settings as they'd be without setup: its hooks and allow entry gone, and containers left empty dropped."""
+    """Settings as they'd be without setup: its hooks, allow entry and window gone, and containers left empty dropped."""
     conf = _without_ours(conf)
+    if man.get("added_window"):
+        conf.pop(WINDOW_KEY, None)
     allow = (conf.get("permissions") or {}).get("allow")
     if man.get("added_allow") and allow and ALLOW in allow:
         allow.remove(ALLOW)
@@ -136,6 +140,9 @@ def install_settings(root: Path, man: dict):
     if ALLOW not in allow:
         allow.append(ALLOW)
         man["added_allow"] = True
+    if WINDOW_KEY not in conf:
+        conf[WINDOW_KEY] = BASH_BUDGET
+        man["added_window"] = True
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(conf, indent=2) + "\n")
 
@@ -163,14 +170,19 @@ def install_job(man: dict):
                  bool(man.get("load")), every=3600)
 
 
+def settings(root: Path) -> dict:
+    """The repo's .claude/settings.json; empty when it's missing or won't parse."""
+    p = _settings_path(root)
+    try:
+        return json.loads(p.read_text()) if p.exists() else {}
+    except json.JSONDecodeError:
+        return {}
+
+
 def missing(root: Path, man: dict) -> dict[str, str]:
     """piece -> what's wrong with it; empty when every piece is in place and current."""
     out = {}
-    p = _settings_path(root)
-    try:
-        conf = json.loads(p.read_text()) if p.exists() else {}
-    except json.JSONDecodeError:
-        conf = {}
+    conf = settings(root)
     for event, sub in HOOKS.items():
         got = [_launcher(h.get("command", "")) for e in (conf.get("hooks") or {}).get(event, []) if _ours(e) for h in e.get("hooks", [])]
         if not any(rest == sub and runs_this_engram(prog) for prog, rest in got):
@@ -178,6 +190,8 @@ def missing(root: Path, man: dict) -> dict[str, str]:
             break
     if "settings" not in out and ALLOW not in (conf.get("permissions") or {}).get("allow", []):
         out["settings"] = f"{ALLOW} isn't allowed"
+    if "settings" not in out and WINDOW_KEY not in conf:  # any value: the repo's own is kept
+        out["settings"] = "Claude's Bash window isn't widened"
     hook = root / HOOKS_DIR / "pre-commit"
     if _git(root, "config", "core.hooksPath").stdout.strip() != HOOKS_DIR:
         out["git"] = f"core.hooksPath doesn't point at {HOOKS_DIR}"
@@ -255,7 +269,7 @@ def setup(root: Path, launch_agents_dir: Path | None = None, load: bool = True) 
         hook = root / HOOKS_DIR / "pre-commit"
         man = {"root": str(root), "launch_agents_dir": str(launch_agents_dir or jobs.default_dir()),
                "load": load, "settings_existed": sp.exists(), "settings_before": sp.read_text() if sp.exists() else None,
-               "claude_dir_existed": sp.parent.exists(), "added_allow": False,
+               "claude_dir_existed": sp.parent.exists(), "added_allow": False, "added_window": False,
                "hooks_path_before": _git(root, "config", "core.hooksPath").stdout.strip() or None,
                "hooks_dir_existed": (root / HOOKS_DIR).exists(), "kept_hook": None}
         if hook.exists() and TAG not in hook.read_text():  # the repo's own pre-commit keeps running, first

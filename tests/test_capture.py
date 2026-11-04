@@ -164,8 +164,8 @@ def test_setup_teardown_round_trip_and_self_repair(world, monkeypatch):
     before = b'{\n    "hooks": {}\n}\n'
     setup.setup(repo, agents, load=False)  # again: idempotent
     conf = json.loads((repo / ".claude/settings.json").read_text())
-    assert list(conf["hooks"]) == ["SessionStart"] and len(conf["hooks"]["SessionStart"]) == 1
-    assert setup.ALLOW in conf["permissions"]["allow"]
+    assert conf == {"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": setup._hook_cmd("capture check")}]}]},
+                    "permissions": {"allow": [setup.ALLOW]}, "bashOutputMaxChars": setup.BASH_BUDGET}
     assert git(repo, "config", "core.hooksPath").strip() == ".engram/hooks"
     assert "lint --staged" in (repo / ".engram/hooks/pre-commit").read_text()
     plist = agents / f"{setup.LABEL}.plist"
@@ -176,7 +176,7 @@ def test_setup_teardown_round_trip_and_self_repair(world, monkeypatch):
     conf["hooks"].pop("SessionStart")
     (repo / ".claude/settings.json").write_text(json.dumps(conf))
     git(repo, "config", "--unset", "core.hooksPath")
-    assert capture.session_start(world["payload"]) == ""  # repaired, so nothing to say
+    assert capture.session_start(world["payload"]) == capture.READ_WHOLE  # repaired, so nothing more to say
     assert plist.exists() and "SessionStart" in json.loads((repo / ".claude/settings.json").read_text())["hooks"]
     assert git(repo, "config", "core.hooksPath").strip() == ".engram/hooks"
     assert sum("— fixed" in l for l in setup.status(repo)) == 3
@@ -185,6 +185,35 @@ def test_setup_teardown_round_trip_and_self_repair(world, monkeypatch):
     assert (repo / ".claude/settings.json").read_bytes() == before
     assert not plist.exists() and not (repo / ".engram/hooks").exists()
     assert setup._git(repo, "config", "--get", "core.hooksPath").stdout.strip() == ""
+
+
+def test_an_install_from_before_the_window_gets_it_at_its_next_repair_and_loses_it_at_teardown(world):
+    repo, sp = world["repo"], world["repo"] / ".claude/settings.json"
+    conf = json.loads(sp.read_text())
+    conf.pop("bashOutputMaxChars")
+    sp.write_text(json.dumps(conf, indent=2) + "\n")
+    with capture.db() as c:  # its manifest has no word of the window
+        man = json.loads(c.execute("SELECT setup FROM repo").fetchone()[0])
+        man.pop("added_window")
+        c.execute("UPDATE repo SET setup = ?", (json.dumps(man),))
+    assert setup.missing(repo, man) == {"settings": "Claude's Bash window isn't widened"}
+    assert capture.session_start(world["payload"]) == capture.READ_WHOLE
+    assert json.loads(sp.read_text())["bashOutputMaxChars"] == setup.BASH_BUDGET
+    setup.teardown(repo)
+    assert sp.read_bytes() == b'{\n    "hooks": {}\n}\n'
+
+
+def test_a_repos_own_bash_window_is_kept_and_left_at_teardown(world):
+    repo, sp = world["repo"], world["repo"] / ".claude/settings.json"
+    setup.teardown(repo)
+    mine = '{\n  "bashOutputMaxChars": 20000\n}\n'
+    sp.write_text(mine)
+    setup.setup(repo, world["tmp"] / "LaunchAgents", load=False)
+    man = json.loads(capture.db().execute("SELECT setup FROM repo").fetchone()[0])
+    assert json.loads(sp.read_text())["bashOutputMaxChars"] == 20000 and not man["added_window"]
+    assert setup.missing(repo, man) == {}  # in place at its own value: not rewritten every hour
+    setup.teardown(repo)
+    assert sp.read_text() == mine
 
 
 @pytest.fixture
@@ -799,7 +828,7 @@ def test_a_failed_push_is_recorded_shown_and_retried(world):
     git(bare.parent, "init", "-q", "--bare", str(bare))
     out = capture.run(ask=fake([], []), summaries=False, now=LATER)  # the next hourly run retries
     assert store.push_failure(repo) is None and out["error"] is None
-    assert capture.unpushed(repo)[0] == 0 and capture.session_start(world["payload"]) == ""
+    assert capture.unpushed(repo)[0] == 0 and capture.session_start(world["payload"]) == capture.READ_WHOLE
 
 
 def test_a_push_that_hangs_is_a_failed_push_and_retried(world, monkeypatch):
@@ -852,13 +881,13 @@ def test_a_daily_copy_that_failed_or_went_quiet_is_its_own_line(world):
         at = (datetime.now().astimezone() - ago).isoformat(timespec="seconds")
         daily_json.write_text(json.dumps({"started": at, "ok": ok, "finished": at} | ({} if ok else {"failed_step": "pull backups"})))
         return capture.session_start(world["payload"])
-    assert last(False, timedelta(hours=1)) == ""  # no daily copy configured: nothing to say
+    assert last(False, timedelta(hours=1)) == capture.READ_WHOLE  # no daily copy configured: nothing to say
     cfg.write_text(cfg.read_text() + '[daily]\nbox = "spare"\n')
     failed = last(False, timedelta(hours=1))
     assert failed.startswith("engram's daily copy") and "pull backups" in failed and "capture" not in failed
     quiet = last(True, timedelta(days=3))
     assert quiet.startswith("engram's daily copy") and "capture" not in quiet
-    assert last(True, timedelta(hours=20)) == ""
+    assert last(True, timedelta(hours=20)) == capture.READ_WHOLE
 
 
 def test_a_launcher_at_another_path_running_the_same_code_is_not_old(world):
@@ -880,7 +909,7 @@ def test_a_launcher_at_another_path_running_the_same_code_is_not_old(world):
     git(repo, "commit", "-qm", "installed from elsewhere")
     man = json.loads(capture.db().execute("SELECT setup FROM repo").fetchone()[0])
     assert setup.missing(repo, man) == {}
-    assert capture.session_start(world["payload"]) == ""
+    assert capture.session_start(world["payload"]) == capture.READ_WHOLE
     assert git(repo, "status", "--porcelain").strip() == ""  # nothing rewritten
     stale = tmp / "gone/engram"
     sp.write_text(sp.read_text().replace(str(other), str(stale)))

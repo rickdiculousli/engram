@@ -1248,10 +1248,15 @@ def _root(domain: str) -> Path | None:
     return Path(row[0]) if row else None
 
 
+READ_WHOLE = "Read engram's output whole, one engram command per Bash call."
+
+
 def session_start(payload: dict) -> str:
     """The SessionStart hook: check the install and repair it, saying one line only if something couldn't be fixed;
-    then, for a record whose entries are read straight from events, where things stand (`engram now`); then, for the
-    agent, any weekly-refinement file that won't parse (`engram refine surface`)."""
+    then, where setup's Bash window is in place, that engram's output fits it whole; then, for a record whose entries
+    are read straight from events, where things stand (`engram now`); then, for the agent, any weekly-refinement file
+    that won't parse (`engram refine surface`)."""
+    from engram import setup
     found = repo_of(payload.get("cwd") or os.environ.get("CLAUDE_PROJECT_DIR"))
     if not found:
         return ""
@@ -1261,6 +1266,8 @@ def session_start(payload: dict) -> str:
     out = [f"engram capture needs fixing ({'; '.join(bad)}): run `engram capture status` and tell {config.owner()} in one line."] if bad else []
     if copy := daily.stalled():  # not capture's: its own line, so it never reads as capture broken
         out.append(f"engram's daily copy {copy}: run `engram health` and tell {config.owner()} in one line.")
+    if setup.WINDOW_KEY in setup.settings(found[1]):  # only a widened window holds a long timeline whole
+        out.append(READ_WHOLE)
     conf = record_conf(found[1])
     if (conf.get("index") or {}).get("events"):
         with contextlib.suppress(Exception):  # the picture is a help; a broken record mustn't block the session

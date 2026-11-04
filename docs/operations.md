@@ -35,7 +35,7 @@ To release:
 2. From the engram commit to release: `uv run python bench/gate.py run <out.json> --pack <record repo>@<pack commit>`, then `compare <baseline.json> <out.json>` says "same".
 3. Tag the commit `release-<date>` and push the tag.
 4. Set `pack = "<pack commit>"` in the config, then `uv run engram review --release <tag> --gate <out.json>` from that commit: it refuses unless the pin's pack (its `.engram/` without the page, specs, settings and hooks) is the one the gate measured, moves the release clone to the tag, and logs the tag with its pins.
-5. Check `engram health` and capture after the next hourly run.
+5. Check `engram health` and capture after the next hourly run, and that a long `engram timeline` in a set-up repo's session arrives whole, not as a preview and a file.
 
 To roll back, take the previous line of `releases.jsonl`: set its pins in the config and run `engram review --release <its tag>`.
 

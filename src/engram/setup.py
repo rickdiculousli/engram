@@ -405,6 +405,8 @@ def status(root: Path | None = None) -> list[str]:
         out.append(f"  sessions filed: {len(filed)}, entries filed: {sum(n.values())}")
         for sess, at in filed[:10]:
             out.append(f"    {sess[:8]}  last filed {at}  {n[sess]} entries")
+        for mark, counts in c.execute("SELECT mark, counts FROM narrow WHERE domain = ?", (domain,)):
+            out.append(f"  narrowing: marked at {mark[:8]}; so far " + (", ".join(f"{v} {k}" for k, v in json.loads(counts).items()) or "nothing"))
     if last:
         out.append(f"last hourly run: {last[0]} {'ok' if last[1] else 'failed'}; {last[2]} sessions read, {last[3]} filed, "
                    f"{last[4]} dropped, ${last[5]:.2f}" + (f"; error: {last[6]}" if last[6] else ""))

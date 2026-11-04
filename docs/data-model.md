@@ -34,7 +34,7 @@ The fields:
 - **`by`:** whose claim it is: an outside source (`<role>:<name>`), the owner's id, `with-claude`, or `claude-suggestion` with `status: considering | adopted | dropped`, which only the owner changes. `confidence` holds the claimant's words, or the record's status.
 - **`author`:** who wrote the file: the owner, `claude` or `feed`.
 - **`supersedes`:** marks a correction; search ranks the superseded entry at half. `engram add --supersedes` writes the `supersedes` link beside it, the link chains read.
-- **`recorded`:** when it was filed. A migrated entry uses the author time of the first commit that held it, so reruns give the same ids.
+- **`recorded`:** when it was filed; a narrowing keeps its recollection's. A migrated entry uses the author time of the first commit that held it, so reruns give the same ids.
 - **Prospective items:** kind `plan`, with `target` and `as_of`.
 - **Append-only:** a commit may add files under `events/` but never modify or delete one. The only exception is `engram fix`, for a mechanical error ([technical](technical.md#mechanical-errors)); something learned later is a new entry and a `revises` link.
 - **Frontmatter** is YAML, because GitHub mobile renders it as a table. It's parsed with PyYAML's `BaseLoader`, so `NO` stays a string, `1.50` keeps its zero, and dates stay text.

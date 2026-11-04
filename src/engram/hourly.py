@@ -3,9 +3,9 @@
 The hourly job (`engram capture run`, `engram.jobs`), one run at a time: it indexes changed sessions (under "DO NOT
 STORE GARBAGE" that means their checked summaries, kept current for the repos set up; raw transcripts are never
 indexed); files each session started in a repo set up that has grown since it was last filed and has been idle an hour
-(`capture.file_session`, then `capture.renew`); for the areas that have them, compiles onto the map, summarizes long
-records and runs the value review; re-checks theory changes whose re-check never ran, syncs each repo's document ids,
-repairs the install and retries a failed push.
+(`capture.file_session`, then `capture.renew`); for the areas that have them, narrows hedged dates by new dated
+documents (`narrow.run`), compiles onto the map, summarizes long records and runs the value review; re-checks theory
+changes whose re-check never ran, syncs each repo's document ids, repairs the install and retries a failed push.
 
 The install's health: the SessionStart hook checks the install and repairs it (it's the only thing that notices a dead
 job), printing one line if a repair fails; then, where setup widened Claude's Bash window, that engram's output is read
@@ -21,7 +21,7 @@ import subprocess
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from engram import capture, config, daily, pack, recsum, refine, review, setup, store, summarize
+from engram import capture, config, daily, narrow, pack, recsum, refine, review, setup, store, summarize
 from engram import now as now_mod
 from engram.paths import data_path, record_conf
 from engram.sources import sessions
@@ -63,7 +63,7 @@ def lock(wait: bool = False):
 def run(ask=None, dry_run: bool = False, summaries: bool = True, now: datetime | None = None) -> dict:
     """The hourly job: index changed sessions, file every due session of each repo set up, repair the install. A dry
     run files nothing and moves no mark; with `ask` set to `capture.prompt_only` it also spends nothing."""
-    out = {"sessions": 0, "filed": 0, "renewed": 0, "dropped": [], "kept": [], "would_file": [], "usd": 0.0, "skipped": False, "error": None, "repairs": []}
+    out = {"sessions": 0, "filed": 0, "renewed": 0, "dropped": [], "kept": [], "would_file": [], "usd": 0.0, "skipped": False, "error": None, "repairs": [], "narrowing": {}}
     with lock() as got:
         if not got:
             out["skipped"] = True
@@ -104,6 +104,12 @@ def run(ask=None, dry_run: bool = False, summaries: bool = True, now: datetime |
                 out["kept"] += r["kept"]
                 out["would_file"] += r["would_file"]
                 out["usd"] += r["usd"]
+            if not dry_run and pack.load(d).prompts.get("narrow"):  # after filing: a dated document narrows a hedged date
+                n = narrow.run(d, root, ask)
+                out["usd"] += n["usd"]
+                out["narrowing"][d] = {k: n[k] for k in narrow.COUNTS if n[k]}
+                if n["error"]:
+                    _error(out, f"narrow {d}: {n['error']}")
             if not dry_run and pack.load(d).prompts.get("compile"):  # what was handed over or filed, onto the map
                 from engram import compile as compile_mod
                 try:

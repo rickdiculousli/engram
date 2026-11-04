@@ -89,6 +89,30 @@ The passage at issue: {passage}
 {record}
 </record>"""
 
+NARROW = """{owner}'s garden notes gained a document dated {date} ({document}). Below are notes he dated only roughly,
+each with the days it could fall on. Which of them does the document record as happening on its own date, not only
+mention or recount? None is a fine answer.
+
+{entries}
+
+Reply with JSON only: {{"narrows": [{{"id": "<the note's id>", "passage": "<the document's words that record it, copied
+exactly>"}}]}}
+
+<document>
+{text}
+</document>"""
+
+NARROW_CONFIRM = """Does this document record this note as happening on its own date, {date}, not only mention or recount
+it? Reply yes or no alone.
+
+{entry}
+
+The passage at issue: {passage}
+
+<document>
+{text}
+</document>"""
+
 pack = Pack(prompts={"file": FILE, "verify": VERIFY, "record": RECORD, "theory": THEORY, "structure": STRUCTURE,
                      "relink": RELINK, "relink_system": "You link garden notes to how the garden works.",
-                     "sweep": SWEEP, "sweep_confirm": SWEEP_CONFIRM})
+                     "sweep": SWEEP, "sweep_confirm": SWEEP_CONFIRM, "narrow": NARROW, "narrow_confirm": NARROW_CONFIRM})

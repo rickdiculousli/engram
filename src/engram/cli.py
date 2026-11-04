@@ -564,6 +564,9 @@ def cmd_capture(a):
             print(f"kept: {json.dumps(k, ensure_ascii=False)}")
         for r in out["repairs"]:
             print(f"repaired: {r['what']}" + ("" if r["ok"] else f" (failed: {r['error']})"))
+        for d, n in out["narrowing"].items():
+            if n:
+                print(f"narrowing {d}: {json.dumps(n)}")
         print(f"engram capture run: {out['sessions']} sessions read, {out['filed']} filed, {len(out['dropped'])} dropped, "
               f"${out['usd']:.2f}" + (" (another run is going)" if out["skipped"] else "") +
               (f"; error: {out['error']}" if out.get("error") else ""))

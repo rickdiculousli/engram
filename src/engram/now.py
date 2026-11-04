@@ -199,10 +199,12 @@ def _chain(st: Store, today: date | None = None) -> list[Current]:
     cur = spec(st)
     chains: dict[str, list] = {}
     corrected = units.corrected(st)
+    narrowed = {e.fm.get("supersedes") for e in st.events() if e.fm.get("narrowed_by")}  # its copy holds its place
     for e in _entities(st, cur):
-        chains.setdefault(chain_id(e, cur), []).append(e)
+        if e.id not in narrowed:
+            chains.setdefault(chain_id(e, cur), []).append(e)
     for e in st.events(kind="status") if cur.threads else []:
-        for a in e.about:
+        for a in e.about if e.id not in narrowed else []:
             if a.split("/")[0] in cur.threads:
                 chains.setdefault(a, []).append(e)
     own = [e for e in st.events() if e.kind != "link" and str(e.fm.get("by", "")) == config.owner_id() and _day(e)]

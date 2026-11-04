@@ -25,6 +25,7 @@ from engram.sources import sessions
 DEFAULTS = {"weekly_cap": 100.0, "pass_cap": 40.0, "hours": 4.0, "model": "opus", "permission_mode": "auto"}
 SKILL = "skills/engram-refine/SKILL.md"  # in engram's own repo, so an edit there steers the next pass
 TRAILER = "Refinement"
+UNSEEN = "none:"  # a trailer opening with it: a change the owner wouldn't see, kept off their page
 REVERTS = "This reverts commit "  # git revert's line
 SWEEP = "sweep"  # the job of the evidence sweep's ledger rows: they count toward the week, never as a pass
 PAGE_JOB = "page"  # the job of the week's page's ledger row: it counts toward the week, never as a pass
@@ -479,7 +480,7 @@ def digest(targets: dict[str, Path], budget: float, runner=subprocess.run) -> tu
     Returns (cost, a line for the log, empty when nothing needed them: then nothing is written or opened)."""
     seen, items, changed = _seen(), [], set()
     for repo in targets.values():
-        new = [(sha, day, line) for sha, day, line in _landed(repo) if sha not in seen]
+        new = [(sha, day, line) for sha, day, line in _landed(repo) if sha not in seen and not line.startswith(UNSEEN)]
         portrait = ""
         with contextlib.suppress(ValueError, yaml.YAMLError):  # a broken page is told at session start
             portrait = _portrait(repo)

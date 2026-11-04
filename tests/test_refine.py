@@ -217,7 +217,7 @@ def passes_then(run):
 
 def test_a_week_with_only_changes_the_owner_wont_see_opens_nothing(served):
     for repo in (served["own"], served["med"]):
-        git(repo, "commit", "-q", "--allow-empty", "-m", "Tidy the helpers")  # no `Refinement:` line: nothing for the owner
+        git(repo, "commit", "-q", "--allow-empty", "-m", "Tidy the helpers\n\nRefinement: none: the helpers are tidier")
     run, calls = writer()
     lines = refine.run(runner=passes_then(run))
     assert calls == [] and not (served["data"] / "refine/digests").exists()

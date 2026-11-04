@@ -1,4 +1,4 @@
-"""The event store in a domain repo (docs/data-model.md, docs/writing.md): one markdown file per event under events/,
+"""The event store in a domain repo (docs/data-model.md): one markdown file per event under events/,
 never edited, and every link as one line of events/links.jsonl, only ever appended to; threads as files.
 """
 import contextlib

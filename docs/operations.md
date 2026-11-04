@@ -26,6 +26,14 @@ A timed job is a launchd job on macOS and a systemd user timer on Linux, WSL2 in
 
 `[daily]` in the config sets `box` (an ssh host), `engram` (that box's checkout, `~/repos/engram` by default) and `copy`, pairs of a local folder an area can't fetch again and where it lands under the box's data folder; the session files, usage logs, summaries, the data folder's `moved/` (where moved records lived) and engram's `local/` notes are copied without being listed. Summaries of sessions Claude Code has since cleaned up read the box's session mirror.
 
+## The archive
+
+A versioned copy of untracked data an area can't fetch again, kept on a second box with no index (`src/engram/archive.py`, `engram archive ingest --backup`), its mirror set by `[archive] mirror` in that box's config:
+- **Store JSONL:** one row per distinct line, by sha256. A rewritten file keeps every line it ever had.
+- **Other files:** one artifact per distinct content, plus the paths it was seen at.
+- **`file_state`:** lets an unchanged file be skipped.
+- **Backups:** SQLite online backups, keeping 7.
+
 ## The release
 
 `~/.local/bin/engram` is installed from `~/.local/share/engram/release`, a clone of engram checked out at a tag, so merges to `main` don't reach the hourly job. What runs is that tag plus the pack commit each domain's config pins (`[domains.<name>] pack`); the two move together, and only after the frozen gate ([evaluation](evaluation.md#the-frozen-gate)) says "same" on both. Development runs `uv run engram` inside a worktree, never in the release clone or the main checkout, and on a scratch copy of the data folder ([technical](technical.md#scratch-copies)): its searches refresh the index they read.

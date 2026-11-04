@@ -40,6 +40,35 @@ CREATE TABLE ingest_state (source TEXT, key TEXT, watermark TEXT, prefix_sha256 
 - **Ways in** (`sources/waysin.py`, built at ingest from what the record already lists, with no model call): each person, tracked thing, test, theory node and recurring thread is a key, with the phrases that name it and the records it lights: records it wrote or that mention it, its series or file, the evidence links on it. The record's `engram.toml` says where each kind comes from (`[ways.<kind>]`, and `say` and `roles` on each person). A phrase is at most four words, matched whole, the longest winning; a dosage form alone names nothing. A role names a person in a question, but a record using the word isn't counted as mentioning them, and a role shared by several people isn't listed. Ways in add rows without voting on threads.
 - **Private configuration:** the ways in and the people list name real people and things, so they live in the record's `engram.toml`, never in this repo.
 
+### The connector contract
+
+Every source is a `pull(state) -> Iterable[Row]` with a declared freshness. Each source must be:
+- **Idempotent.** A rerun inserts nothing. Row identity depends on the source: an entry by its id, a document by its path plus the commit, a session's summary by its session, a store record by the store's own key, an immutable file by its sha256.
+- **Incremental.** Watermarks live in `ingest_state`.
+- **Watchful.** If an append-only file's earlier bytes change, it's re-ingested as a new version, and `engram health` counts it.
+- **Isolated.** A failing source records its error, and the others continue.
+- **Quoted.** Results come back as quoted data. Text is indexed as written: nothing masks a secret.
+- **Loud when failing.** Every search header gives each domain's last ingest and names a source whose last read failed ("errors in <source>"); `engram health` gives its error.
+
+### The sources
+
+| Source | Reads | Index file |
+|---|---|---|
+| a domain's repo | its working tree: entries, threads, documents (a compiled area's wiki pages among them), minus its excludes; a folder outside git is searched too, every file but hidden ones, with no history | that domain |
+| `events` | each entry as itself, with its links: a handed-over source by its text, a kept file never | that domain |
+| `sessions` | `~/.claude/projects/*/*.jsonl`, through their checked summaries only | by classification |
+| a pack's sources | what its reader reads: rows the area's own tools keep, or text outside git, some only on request | that domain |
+
+### Session classification
+
+Each session goes to exactly one index file: the repo it was started in (an owner's decision, in the private `.engram/README.md`).
+1. **The first configured domain** whose repo it was started in, a folder below it, or a worktree of it. Claude Code names a session's project folder after the folder it started in, so that name is the test; the session's first working folder is the fallback. A domain's `sessions_from` adds folders a harness starts its own runs in; those count as launched by a program.
+2. **general** otherwise, searched only on request. Touching a repo's files from elsewhere doesn't count: a meta session carries far too much context to sit in a record's index.
+
+- **Skipped:** title-generator sessions, and sessions that touched `~/.local/share/engram/eval/`, along with their subagents: they build or review the question sets and hold the answer keys, so indexing them would let a test run read the keys back.
+- **A classifier change refiles every known session** on the next ingest.
+- **No session turn is indexed,** nor a spilled `tool-results/` file: a session is searched through its checked summary ([summaries](summaries.md)).
+
 ## The query
 
 1. Terms are joined with OR (`"t1" OR "t2"`), so tokens like `L4/L5` stay valid. A quoted query stays an exact phrase.

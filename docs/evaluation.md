@@ -31,7 +31,7 @@ How retrieval is measured. The sets are an alarm run by script, never a target: 
 5. The set is frozen as a version, and a third is sealed as held-out. Nobody looks at the held-out third while tuning, and it runs only at the gate.
    - The split comes from `evalset.seal`: a seeded hash over each thread and kind (or each topic, with `by_kind` off), so nobody picks. Questions that share an answer (`together`) are sealed on the same side.
    - The tuning set is `<domain>-v<N>.toml`. The held-out set, the drafts, the reviews and the generator's work go in `eval/sealed/`, read-only.
-   - Sessions that touch the eval directory are never indexed ([sources](sources.md)).
+   - Sessions that touch the eval directory are never indexed ([search](search.md#session-classification)).
 
 ## The bar: 100%
 

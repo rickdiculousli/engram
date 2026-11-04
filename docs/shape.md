@@ -43,6 +43,12 @@ The layout every record takes in engram, and the lessons learned getting real re
 - **Each repo searches only itself;** across repos only when asked.
 - **The whole theory graph is one call** when asked for, as text or a diagram.
 
+## How Claude calls engram
+
+- **The repo's AGENTS.md gets two sections, from `skills/engram-rewire/agents.md`:** one on search, which names the command for each kind of ask (`search`, `timeline`, `show`, `now`, `theory`), puts the repo's own record first, makes a hit from another domain a lead, opened before it's stated, and saves whole documents the owner hands over as their own files, since facts from talk are filed by the hourly job; in a repo engram files for, it also says to read engram's output whole, one command per Bash call, which only that repo's widened Bash window holds; and the weekly refinement's. A compiled area's section also says how things are handed over (`engram source add`), that `wiki/` is the compiler's and how to put back a hand edit, that a draft's sources live in the wiki's source pages, and which other domain a post may search, whose hits are leads and never filed into it.
+- **Skills keep their judgment; only their finding and write steps change.**
+- **Session start reads local data only.**
+
 ## How new facts get in
 
 - **No manual judgments.** The owner talks; nothing is ever a list for them to approve.

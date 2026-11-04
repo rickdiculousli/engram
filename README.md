@@ -192,18 +192,16 @@ uv run engram search "when did the basil bolt" --domain notes
 ## Docs
 
 **Start here:**
-- [data model](docs/data-model.md): what's on disk: entries, documents, threads, links
-- [search](docs/search.md): how one call returns a whole history, corrections included
+- [data model](docs/data-model.md): what's on disk: entries, documents, threads, links; the library, transactions, the pre-commit
+- [search](docs/search.md): what gets indexed, sessions, and how one call returns a whole history, corrections included
 - [alternatives](docs/alternatives.md): why SQLite FTS5, no embeddings, no graph database, with measurements
 
 **Bringing a repo in:**
-- [shape](docs/shape.md): the layout every record follows, packs, rewiring
+- [shape](docs/shape.md): the layout every record follows, how Claude calls engram, packs, rewiring
 - [migration](docs/migration.md): how a repo changes shape: on a copy first, you see your pages before and after
-- [sources](docs/sources.md): what gets indexed, sessions, the archive
 
 **Running it:**
-- [operations](docs/operations.md): where things live, the jobs, releases, health
-- [writing](docs/writing.md): the library, transactions, checks, how Claude calls engram
+- [operations](docs/operations.md): where things live, the jobs, the archive, releases, health
 - [summaries](docs/summaries.md): who-said-what rules, session and record summaries
 
 **Why, and how it's measured:**

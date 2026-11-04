@@ -89,3 +89,37 @@ rels = ["strengthens", "weakens", "supersedes"]
 ```
 
 The same file holds the index's settings (`[index]`, `[weights]`, `[lenses.*]`, `[ways.*]`, `[people.*]`, `[asks.*]`, `[synonyms]`, `[folders]`, `[timeline]`, `[nodes]`, `[review]`; see [search](search.md)), and what the last rewiring settled ([shape](shape.md#rewiring-a-repo)): `[rewire]` with the jobs it answers (`at`, the id of the names and quotes in `.engram/README.md`'s Jobs section), its kinds of ask (`[[rewire.asks]]`: `kind`, `axis`, `piece`, `jobs`, `turns`) and each copy's one home (`[rewire.homes]`, a folder or file and why), and `[departures]`, each canon anchor the repo departs from with its reason. A compiled area adds `[wiki]` ([above](#sources-sparks-and-the-wiki)). `[refine] paused` stops the weekly pass in the repo. `examples/notes/.engram/engram.toml` is the smallest working one.
+
+## The library
+
+engram is a Python package (3.12 or later, stdlib `sqlite3`, PyYAML), installed as a tool. A record repo uses the command line; its own tools may import the library.
+
+```python
+from engram.store import Store
+
+st = Store("examples/notes")
+with st.transaction():                   # one lock, the adds, one commit of exactly those paths
+    st.add({"kind": "observation", "date": "2026-10-13", "about": ["story/frost"], "title": "..."}, "...")
+st.events(kind="observation", about="story/frost")
+```
+
+## A transaction
+
+1. Take an exclusive `flock` on `<repo>/.git/engram.lock`.
+2. Write each entry to a temporary file, then rename it into place.
+3. `git commit --only` those paths, so anything else that's staged stays out.
+4. Release the lock; the next search's refresh takes the entries into the index.
+5. Push, outside the lock.
+
+If the commit fails (a refusing pre-commit, say), the transaction's new files are deleted, links.jsonl is cut back to its old length, and a tracked file it rewrote is put back, before it raises.
+
+## Pushing
+
+- **Normal case:** push after every commit.
+- **Rejected push:** fetch and rebase. Entry files can't conflict, because every one is a new path.
+- **A document conflicts:** stop. The rebase is left for the owner, and both the command output and `engram health` report it.
+- **A failed push** is recorded and retried hourly ([technical](technical.md#the-filer)).
+
+## The pre-commit
+
+A set-up repo's core.hooksPath points at a tracked `.engram/hooks/` whose pre-commit runs `engram lint --staged` (entry files append-only, links.jsonl and docs.jsonl append-only, the node list may only lose rows; a moved or deleted document, or a renamed or removed heading, that a link points at needs its new home in docs.jsonl, and any move git sees of a document with an id is recorded there; `wiki/` changes only in the compiler's commits, and wiki syntax stays out of the folders `[wiki] plain` names) and `engram rewire check --drift` (the commit leaves the jobs the ones `[rewire] at` names, and homes every copy it brings), after any pre-commit the repo had. This hook is the real enforcement.

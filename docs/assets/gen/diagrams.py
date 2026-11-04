@@ -372,13 +372,13 @@ def evolve():
               *change, *cap]
         if i < 3:
             b.append(P(f"M{ox + W + 1} 137 H{ox + 235}", "ln"))
-    b.append(T(16, 304, "small and undoable → saves itself · bigger, or losing anything you asked for → asks you "
-                        "at your next session", "s mu"))
+    b.append(T(16, 304, "small and undoable → saves itself · bigger, or losing anything you asked for → waits for "
+                        "your yes on the week's page in your browser", "s mu"))
     return svg("engram: the weekly pass", 960, 320,
                "Every week, once you turn it on, engram tidies your graph. Week 1: as rewired. Week 2: a record regrouped, saved "
                "by itself. Week 3: new knowledge, linked, saved by itself. Week 4: dropping a group you asked "
                "for is a bigger change, so it asks you first. Small and undoable changes save themselves; bigger ones, "
-               "or losing anything you asked for, are asked at your next session.", b)
+               "or losing anything you asked for, wait for your yes on the week's page, which opens in your browser.", b)
 
 
 # --- what a record is made of ------------------------------------------------------------------------------------------

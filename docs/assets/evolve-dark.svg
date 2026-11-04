@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 320" width="960" height="320" class="dark" role="img" aria-label="Every week, once you turn it on, engram tidies your graph. Week 1: as rewired. Week 2: a record regrouped, saved by itself. Week 3: new knowledge, linked, saved by itself. Week 4: dropping a group you asked for is a bigger change, so it asks you first. Small and undoable changes save themselves; bigger ones, or losing anything you asked for, are asked at your next session.">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 320" width="960" height="320" class="dark" role="img" aria-label="Every week, once you turn it on, engram tidies your graph. Week 1: as rewired. Week 2: a record regrouped, saved by itself. Week 3: new knowledge, linked, saved by itself. Week 4: dropping a group you asked for is a bigger change, so it asks you first. Small and undoable changes save themselves; bigger ones, or losing anything you asked for, wait for your yes on the week's page, which opens in your browser.">
 <title>engram: the weekly pass</title>
 <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker><marker id="aho" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker></defs>
 <style>
@@ -107,5 +107,5 @@ text{fill:var(--fg);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Not
 <text x="790" y="112" class="s b or" text-anchor="middle">?</text>
 <text x="726" y="248" class="s b or">drop a group you asked for?</text>
 <text x="726" y="268" class="s b or">? asks you first</text>
-<text x="16" y="304" class="s mu">small and undoable → saves itself · bigger, or losing anything you asked for → asks you at your next session</text>
+<text x="16" y="304" class="s mu">small and undoable → saves itself · bigger, or losing anything you asked for → waits for your yes on the week's page in your browser</text>
 </svg>

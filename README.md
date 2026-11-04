@@ -139,7 +139,7 @@ Off until `engram refine install`. Then every week `engram refine` tunes engram 
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/evolve-dark.svg">
     <source media="(prefers-color-scheme: light)" srcset="docs/assets/evolve-light.svg">
-    <img alt="Every week, once you turn it on, engram tidies your graph. Week 1: as rewired. Week 2: a record regrouped, saved by itself. Week 3: new knowledge, linked, saved by itself. Week 4: dropping a group you asked for is a bigger change, so it asks you first. Small and undoable changes save themselves; bigger ones, or losing anything you asked for, are asked at your next session." src="docs/assets/evolve-light.svg" width="100%">
+    <img alt="Every week, once you turn it on, engram tidies your graph. Week 1: as rewired. Week 2: a record regrouped, saved by itself. Week 3: new knowledge, linked, saved by itself. Week 4: dropping a group you asked for is a bigger change, so it asks you first. Small and undoable changes save themselves; bigger ones, or losing anything you asked for, wait for your yes on the week's page, which opens in your browser." src="docs/assets/evolve-light.svg" width="100%">
   </picture>
 </p>
 
@@ -177,14 +177,15 @@ Needs git, Python 3.12+ and [uv](https://docs.astral.sh/uv/).
 ```sh
 git clone https://github.com/rickdiculousli/engram.git && cd engram
 uv sync
-export ENGRAM_CONFIG=examples/config.toml
+export ENGRAM_CONFIG=examples/config.toml ENGRAM_SESSIONS_ROOT=examples/sessions ENGRAM_DATA="$(mktemp -d)"
 uv run engram ingest
 uv run engram timeline "what happened with the north bed this season?" --domain notes
 uv run engram search "when did the basil bolt" --domain notes
 ```
 
 - `examples/config.toml`: the made-up garden's config, laid over yours for this shell only; your own is `~/.config/engram/config.toml`
-- Your own notes: add `[domains.<name>]` with `repo = "<folder>"` to your config, then `uv run engram ingest` and `uv run engram search "<something you wrote>" --domain <name>`
+- `ENGRAM_SESSIONS_ROOT`, `ENGRAM_DATA`: this shell reads only the garden's made-up Claude Code sessions, not every one on your machine, and keeps its index in a throwaway folder, not `~/.local/share/engram/`
+- Your own notes, in a new shell: add `[domains.<name>]` with `repo = "<folder>"` to your config, then `uv run engram ingest` and `uv run engram search "<something you wrote>" --domain <name>`
 - `uv tool install -e .` → `engram` on your PATH; inside a folder you added, drop `--domain`
 - `engram setup <repo>` → hourly filing for a rewired repo, and lets Claude run engram there: launchd on macOS, systemd timers on Linux and WSL2 ([operations](docs/operations.md#jobs))
 

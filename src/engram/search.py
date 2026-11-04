@@ -9,11 +9,11 @@ from fnmatch import fnmatchcase
 from engram import config
 from engram.index import open_index
 from engram.paths import index_path, record_conf, record_toml
+from engram.sources.events import ID
 
 TERM = re.compile(r"[\w][\w./+%:-]*[\w%]|[\w]", re.UNICODE)
 NOW = re.compile(r"\b(now|current|currently|these days|lately|right now|still|am i (on|taking|using)|what am i|who is my|who's my)\b", re.I)
 RRF_K = 60
-ENTRY = re.compile(r"^\d{8}-\d{6}-[\w-]+-[0-9a-f]{4}(?=$|#)")
 PERSON = 1.3  # a record lit by a person the question names, by name or role ("did the massage therapist say…")
 
 
@@ -129,7 +129,7 @@ def search_domain(domain: str, q: str, limit: int, after: str | None = None,
     seen, kept, per_file = set(), [], {}
     for r in out:
         key = r.pop("parent") or r["ref"]
-        if ENTRY.match(key):  # an entry is one item (one visit, one test): its sections are one hit under its id
+        if ID.match(key):  # an entry is one item (one visit, one test): its sections are one hit under its id
             key = key.partition("#")[0]
         if key in seen:
             continue
@@ -281,13 +281,12 @@ def idx_path_of(domain: str):
     return index_path(domain)
 
 
-# Neighbours shown per hit beside the listed and fixed ones, and how many steps out they're drawn from. Measured in
-# replay as records found against characters printed: a second step took every link
-# found from 45 to 52 of 75 questions; neighbours' opening words cost 40% of the output and found nothing more, which
-# paid for 8 neighbours instead of 5 (53 → 58, a third less printed); past 8 the gains flatten, and a third step adds none.
+# Neighbours shown per hit beside the listed and fixed ones, and how many steps out they're drawn from, as measured in
+# replay (records found against characters printed): past these the gains flatten, and a third step adds none. A
+# neighbour shows its headline only: its opening words cost output and found nothing more.
 PER_HIT, DEPTH = 8, 2
 PER_FILE = 2  # sections of one document among a search's results
-LEAD, SNIP, ARC_MAX = 0, 14, 0  # a neighbour's opening characters (0: none), a hit's excerpt in words, arc steps listed (0: all)
+SNIP = 14  # a hit's excerpt in words
 STEP_RELS = ("led-to", "strengthens", "weakens")  # what a second step follows: story steps and theory, not page lists
 REL = {("timeline", "out"): "led to", ("timeline", "in"): "led from", ("evidence", "out"): "bears on",
        ("evidence", "in"): "evidence for it"}
@@ -304,18 +303,6 @@ def _excluded(source: str, ref: str = "") -> bool:
         if source.startswith(x) or (x.startswith("sessions:") and ref.startswith("session:" + x.split(":")[1] + ":")):
             return True
     return False
-
-
-def _lead(body: str, width: int | None = None) -> str:
-    """A record's opening words, verbatim: the level of detail a neighbour arrives at, so a step can be read without opening it. Exact values still come from the record itself."""
-    width = LEAD if width is None else width
-    if not width:
-        return ""
-    lines = body.splitlines()
-    while lines and (not lines[0].strip() or lines[0].lstrip().startswith("#")):  # the heading is already the title
-        lines.pop(0)
-    text = " ".join(" ".join(lines).split())
-    return text if len(text) <= width else text[:width].rsplit(" ", 1)[0] + " …"
 
 
 def _surround(path, rows: list[dict], q: str = "", per_hit: int | None = None, weights: dict | None = None):
@@ -355,10 +342,9 @@ def _surround(path, rows: list[dict], q: str = "", per_hit: int | None = None, w
                 if any(_excluded(x[2], ref) for x in rows_):
                     continue
                 title = rows_[0][0] if rows_ else ref
-                lead = _lead(rows_[0][1]) if rows_ else ""
                 if rel in FIXED:  # a flag shows first at both ends: on what was outdated, and on what outdated it
                     fixed.insert(0, {"rel": FIXED[rel][way != "in"], "ref": ref, "story": story,
-                                     "title": f"{title} — {why}" if why else title, "lead": lead})
+                                     "title": f"{title} — {why}" if why else title})
                     continue
                 if rel in LISTED:
                     n = {"rel": LISTED[rel][way == "in"], "ref": ref, "story": story, "title": title}
@@ -366,7 +352,7 @@ def _surround(path, rows: list[dict], q: str = "", per_hit: int | None = None, w
                         if rel == "arc-step":
                             timeline.append((ev or "", {**n, "title": why or title}))
                         else:
-                            timeline.append(((rows_[0][3] if rows_ else None) or "9999", {**n, "lead": lead}))
+                            timeline.append(((rows_[0][3] if rows_ else None) or "9999", n))
                         continue
                     fixed.append(n)  # a listed record always shows the page it's on
                     continue
@@ -380,13 +366,10 @@ def _surround(path, rows: list[dict], q: str = "", per_hit: int | None = None, w
                 if way == "far":
                     overlap *= 0.5
                 scored.append((-overlap, fam != "timeline", {"rel": "two steps on" if way == "far" else REL[(fam, way)], "ref": ref,
-                                                             "story": story, "title": title, "lead": lead}))
+                                                             "story": story, "title": title}))
             scored.sort(key=lambda x: (x[0], x[1]))
             fixed.sort(key=lambda n: n["rel"] not in {x for v in FIXED.values() for x in v})
             listed = sorted(timeline, key=lambda x: x[0])
-            if ARC_MAX and len(listed) > ARC_MAX:  # the steps sharing the most words with the query, kept in order
-                keep = sorted(range(len(listed)), key=lambda i: -sum(w in listed[i][1]["title"].lower() for w in words))[:ARC_MAX]
-                listed = [listed[i] for i in sorted(keep)]
             pick = fixed + [n for _, n in listed] + [n for *_, n in scored[:per_hit]]
             pick = [n for n in pick if (n["ref"] not in shown and norm(n["ref"]) not in shown) or n["rel"] in {v[0] for v in LISTED.values()}]
             shown |= {n["ref"] for n in pick}

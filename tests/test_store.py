@@ -187,8 +187,7 @@ def test_links_reach_theory_sections_and_the_query_picks_among_them(repo, env, c
     search._surround(index_path("medical"), [top], "why the guarding")
     assert [n["rel"] for n in top["surroundings"]][:2] == ["outdates", "bears on"]  # the flag shows at its other end too
     assert top["surroundings"][1] == {"rel": "bears on", "ref": "evidence/D01-soreness.md#Mechanism", "story": "",
-                                      "title": "evidence/D01-soreness.md › D01 — Soreness › Mechanism", "lead": ""}
-    assert search._lead("## Mechanism\nJoint guarding after the fitting.", 240) == "Joint guarding after the fitting."  # verbatim, heading dropped
+                                      "title": "evidence/D01-soreness.md › D01 — Soreness › Mechanism"}
     capsys.readouterr()
     main(["show", "../evidence/D01-soreness.md#mechanism"])  # a page's link: relative, with GitHub's anchor
     assert "Joint guarding" in capsys.readouterr().out

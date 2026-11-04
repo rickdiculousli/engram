@@ -112,7 +112,8 @@ def docs_for(d: Domain) -> list[Doc]:
     return out
 
 
-ID = re.compile(r"^\d{8}-\d{6}-[\w-]+-[0-9a-f]{4}(?=$|[#@~])")
+# An entry's id, its date the group: the ref of an entry, `<id>#<heading>` of a section in it.
+ID = re.compile(r"^(\d{8})-\d{6}-[\w-]+-[0-9a-f]{4}(?=$|[#@~])")
 
 
 def is_event_ref(ref: str) -> bool:

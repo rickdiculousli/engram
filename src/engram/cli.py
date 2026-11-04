@@ -158,8 +158,6 @@ def render(results: list[dict], explain: bool = False) -> str:
         out += [f"   {l}" for l in (r.get("unit") or {}).get("text", [])]
         for n in r.get("surroundings", []):
             out.append(f"   {n['rel']} ({n['story']}): {n['title']}  ref: {n['ref']}")
-            if n.get("lead"):
-                out.append(f"      {n['lead']}")
         if explain:
             out.append(f"   score {r['score']}: " + ", ".join(f"{k} {v}" for k, v in r["factors"].items()))
     return "\n".join(out)

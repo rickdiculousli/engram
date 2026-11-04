@@ -16,16 +16,16 @@ import re
 from dataclasses import dataclass, field
 
 from engram import labels
+from engram.sources.events import ID
 
 CHAIN = ("revises", "supersedes", "disagrees")
 CAP = 6  # versions shown, the current one included
 NOTE = 50  # characters of a link's note on a version's line (docs/search.md, "A fact and its corrections")
-ENTRY = re.compile(r"^(\d{8})-\d{6}-[\w-]+-[0-9a-f]{4}(?=$|#)")
 
 
 def norm(ref: str) -> str:
     """The record a ref is: an entry's section is the entry."""
-    m = ENTRY.match(ref)
+    m = ID.match(ref)
     return m.group(0) if m else ref
 
 
@@ -88,7 +88,7 @@ def _doc(db, ref: str):
 
 def said_on(ref: str, date_key: str | None) -> str | None:
     """When a version was said, YYYY-MM-DD: an entry when it was written (its id), a document by its date."""
-    if m := ENTRY.match(ref):
+    if m := ID.match(ref):
         d = m.group(1)
         return f"{d[:4]}-{d[4:6]}-{d[6:]}"
     if date_key and len(date_key) >= 8 and date_key[:8].isdigit():

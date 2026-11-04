@@ -264,16 +264,19 @@ def cmd_show(a):
         idx = open_index(index_path(d), readonly=True)
         ref = _registered(d, a.ref)
         row, near = idx.resolve(ref) if idx else (None, [])
-        if near and "#" not in ref:  # a whole document, by its path or id: whole if it fits the window, else its sections
+        if near and "#" not in ref:  # a whole document, by its path or id
             row = idx.whole(near[0]["ref"].partition("#")[0])
-            row, near, long = (row, [], long) if len(row["body"]) <= WINDOW else (None, near, True)
+        if row:
+            who = labels.who(row.get("author", ""), search.labels_people(d))
+            head = (f"{row['title']}\nref: {row['ref']}\nfrom: {row['pointer']}" + (f"\nby: {who}" if who else "")
+                    + (f"\n{config.voice(labels.KEY)}" if labels.coded(who) else "") + "\n")
+            if "#" not in row["ref"] and not a.as_of and len(f"{head}\n{row['body']}\n") > WINDOW:  # past the window: its sections
+                row, near, long = None, idx.resolve(row["ref"])[1], True
         if idx:
             idx.close()
         if row:
             usage.log_open(d, row["ref"], a.search)
-            who = labels.who(row.get("author", ""), search.labels_people(d))
-            print(f"{row['title']}\nref: {row['ref']}\nfrom: {row['pointer']}" + (f"\nby: {who}" if who else "")
-                  + (f"\n{config.voice(labels.KEY)}" if labels.coded(who) else "") + "\n")
+            print(head)
             if a.as_of:  # as it stood then, from git: its own file, or the old home it moved from
                 from engram import asof
                 repo = config.load()[d].repo
@@ -288,8 +291,11 @@ def cmd_show(a):
     if choices:
         print(f"{a.ref!r} is past the {WINDOW:,} characters show prints whole; its sections:" if long
               else f"no section {a.ref!r}; the sections of that file:")
-        for r in choices:
-            print(f"- {r['title'].rsplit(' › ', 1)[-1]}\n  ref: {r['ref']}")
+        secs = {}
+        for r in choices:  # a long section's chunks, once
+            secs.setdefault(r.get("parent") or r["ref"], r["title"].rsplit(" › ", 1)[-1])
+        for sec, title in secs.items():
+            print(f"- {title}\n  ref: {sec}")
         return
     sys.exit(f"engram: no record {a.ref!r} in {', '.join(domains)}")
 

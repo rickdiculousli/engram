@@ -1278,7 +1278,7 @@ def session_start(payload: dict) -> str:
     out = [f"engram capture needs fixing ({'; '.join(bad)}): run `engram capture status` and tell {config.owner()} in one line."] if bad else []
     if copy := daily.stalled():  # not capture's: its own line, so it never reads as capture broken
         out.append(f"engram's daily copy {copy}: run `engram health` and tell {config.owner()} in one line.")
-    if setup.WINDOW_KEY in setup.settings(found[1]):  # only a widened window holds a long timeline whole
+    if isinstance(w := setup.settings(found[1]).get(setup.WINDOW_KEY), int) and w >= setup.BASH_BUDGET:  # only a window that wide holds a long timeline whole
         out.append(READ_WHOLE)
     picture, after = "", []
     if (record_conf(found[1]).get("index") or {}).get("events"):

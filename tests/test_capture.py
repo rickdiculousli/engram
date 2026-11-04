@@ -212,6 +212,7 @@ def test_a_repos_own_bash_window_is_kept_and_left_at_teardown(world):
     man = json.loads(capture.db().execute("SELECT setup FROM repo").fetchone()[0])
     assert json.loads(sp.read_text())["bashOutputMaxChars"] == 20000 and not man["added_window"]
     assert setup.missing(repo, man) == {}  # in place at its own value: not rewritten every hour
+    assert capture.READ_WHOLE not in capture.session_start(world["payload"])  # too narrow to hold engram's output whole
     setup.teardown(repo)
     assert sp.read_text() == mine
 

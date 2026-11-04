@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from pathlib import Path
 
-from engram import config, dates, pack
+from engram import config, dates, pack, units
 from engram.index import Doc
 from engram.store import Store
 
@@ -198,7 +198,7 @@ def _chain(st: Store, today: date | None = None) -> list[Current]:
     today = today or date.today()
     cur = spec(st)
     chains: dict[str, list] = {}
-    corrected = {str(e.fm.get("to")) for e in st.events(kind="link") if e.fm.get("rel") in ("revises", "supersedes")}
+    corrected = units.corrected(st)
     for e in _entities(st, cur):
         chains.setdefault(chain_id(e, cur), []).append(e)
     for e in st.events(kind="status") if cur.threads else []:

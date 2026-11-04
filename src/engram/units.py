@@ -23,6 +23,12 @@ CAP = 6  # versions shown, the current one included
 NOTE = 50  # characters of a link's note on a version's line (docs/search.md, "A fact and its corrections")
 
 
+def corrected(st) -> set[str]:
+    """The entries something revises or supersedes, by id; an entry not among them heads its chain (its current
+    version)."""
+    return {norm(str(e.fm.get("to"))) for e in st.events(kind="link") if e.fm.get("rel") in CHAIN[:2]}
+
+
 def norm(ref: str) -> str:
     """The record a ref is: an entry's section is the entry."""
     m = ID.match(ref)

@@ -45,7 +45,7 @@ from collections import Counter
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-from engram import commitmsg, config, dates, llm, pack, periods, recsum, store, summarize, verbatim
+from engram import commitmsg, config, dates, llm, pack, periods, recsum, store, summarize, units, verbatim
 from engram import now as now_mod
 from engram import theory as theory_mod
 from engram.paths import data_path, record_conf, record_toml
@@ -376,6 +376,16 @@ MONTH_NAME = re.compile(_MONTH, re.I)
 DATE_TOKEN = re.compile(r"\b\d{1,4}(?:[-/]\d{1,2}){1,2}(?:[-/]\d{2,4})?\b")
 PAST = re.compile(r"\b(last time|the time before|before that|the other day|previously|back then|used to|ago)\b", re.I)
 WEEKDAY = re.compile(r"\b(" + "|".join(WEEKDAYS) + r")\b", re.I)
+# an age, in explicit age context only (a bare "at 3" or "2-3" never is), its number ending the phrase ("when I was 12",
+# "ages 12-14", "when I was twelve, I…", "in my teens"; never "when I was 5 minutes into the run")
+AGES = {w: n for n, w in enumerate("zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen "
+                                   "fifteen sixteen seventeen eighteen nineteen".split())}
+TENS = {w: 10 * n for n, w in enumerate("twenty thirty forty fifty sixty seventy eighty ninety".split(), 2)}
+_A = rf"(\d{{1,2}}|(?:{'|'.join(TENS)})(?:[- ](?:one|two|three|four|five|six|seven|eight|nine)\b)?|" + \
+    "|".join(sorted(AGES, key=len, reverse=True)) + ")"  # "twenty-five" is one age
+AGE = re.compile(r"\b(?:(?:when I was|at age|at the age of|aged|ages)\s+" + _A + r"(?:\s*(?:-|–|to)\s*" + _A + r")?"
+                 r"(?:\s+(?:years?|yrs?)\s+old)?|at " + _A + r"\s+(?:years?|yrs?)\s+old|in my teens|adolescence)"
+                 r"(?=\s*(?:$|[^\w\s]|(?:and|but|or|so|then|when|while|because|i|we|my|he|she|it|they)\b))", re.I)
 
 
 def month_days(words: str) -> list[tuple[int, int, int | None]]:
@@ -426,7 +436,22 @@ def said_date(value: str, words: str, said_on: str | None) -> bool:
         ("last year" in low and int(value) == day.year - 1)
 
 
-def full_date(fact: dict, said_on: str, words: str | None = None) -> tuple[str, bool, dict]:
+def landmarks(st: store.Store) -> dict[str, str]:
+    """Each landmark's date (slug → date), from the firm entries (a date, no `approx`, no ends) that head their chains:
+    nothing revises or supersedes them. A restated date inside the other's span agrees, and the finer wins; two dates
+    that don't agree date nothing."""
+    out, gone = {}, units.corrected(st)
+    for e in st.events():
+        d = str(e.date)
+        if not (slug := e.fm.get("landmark")) or e.id in gone or e.fm.get("approx") or e.fm.get("range_to") or \
+                not (y := periods.span(d)) or (old := out.get(slug, d)) is None:
+            continue
+        x = periods.span(old)
+        out[slug] = d if x[0] <= y[0] and y[1] <= x[1] else old if y[0] <= x[0] and x[1] <= y[1] else None
+    return {k: v for k, v in out.items() if v}
+
+
+def full_date(fact: dict, said_on: str, words: str | None = None, birth: str | None = None) -> tuple[str, bool, dict]:
     """The fact's date, whether it's an estimate, and what code read of how he said it (`as_said`, and a span's
     `range_from` and `range_to`). Code's reading of his quote wins: one phrase it reads ("yesterday", "about six months
     ago", "last spring", "two or three weeks ago", or a day written with its year) gives the date, or a span's first day,
@@ -435,7 +460,9 @@ def full_date(fact: dict, said_on: str, words: str | None = None) -> tuple[str, 
     text is read when the quote holds none, but only his quote gives `as_said`. Else,
     given what he said (`words`: his message and what he was answering), a date that doesn't rest on it narrows to the
     month or year that does, else "never-said": the model counted a day he never gave (a "last time" or an "ago" code
-    can't count placed on a date, on the day he said it, or left not sure)."""
+    can't count placed on a date, on the day he said it, or left not sure). An age ("when I was 12") the model's date
+    doesn't rest on runs from that birthday of `birth` (the birth landmark's date) to the day before the next one past
+    it; without `birth`, or before that birthday, it's never-said, its words kept."""
     date, approx = str(fact.get("date") or "not-sure"), fact.get("approx") in (True, "true", "yes")
     if not dates.valid(date):
         date = "not-sure"
@@ -450,6 +477,16 @@ def full_date(fact: dict, said_on: str, words: str | None = None) -> tuple[str, 
             ({"range_from": a, "range_to": b} if a < b else {})
     if n > 1 and date == "not-sure":
         return "never-said", False, {}  # his words say when, more than one way, and the model didn't pick
+    if (m := AGE.search(quote)) and not (date != said_on and said_date(date, quote, said_on)):
+        if not (born := periods.span(birth)):
+            return "never-said", False, {"as_said": m[0]}
+        n = [int(x) if x.isdigit() else sum((AGES | TENS)[w] for w in re.split(r"[- ]", x.lower()))
+             for x in (m[1] or m[3], m[2] or m[1] or m[3]) if x]
+        lo, hi = sorted(n) or (12, 18)  # teens: his 12 to 18
+        a, b = _back(born[0], -lo, "year").isoformat(), (_back(born[1], -hi - 1, "year") - timedelta(days=1)).isoformat()
+        if a > said_on:  # not yet that old: not an age
+            return "never-said", False, {"as_said": m[0]}
+        return a, True, {"as_said": m[0], "range_from": a, "range_to": b}
     if words is not None and date in (said_on, "not-sure") and PAST.search(quote) and not found:
         return "never-said", False, {}  # a "last time" never happened the day he said it
     if words is None or date == "not-sure" or said_date(date, words, said_on):
@@ -535,10 +572,11 @@ def cut_title(text: str, limit: int = 120) -> str:
 
 
 def entry(fact: dict, said_on: str, stem: str, kinds: list[str], abouts: list[str], home: str,
-          words: str | None = None, cur: pack.Current = pack.NONE.current, other: str = "observation") -> tuple[dict, str]:
+          words: str | None = None, cur: pack.Current = pack.NONE.current, other: str = "observation",
+          birth: str | None = None) -> tuple[dict, str]:
     """The event front matter and body for a checked fact, in one of the kinds offered, else `other`. A date he never
     gave is filed as not sure, never guessed; a fact with no date and no past wording is filed at the day he said it."""
-    date, approx, said = full_date(fact, said_on, words)
+    date, approx, said = full_date(fact, said_on, words, birth)
     kind = fact.get("kind") if fact.get("kind") in kinds else other
     if kind == cur.entity_kind and (not fact.get("entity") or fact.get("status") not in cur.statuses):
         kind = other
@@ -906,7 +944,7 @@ def file_session(domain: str, root: Path, path: Path, ask=None, dry_run: bool = 
         already = [f"{e.date} {e.fm.get('title', '')}: {' '.join(e.body.split())[:200]}" for e in mine]
         already += [r[:300] for x in s.exchanges for r in x.ran if r.startswith("Bash:") and FILED.search(r)]
         when = {x.line: sessions._local_date(x.ts) or _now().date().isoformat() for x in s.exchanges}
-        stands = standing(st)
+        stands, birth = standing(st), landmarks(st).get("birth")
         stories, complaints = placement_shape(st)
         rels = list(st.config.get("links", {}).get("timeline", {}).get("rels") or [])
         reply, res["usd"] = ask(config.voice(p.prompts["file"]).format(domain=domain, upto=upto, kinds=", ".join(kinds), abouts=", ".join(abouts),
@@ -932,7 +970,7 @@ def file_session(domain: str, root: Path, path: Path, ask=None, dry_run: bool = 
             else:
                 fm, body = entry(f, when[int(f["line"])], path.stem, kinds, abouts, home,
                                  "\n".join([later[line], str(f.get("answering", ""))]), cur,
-                                 p.kinds[0] if p.kinds else "observation")
+                                 p.kinds[0] if p.kinds else "observation", birth)
                 if thing and fm["kind"] == cur.entity_kind:  # an existing chain: "Pataday" joins "Pataday 0.7%"
                     fm["thing"] = thing
                 where = place(f, fm, st, stories, complaints, rels, p.occurrence_kinds)

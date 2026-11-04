@@ -666,6 +666,52 @@ def test_the_verb_may_a_later_third_his_words_in_the_text_and_a_written_day_over
     assert filed("since Oct 1, and it ached yesterday", "2026-10-23")["date"] == "2026-10-23"
     assert filed("on the 3rd of September, about six months ago")["date"] == "not-sure"  # a not-sure model stays not sure
     assert when(filed("an hour or two ago it ached", SAID))[:2] == (SAID, None)
+def _landmarks(tmp_path, entries: list[dict], links: list[dict] = ()) -> dict:
+    (tmp_path / ".engram").mkdir(parents=True)
+    (tmp_path / ".engram/engram.toml").write_text('[domain]\nname = "medical"\ncommit = "none"\n')
+    st = store.Store(tmp_path)
+    for fm in entries:
+        st.add({"kind": "observation", "title": "x", **fm}, "- x\n")
+    for fm in links:
+        st.add({"kind": "link", "title": "corrected", "date": "2026-10-01", "family": "timeline", **fm}, "")
+    return capture.landmarks(store.Store(tmp_path))
+
+
+BORN = "1990-06-15"  # made up
+
+
+def test_a_landmark_is_dated_by_the_firm_entry_heading_its_chain(tmp_path):
+    born = {"id": "20261001-090000-observation-b0b0", "date": BORN, "landmark": "birth"}
+    assert _landmarks(tmp_path / "a", [born]) == {"birth": BORN}
+    assert _landmarks(tmp_path / "b", [{"date": "1990-06-01", "approx": "true", "landmark": "birth"}]) == {}  # a pinned memory isn't firm
+    assert _landmarks(tmp_path / "c", [born, {"date": "1991-02-03", "landmark": "birth"}]) == {}  # two unlinked dates: ambiguous
+    fix = {"id": "20261002-090000-observation-c1c1", "date": "1990-07-15", "landmark": "birth"}
+    assert _landmarks(tmp_path / "d", [born, fix], [{"from": fix["id"], "to": born["id"], "rel": "supersedes"}]) == {"birth": "1990-07-15"}
+    assert _landmarks(tmp_path / "e", [{"date": "1990-06", "landmark": "birth"}, born]) == {"birth": BORN}  # a month restating a day
+
+
+def test_an_age_is_years_from_the_birth_landmark_else_not_sure():
+    age = lambda quote, birth=BORN, model="not-sure": when(capture.entry(
+        {"text": "Knee ached", "quote": quote, "date": model}, SAID, "s1", ["observation"], [], "", quote, birth=birth)[0])
+    assert age("when I was 12 my knee ached") == ("2002-06-15", "true", "2002-06-15", "2003-06-14", "when I was 12")
+    assert age("it ached at age 12") == age("aged 12, it ached")[:4] + ("at age 12",)
+    assert age("ages 12-14 it ached")[2:4] == ("2002-06-15", "2005-06-14")
+    assert age("at 12 years old it ached")[2:4] == ("2002-06-15", "2003-06-14")
+    assert age("in my teens it ached")[2:4] == age("in adolescence it ached")[2:4] == ("2002-06-15", "2009-06-14")
+    assert age("when I was 12 my knee ached", birth=None) == ("not-sure", None, None, None, "when I was 12")
+    assert age("in 2004, when I was 12, it ached", model="2004")[:3] == ("2004", None, None)  # a firmer date wins
+    assert age("when I was twelve my knee ached")[2:] == ("2002-06-15", "2003-06-14", "when I was twelve")
+    assert age("when I was twenty-five, it ached")[2:] == ("2015-06-15", "2016-06-14", "when I was twenty-five")
+    for quote in ("ages 15-17 it ached", "when I was twenty-five, it ached", "ages 12 to 14 it ached", "ages 17-15 it ached",
+                  "aged twenty one, it ached", "in my teens it ached"):
+        assert age(quote)[2] <= age(quote)[3], quote  # ends always from <= to
+    assert age("when I was 12 I broke my arm")[2:4] == age("when I was 12, it ached")[2:4] == ("2002-06-15", "2003-06-14")
+    assert age("when I was 40 it will ache") == ("not-sure", None, None, None, "when I was 40")  # starts after it was said
+    for quote, model in (("I take it at 20 mg", SAID), ("2–3 times a day it aches", SAID), ("I woke at 3 with it", SAID),
+                         ("when I was 3 weeks in it ached", SAID), ("when I was 5 minutes into the run", SAID),
+                         ("when I was 2 years into treatment", SAID), ("when I was 10 km into the run", SAID),
+                         ("when I was 80 kg it ached", SAID)):
+        assert age(quote, model=model)[0] == SAID and "as_said" not in filed(quote, model), quote
 
 
 def test_a_two_ended_row_prints_both_ends(tmp_path, env):

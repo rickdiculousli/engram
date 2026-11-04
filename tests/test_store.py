@@ -94,6 +94,17 @@ def test_engram_add_commits_one_event(repo, monkeypatch, capsys):
     log = git(repo, "log", "--name-only", "--format=%s", "-1")
     assert log.startswith("engram: symptom 2026-03-06") and "events/2026/" in log
     assert git(repo, "status", "--porcelain").strip() == ""
+    main(["add", "--kind", "observation", "--date", "1990-06-15", "--title", "Born", "--by", "sam", "--landmark", "birth",
+          "--repo", str(repo)])  # a made-up birth date
+    from engram import capture
+    assert capture.landmarks(Store(repo)) == {"birth": "1990-06-15"}
+    from datetime import date
+    born = next(e.id for e in Store(repo).events() if e.fm.get("landmark"))
+    main(["add", "--kind", "observation", "--date", "1990-07-15", "--title", "Born", "--by", "sam", "--landmark", "birth",
+          "--supersedes", born, "--repo", str(repo)])  # a correction the chain reads re-dates the slug
+    assert capture.landmarks(Store(repo)) == {"birth": "1990-07-15"}
+    link = next(e for e in Store(repo).events(kind="link") if e.fm.get("to") == born)  # filed as `engram link` files it
+    assert (link.fm["rel"], link.body, link.fm["date"]) == ("supersedes", "corrected", date.today().isoformat())
     with pytest.raises(SystemExit):
         main(["add", "--kind", "symptom", "--date", "March", "--repo", str(repo)])
     with pytest.raises(SystemExit):

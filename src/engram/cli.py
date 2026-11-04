@@ -432,6 +432,9 @@ def _write(st: store.Store, fm: dict, body: str, ends=None):
             except docreg.MoveError as e:
                 sys.exit(f"engram: {e}")
         e = tx.add({**fm, "domain": st.config.get("domain", {}).get("name", "")}, body)
+        if fm.get("supersedes"):  # a correction is an entry plus its link, which chains read, filed as `engram link` files it
+            tx.add({**_link(st, e.id, "evidence:supersedes", fm["supersedes"], author=fm.get("author")),
+                    "domain": e.fm["domain"]}, "corrected")
     print(f"engram: added {e.id} ({e.kind} {e.date})")
 
 
@@ -445,7 +448,8 @@ def cmd_add(a):
     fm = {"title": a.title, "date": a.date, "date_note": a.date_note, "reported": a.reported,
           "approx": "true" if a.date_note and "approx" in a.date_note else "", "kind": a.kind,
           "about": [x.strip() for x in (a.about or "").split(",") if x.strip()], "by": a.by, "confidence": a.confidence,
-          "entity": a.entity, "status": a.status, "dose": a.dose, "supersedes": a.supersedes, "author": a.author}
+          "entity": a.entity, "status": a.status, "dose": a.dose, "supersedes": a.supersedes, "landmark": a.landmark,
+          "author": a.author}
     _write(st, fm, body)
 
 
@@ -458,29 +462,36 @@ def cmd_status(a):
 def cmd_link(a):
     from engram import docreg
     st = _repo(a)
-    family, _, rel = a.rel.partition(":")
+    reg = docreg.load(st.root)
+    _write(st, _link(st, a.source, a.rel, a.target, reg, a.date, a.weight, a.author), a.why,
+           ends=reg if reg else None)  # ids once the record keeps a registry (engram docs sync)
+
+
+def _link(st: store.Store, source: str, family_rel: str, target: str, reg=None, date: str | None = None,
+          weight: str | None = None, author: str = "claude") -> dict:
+    """A link's front matter as `engram link` files it, dated the day it's filed unless given: its rel one the record
+    allows, never a second copy of a filed link."""
+    family, _, rel = family_rel.partition(":")
     rels = st.config.get("links", {}).get(family, {}).get("rels")
     if rels and rel not in rels:
         sys.exit(f"engram: {family} links are {', '.join(rels)}")
-    reg = docreg.load(st.root)
 
     def now(x):  # where an end stands now, so an old path#Heading and its id end are the same link
         w = reg.resolve(x) if reg else None
         return w.ref if w else x
     same = next((e for e in st.events(kind="link") if (now(str(e.fm.get("from"))), now(str(e.fm.get("to"))), e.fm.get("family"),
-                 e.fm.get("rel")) == (now(a.source), now(a.target), family, rel)), None)
+                 e.fm.get("rel")) == (now(source), now(target), family, rel)), None)
     if same:  # links are append-only, so a second copy could never be taken back
         sys.exit(f"engram: that link is already filed ({same.id}): {same.body}")
     # what the link is about: the stories its ends sit on (an entry's own `about`), or the ends themselves where they
     # are things the record's `about` names (node/C, discovery/D01); record ids and document sections aren't `about` values
     prefixes = st.config.get("about", {}).get("prefixes")
-    ends = {e.id: e for e in st.events() if e.id in (a.source, a.target)}
-    about = [x for end in (a.source, a.target) for x in (ends[end].about if end in ends else [end])
+    ends = {e.id: e for e in st.events() if e.id in (source, target)}
+    about = [x for end in (source, target) for x in (ends[end].about if end in ends else [end])
              if not prefixes or x.split("/")[0] in prefixes]
-    fm = {"title": f"{a.source} {rel} {a.target}", "date": a.date or datetime.now().date().isoformat(), "kind": "link",
-          "about": list(dict.fromkeys(about)), "from": a.source, "to": a.target, "family": family, "rel": rel,
-          "weight": a.weight, "author": a.author}
-    _write(st, fm, a.why, ends=reg if reg else None)  # ids once the record keeps a registry (engram docs sync)
+    return {"title": f"{source} {rel} {target}", "date": date or datetime.now().date().isoformat(), "kind": "link",
+            "about": list(dict.fromkeys(about)), "from": source, "to": target, "family": family, "rel": rel,
+            "weight": weight, "author": author}
 
 
 def cmd_source(a):
@@ -854,6 +865,7 @@ def main(argv=None):
     s.add_argument("--status")
     s.add_argument("--dose")
     s.add_argument("--supersedes")
+    s.add_argument("--landmark", help="the life event this entry dates (a slug: birth)")
     s.add_argument("--author", default="claude")
     s.add_argument("--repo")
     s.set_defaults(fn=cmd_add)

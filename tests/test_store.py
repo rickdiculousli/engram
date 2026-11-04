@@ -469,6 +469,12 @@ def test_a_record_summary_reply_that_isnt_one_is_dropped_not_raised(env, monkeyp
             f.unlink()
         assert recsum.run("notes")["kept"] == 0  # cached as no summary, so the next hour doesn't pay for it again
         assert list(recsum._cache("notes").glob("*.json"))
+    good = {"text": "The dose went from 20mg to 10mg.", "quote": "dose reduced 20mg to 10mg"}
+    reply = json.dumps({"summaries": [{"id": "0", "sentences": [good]}]}) + " and {a note} after it"
+    monkeypatch.setattr(recsum, "_ask", lambda prompt, system: (reply, {"in": 1, "out": 1, "usd": 0.01}))
+    for f in recsum._cache("notes").glob("*.json"):
+        f.unlink()
+    assert recsum.run("notes")["kept"] == 1
 
 
 def test_a_consult_is_one_row_opened_whole(repo, env, capsys):

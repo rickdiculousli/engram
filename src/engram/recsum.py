@@ -101,9 +101,8 @@ def _ask(prompt: str, system: str = SYSTEM) -> tuple[str, dict]:
 def _summaries(reply: str) -> list[dict]:
     """The reply's summaries; a reply that isn't one gives none, so its records are cached without a summary rather than
     asked again every hour."""
-    m = re.search(r"\{.*\}", reply, re.S)
-    try:
-        got = json.loads(m.group(0)).get("summaries") if m else []
+    try:  # the first JSON object in it, whatever prose follows
+        got = json.JSONDecoder().raw_decode(reply, reply.index("{"))[0].get("summaries")
     except (ValueError, AttributeError):
         return []
     return [s for s in got if isinstance(s, dict)] if isinstance(got, list) else []

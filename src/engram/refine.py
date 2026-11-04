@@ -153,8 +153,7 @@ def _work() -> Path:
 
 def copy_data(to: Path):
     """The data folder's SQLite files (the value review's too), each through SQLite's backup (whole, while a writer
-    runs), and what a search reads beside them: the session and record summaries, when sessions were last read (else
-    the first search re-reads them), and the moved refs."""
+    runs), and what the index is re-read from beside them: the session and record summaries, and the moved refs."""
     to.mkdir(parents=True, exist_ok=True)
     for f in [*data_dir().glob("*.sqlite"), *data_dir().glob("review/*.sqlite")]:
         (to / f.relative_to(data_dir())).parent.mkdir(parents=True, exist_ok=True)
@@ -164,8 +163,6 @@ def copy_data(to: Path):
     for d in ("summaries", "record-summaries", "moved"):
         if data_path(d).is_dir():
             shutil.copytree(data_path(d), to / d, dirs_exist_ok=True)
-    if data_path("sessions-last.txt").exists():
-        shutil.copy2(data_path("sessions-last.txt"), to / "sessions-last.txt")
 
 
 def fenced(name: str, repo: Path, wk: str) -> dict:

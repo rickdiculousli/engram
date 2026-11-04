@@ -305,7 +305,8 @@ def freeze(pack: str):
         from engram.sources import sections
         _world(Path(work), pack)
         if " failed: " in (said := cli._ingest(D, sections)):  # else the gate would keep the untrimmed index
-            sys.exit(f"the gate's index wasn't re-read from the trimmed clone: {said}")
+            (GATE / "manifest.json").unlink()
+            sys.exit(f"the gate's index wasn't re-read from the trimmed clone, so it isn't frozen: {said}")
         src, dst = sqlite3.connect(index_path(D)), sqlite3.connect(data / f"{D}.sqlite")
         src.backup(dst)
         src.close(), dst.close()

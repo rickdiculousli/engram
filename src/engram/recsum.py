@@ -98,6 +98,17 @@ def _ask(prompt: str, system: str = SYSTEM) -> tuple[str, dict]:
                                      "out": u.get("output_tokens", 0), "usd": out.get("total_cost_usd", 0)}
 
 
+def _summaries(reply: str) -> list[dict]:
+    """The reply's summaries; a reply that isn't one gives none, so its records are cached without a summary rather than
+    asked again every hour."""
+    m = re.search(r"\{.*\}", reply, re.S)
+    try:
+        got = json.loads(m.group(0)).get("summaries") if m else []
+    except (ValueError, AttributeError):
+        return []
+    return [s for s in got if isinstance(s, dict)] if isinstance(got, list) else []
+
+
 def run(domain: str, limit: int | None = None) -> dict:
     """Summarize the long records not yet cached, up to `limit`; returns counts, failures and usage."""
     cache = _cache(domain)
@@ -110,12 +121,11 @@ def run(domain: str, limit: int | None = None) -> dict:
         reply, used = _ask(config.voice(PROMPT).format(records=records), system)
         for k in ("in", "out", "usd"):
             stats[k] += used[k]
-        m = re.search(r"\{.*\}", reply, re.S)
-        got = {str(s.get("id")): s.get("sentences", []) for s in (json.loads(m.group(0)).get("summaries", []) if m else [])}
+        got = {str(s.get("id")): s.get("sentences") or [] for s in _summaries(reply)}
         for n, (ref, _, body) in enumerate(batch):
             keep = []
             for s in got.get(str(n), []):
-                why = check(s, body)
+                why = check(s, body) if isinstance(s, dict) else "not a sentence"
                 stats["sentences"] += 1
                 if why:
                     why = "number not in the record" if why.startswith("number") else why

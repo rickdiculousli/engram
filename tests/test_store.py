@@ -458,6 +458,19 @@ def test_record_summaries_count_each_dropped_sentence_by_why(env, monkeypatch):
     assert stats["sentences"] == 5 and stats["kept"] == 1
 
 
+def test_a_record_summary_reply_that_isnt_one_is_dropped_not_raised(env, monkeypatch):
+    from engram import recsum
+    body = "2026-04-27 evening: dose reduced 20mg to 10mg after the dizzy spell, and the spell did not come back. " * 8
+    monkeypatch.setattr(recsum, "wanted", lambda domain: [("log.md#Dose", "Dose", body)])
+    for reply in ("{not json} and {more}", json.dumps({"summaries": [{"id": "0", "sentences": ["a bare string"]}]}),
+                  json.dumps({"summaries": ["no id"]})):
+        monkeypatch.setattr(recsum, "_ask", lambda prompt, system: (reply, {"in": 1, "out": 1, "usd": 0.01}))
+        for f in recsum._cache("notes").glob("*.json"):
+            f.unlink()
+        assert recsum.run("notes")["kept"] == 0  # cached as no summary, so the next hour doesn't pay for it again
+        assert list(recsum._cache("notes").glob("*.json"))
+
+
 def test_a_consult_is_one_row_opened_whole(repo, env, capsys):
     import json as _json
     from engram import timeline

@@ -5,7 +5,7 @@ import subprocess
 import pytest
 
 from conftest import PAGE_MD, NOTES_PACK, REWIRE, git, make_repo
-from engram import capture, pack, setup
+from engram import hourly, pack, setup
 
 
 def notes_repo(path, name="notes"):
@@ -74,7 +74,7 @@ def test_a_pin_the_repo_lacks_stops_only_filing_and_shows_at_session_start(env, 
     cfg = env["tmp"] / "config.toml"
     cfg.write_text(cfg.read_text().replace(sha, "0" * 40))
     assert pack.load("notes") is pack.NONE and "no .engram/" in pack.problem("notes")
-    assert "its pack didn't load" in capture.session_start({"cwd": str(repo)})
+    assert "its pack didn't load" in hourly.session_start({"cwd": str(repo)})
 
 
 def test_a_release_moves_the_tag_and_logs_the_pins_and_refuses_a_pack_the_gate_didnt_measure(env, tmp_path):

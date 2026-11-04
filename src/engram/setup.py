@@ -289,8 +289,8 @@ def setup(root: Path, launch_agents_dir: Path | None = None, load: bool = True) 
 def teardown(root: Path) -> list[str]:
     """Remove exactly what setup added; records are never touched. A filing run in progress is waited for, and none
     starts until it's done."""
-    from engram import capture
-    with capture.lock(wait=True) as got:
+    from engram import hourly
+    with hourly.lock(wait=True) as got:
         return (["waited for the filing run in progress"] if got == "waited" else []) + _teardown(root.resolve())
 
 
@@ -368,7 +368,7 @@ def repair(domain: str) -> list[dict]:
 
 
 def status(root: Path | None = None) -> list[str]:
-    from engram import capture, store
+    from engram import capture, hourly, store
     c = capture.db()
     c.execute(REPAIR)
     rows = c.execute("SELECT domain, root, setup FROM repo" + (" WHERE root = ?" if root else ""),
@@ -388,7 +388,7 @@ def status(root: Path | None = None) -> list[str]:
         reps = c.execute("SELECT what, ok, error FROM repair WHERE domain = ? AND at = ?", (domain, at)).fetchall()
         out.append(f"  last repair: {at}" if reps else "  last repair: none")
         out += [f"    {w} — {'fixed' if ok else 'failed: ' + str(err)}" for w, ok, err in reps]
-        state = capture.record_state(Path(r))
+        state = hourly.record_state(Path(r))
         out.append("  record: " + ("all committed and pushed" if not state else state[0]))
         out += [f"  record: {x}" for x in state[1:]]
         filed = c.execute("SELECT session, at FROM filed WHERE domain = ? ORDER BY at DESC", (domain,)).fetchall()

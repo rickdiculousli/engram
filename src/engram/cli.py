@@ -524,7 +524,7 @@ def _payload(a) -> dict:
 
 
 def cmd_capture(a):
-    from engram import capture
+    from engram import capture, hourly
     if a.action == "status":
         from engram import setup
         print("\n".join(setup.status(Path(a.repo).expanduser() if a.repo else None)))
@@ -539,11 +539,11 @@ def cmd_capture(a):
         if missing:
             sys.exit(f"no filed session starts with: {', '.join(missing)}")
     elif a.action == "check":
-        line = capture.session_start(_payload(a))
+        line = hourly.session_start(_payload(a))
         if line:
             print(line)
     else:
-        out = capture.run(dry_run=a.dry_run or a.prompt_only, ask=capture.prompt_only if a.prompt_only else None)
+        out = hourly.run(dry_run=a.dry_run or a.prompt_only, ask=capture.prompt_only if a.prompt_only else None)
         if a.dry_run and not a.prompt_only:
             for f in out["would_file"]:
                 print(json.dumps(f, ensure_ascii=False))

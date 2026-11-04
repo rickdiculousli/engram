@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from conftest import PAGE_MD, REWIRE, git, make_repo
-from engram import capture, config, pack, rewire, setup, store
+from engram import capture, config, hourly, pack, rewire, setup, store
 
 TOML = """[domain]
 name = "medical"
@@ -75,7 +75,7 @@ def fake(facts, calls, verified=None, judge=None):
 
 
 def run(calls, facts=(), now=LATER, **kw):
-    return capture.run(ask=fake(list(facts), calls), summaries=False, now=now, **kw)
+    return hourly.run(ask=fake(list(facts), calls), summaries=False, now=now, **kw)
 
 
 def test_sams_messages_include_short_replies_and_skip_injected_text(world):
@@ -176,7 +176,7 @@ def test_setup_teardown_round_trip_and_self_repair(world, monkeypatch):
     conf["hooks"].pop("SessionStart")
     (repo / ".claude/settings.json").write_text(json.dumps(conf))
     git(repo, "config", "--unset", "core.hooksPath")
-    assert capture.session_start(world["payload"]) == capture.READ_WHOLE  # repaired, so nothing more to say
+    assert hourly.session_start(world["payload"]) == hourly.READ_WHOLE  # repaired, so nothing more to say
     assert plist.exists() and "SessionStart" in json.loads((repo / ".claude/settings.json").read_text())["hooks"]
     assert git(repo, "config", "core.hooksPath").strip() == ".engram/hooks"
     assert sum("— fixed" in l for l in setup.status(repo)) == 3
@@ -197,7 +197,7 @@ def test_an_install_from_before_the_window_gets_it_at_its_next_repair_and_loses_
         man.pop("added_window")
         c.execute("UPDATE repo SET setup = ?", (json.dumps(man),))
     assert setup.missing(repo, man) == {"settings": "Claude's Bash window isn't widened"}
-    assert capture.session_start(world["payload"]) == capture.READ_WHOLE
+    assert hourly.session_start(world["payload"]) == hourly.READ_WHOLE
     assert json.loads(sp.read_text())["bashOutputMaxChars"] == setup.BASH_BUDGET
     setup.teardown(repo)
     assert sp.read_bytes() == b'{\n    "hooks": {}\n}\n'
@@ -212,7 +212,7 @@ def test_a_repos_own_bash_window_is_kept_and_left_at_teardown(world):
     man = json.loads(capture.db().execute("SELECT setup FROM repo").fetchone()[0])
     assert json.loads(sp.read_text())["bashOutputMaxChars"] == 20000 and not man["added_window"]
     assert setup.missing(repo, man) == {}  # in place at its own value: not rewritten every hour
-    assert capture.READ_WHOLE not in capture.session_start(world["payload"])  # too narrow to hold engram's output whole
+    assert hourly.READ_WHOLE not in hourly.session_start(world["payload"])  # too narrow to hold engram's output whole
     setup.teardown(repo)
     assert sp.read_text() == mine
 
@@ -263,7 +263,7 @@ def test_only_the_release_repairs_a_loaded_install(world, loaded, monkeypatch):
     assert setup.repair("medical") == [] and loaded["untouched"]()
     with pytest.raises(SystemExit, match="not the release clone"):
         setup.setup(world["repo"], world["tmp"] / "LaunchAgents", load=True)
-    assert capture.session_start(world["payload"]) == "" and loaded["untouched"]()
+    assert hourly.session_start(world["payload"]) == "" and loaded["untouched"]()
     monkeypatch.setattr("engram.review.release", lambda: Path(setup.this_code()).parents[1])  # running from the release
     assert len([d for d in setup.repair("medical") if d["ok"]]) == 3 and loaded["plist"].exists()
     assert [a[1] for a in loaded["ran"] if a[1] in ("bootout", "bootstrap")] == ["bootout", "bootstrap"]
@@ -334,8 +334,8 @@ def test_the_pre_commit_refuses_only_drift_the_commit_brings(world):
 def test_teardown_waits_for_a_filing_run_in_progress(world):
     import threading
     done = []
-    with capture.lock() as got:  # a run is filing
-        assert got and capture.run()["skipped"]  # a second run skips
+    with hourly.lock() as got:  # a run is filing
+        assert got and hourly.run()["skipped"]  # a second run skips
         t = threading.Thread(target=lambda: done.append(setup.teardown(world["repo"])))
         t.start()
         t.join(0.3)
@@ -475,7 +475,7 @@ def test_a_status_sam_agrees_to_is_filed_and_one_only_claude_proposed_is_not(gra
     unknown = {"line": 3, "quote": "yes", "answering": "Should we mark P-01 as provisional now?",
                "status": {"id": "pattern/P-99", "to": "provisional"}}
     odd = {"line": 3, "quote": "yes", "status": {"id": "pattern/P-01", "to": "probably"}}
-    out = capture.run(ask=ask_theory([agreed, claudes, unknown, odd], calls=calls), summaries=False, now=LATER)
+    out = hourly.run(ask=ask_theory([agreed, claudes, unknown, odd], calls=calls), summaries=False, now=LATER)
     assert "pattern/P-01\tpattern\tproposed" in calls[0] and "loop/1" in calls[0]  # real ids and statuses go to the model
     assert out["filed"] == 1
     assert sorted(d["why"] for d in out["dropped"]) == ["quote not in Sam's words", "unknown status probably",
@@ -493,7 +493,7 @@ def test_a_link_sam_agrees_to_is_a_theory_link_in_links_jsonl(graph):
     ok = {"line": 5, "quote": "ok", "answering": "I think the knee tension amplifies the stiffness.", "link": link}
     bad_rel = {**ok, "link": {**link, "rel": "causes"}}
     bad_id = {**ok, "link": {**link, "to": "node/Z"}}
-    out = capture.run(ask=ask_theory([ok, bad_rel, bad_id]), summaries=False, now=LATER)
+    out = hourly.run(ask=ask_theory([ok, bad_rel, bad_id]), summaries=False, now=LATER)
     assert out["filed"] == 1 and sorted(d["why"] for d in out["dropped"]) == ["unknown rel causes", "unknown theory id node/Z"]
     [e] = captured(graph["repo"], "link")
     assert e.path.startswith("events/links.jsonl:")
@@ -511,7 +511,7 @@ def test_the_same_theory_link_twice_is_filed_once(graph, monkeypatch, step):
     link = {"from": "node/B", "to": "node/A", "rel": "amplifier", "mechanism": "knee tension raises the urge to rest",
             "strength": "medium"}
     ok = {"line": 5, "quote": "ok", "answering": "I think the knee tension amplifies the stiffness.", "link": link}
-    out = capture.run(ask=ask_theory([ok, dict(ok)]), summaries=False, now=LATER)
+    out = hourly.run(ask=ask_theory([ok, dict(ok)]), summaries=False, now=LATER)
     assert out["filed"] == 1 and len(captured(graph["repo"], "link")) == 1
 
 
@@ -521,7 +521,7 @@ def test_an_agreement_counts_only_for_claudes_turn_just_before_it(graph):
     near = {"line": 5, "quote": "ok", "answering": "I think the knee tension amplifies the stiffness.", "link": link}
     far = {"line": 5, "quote": "ok", "answering": "Should we mark P-01 as provisional now?",
            "status": {"id": "pattern/P-01", "to": "provisional"}}
-    out = capture.run(ask=ask_theory([near, far]), summaries=False, now=LATER)
+    out = hourly.run(ask=ask_theory([near, far]), summaries=False, now=LATER)
     assert out["filed"] == 1 and [d["why"] for d in out["dropped"]] == ["question not in Claude's words"]
     assert len(captured(graph["repo"], "link")) == 1 and not captured(graph["repo"], "status")
 
@@ -623,7 +623,7 @@ def test_the_job_files_a_date_never_said_as_not_sure_and_an_undated_repeat_stays
     git(world["repo"], "commit", "-qm", "doc")
     ingest.record("medical")
     calls, verified = [], []
-    out = capture.run(ask=fake([back, knee], calls, verified, stating("bicycle")), summaries=False,
+    out = hourly.run(ask=fake([back, knee], calls, verified, stating("bicycle")), summaries=False,
                       now=LATER + timedelta(minutes=5), dry_run=True)
     filed = out["would_file"]
     assert [(f["title"], f["date"], f["date_note"]) for f in filed] == \
@@ -688,7 +688,7 @@ ICE = {"line": 9, "text": "Ice helped the ankle tonight.", "quote": "ice helped 
 
 def test_a_fact_already_in_a_document_is_dropped_and_a_new_detail_kept(ankle):
     calls, verified = [], []
-    out = capture.run(ask=fake([SLID, ICE], calls, verified, stating("bicycle")), summaries=False, now=LATER + timedelta(minutes=5))
+    out = hourly.run(ask=fake([SLID, ICE], calls, verified, stating("bicycle")), summaries=False, now=LATER + timedelta(minutes=5))
     assert out["filed"] == 1 and [e.fm["title"] for e in captured(ankle["repo"])] == ["Ice helped the ankle tonight."]
     drop = [d for d in out["dropped"] if d["why"].startswith("already in")]
     assert drop == [{"session": "s1", "line": 9, "why": "already in reference/treatments/ankle.md#Ankle brace",
@@ -698,7 +698,7 @@ def test_a_fact_already_in_a_document_is_dropped_and_a_new_detail_kept(ankle):
 
 def test_the_repeat_check_is_shown_the_search_hits_on_the_candidates_own_text(ankle):
     calls, verified = [], []
-    capture.run(ask=fake([SLID], calls, verified), summaries=False, now=LATER + timedelta(minutes=5))
+    hourly.run(ask=fake([SLID], calls, verified), summaries=False, now=LATER + timedelta(minutes=5))
     prompt = verified[0]
     assert "Candidate 1 [" in prompt and "slid off his bicycle" in prompt
     hits = prompt.split("Records:")[1]
@@ -708,7 +708,7 @@ def test_the_repeat_check_is_shown_the_search_hits_on_the_candidates_own_text(an
 def test_a_repeat_naming_a_record_not_shown_is_kept(ankle):
     calls = []
     made_up = lambda prompt: [{"n": 1, "ref": "reference/elsewhere.md#X", "why": "same"}]
-    out = capture.run(ask=fake([ICE], calls, judge=made_up), summaries=False, now=LATER + timedelta(minutes=5))
+    out = hourly.run(ask=fake([ICE], calls, judge=made_up), summaries=False, now=LATER + timedelta(minutes=5))
     assert out["filed"] == 1
 
 
@@ -762,7 +762,7 @@ def test_the_same_occurrence_is_still_a_repeat(tension):
              ({**back("2026-11-05", kind="interpretation"), "text": "Knee stiffness comes from desk posture",
                "quote": "it comes from my desk posture"}, "interpretation")]  # an interpretation, on any day
     for fact, where in cases:
-        out = capture.run(ask=fake([fact], [], None, naming(where)), summaries=False, now=NOV5, dry_run=True)
+        out = hourly.run(ask=fake([fact], [], None, naming(where)), summaries=False, now=NOV5, dry_run=True)
         assert out["would_file"] == [] and not out["kept"], (fact, where)
         assert [d["why"].startswith("already in") and where in d["why"] for d in out["dropped"]] == [True], (fact, where)
 
@@ -780,7 +780,7 @@ ACHE = [{"line": 7, "text": "The ache is better.", "quote": "the ache is better"
 
 
 def test_a_reply_without_json_is_an_error_and_the_mark_stays(world):
-    out = capture.run(ask=lambda p: ("I looked and there is nothing to file.", 0.01), summaries=False, now=LATER)
+    out = hourly.run(ask=lambda p: ("I looked and there is nothing to file.", 0.01), summaries=False, now=LATER)
     assert out["sessions"] == 0 and "held no JSON" in out["error"]
     with capture.db() as c:
         assert c.execute("SELECT count(*) FROM filed").fetchone() == (0,)
@@ -820,13 +820,13 @@ def test_a_failed_push_is_recorded_shown_and_retried(world):
     git(repo, "config", "branch.main.merge", "refs/heads/main")
     run([], ACHE)  # the hub isn't there: the push fails
     assert store.push_failure(repo)
-    assert any("last push failed" in l for l in capture.problems("medical"))
-    assert "last push failed" in capture.session_start(world["payload"])
+    assert any("last push failed" in l for l in hourly.problems("medical"))
+    assert "last push failed" in hourly.session_start(world["payload"])
     assert any("last push failed" in l for l in setup.status(repo))
     git(bare.parent, "init", "-q", "--bare", str(bare))
-    out = capture.run(ask=fake([], []), summaries=False, now=LATER)  # the next hourly run retries
+    out = hourly.run(ask=fake([], []), summaries=False, now=LATER)  # the next hourly run retries
     assert store.push_failure(repo) is None and out["error"] is None
-    assert capture.unpushed(repo)[0] == 0 and capture.session_start(world["payload"]) == capture.READ_WHOLE
+    assert hourly.unpushed(repo)[0] == 0 and hourly.session_start(world["payload"]) == hourly.READ_WHOLE
 
 
 def test_a_push_that_hangs_is_a_failed_push_and_retried(world, monkeypatch):
@@ -844,24 +844,24 @@ def test_a_push_that_hangs_is_a_failed_push_and_retried(world, monkeypatch):
     hook.unlink()
     (repo / ".engram/engram.toml").write_text(TOML.replace('events_dir = "events"', 'events_dir = "events"\npush = true'))
     out = {"error": None}
-    capture.retry_push(repo, out)  # the hourly retry
+    hourly.retry_push(repo, out)  # the hourly retry
     assert store.push_failure(repo) is None and out["error"] is None
 
 
 def test_a_summaries_run_that_stops_is_the_runs_error(world, monkeypatch):
-    monkeypatch.setattr(capture.summarize, "run", lambda d: {"summarized": 0, "stopped": "out of quota"})
-    out = capture.run(ask=fake([], []), now=LATER)
+    monkeypatch.setattr(hourly.summarize, "run", lambda d: {"summarized": 0, "stopped": "out of quota"})
+    out = hourly.run(ask=fake([], []), now=LATER)
     assert "out of quota" in out["error"]
-    assert any("out of quota" in l for l in capture.problems("medical"))
+    assert any("out of quota" in l for l in hourly.problems("medical"))
 
 
 def test_the_hourly_run_summarizes_the_records_of_an_area_it_files_for(world, monkeypatch):
     got = []
-    monkeypatch.setattr(capture.recsum, "run", lambda d: got.append(d) or {"usd": 0.5})
+    monkeypatch.setattr(hourly.recsum, "run", lambda d: got.append(d) or {"usd": 0.5})
     assert run([], dry_run=True)["error"] is None and got == []  # a dry run spends nothing
     out = run([])
     assert got == ["medical"] and out["error"] is None and out["usd"] >= 0.5
-    monkeypatch.setattr(capture.pack, "load", lambda d: pack.NONE)  # its pack says nothing to write down: not filed for
+    monkeypatch.setattr(hourly.pack, "load", lambda d: pack.NONE)  # its pack says nothing to write down: not filed for
     run([], now=LATER + timedelta(days=1))
     assert got == ["medical"]
 
@@ -869,7 +869,7 @@ def test_the_hourly_run_summarizes_the_records_of_an_area_it_files_for(world, mo
 def test_a_record_summaries_failure_is_the_runs_error(world, monkeypatch):
     def fail(d):
         raise RuntimeError("usage limit")
-    monkeypatch.setattr(capture.recsum, "run", fail)
+    monkeypatch.setattr(hourly.recsum, "run", fail)
     assert "record summaries medical: RuntimeError: usage limit" in run([])["error"]
 
 
@@ -878,32 +878,32 @@ def test_a_daily_copy_that_failed_or_went_quiet_is_its_own_line(world):
     def last(ok, ago):
         at = (datetime.now().astimezone() - ago).isoformat(timespec="seconds")
         daily_json.write_text(json.dumps({"started": at, "ok": ok, "finished": at} | ({} if ok else {"failed_step": "pull backups"})))
-        return capture.session_start(world["payload"])
-    assert last(False, timedelta(hours=1)) == capture.READ_WHOLE  # no daily copy configured: nothing to say
+        return hourly.session_start(world["payload"])
+    assert last(False, timedelta(hours=1)) == hourly.READ_WHOLE  # no daily copy configured: nothing to say
     cfg.write_text(cfg.read_text() + '[daily]\nbox = "spare"\n')
     failed = last(False, timedelta(hours=1))
     assert failed.startswith("engram's daily copy") and "pull backups" in failed and "capture" not in failed
     quiet = last(True, timedelta(days=3))
     assert quiet.startswith("engram's daily copy") and "capture" not in quiet
-    assert last(True, timedelta(hours=20)) == capture.READ_WHOLE
+    assert last(True, timedelta(hours=20)) == hourly.READ_WHOLE
 
 
 def test_the_session_start_cuts_only_the_picture_at_a_line_to_fit_the_hooks_window(world, monkeypatch):
     toml = world["repo"] / ".engram/engram.toml"
     toml.write_text(TOML + "[index]\nevents = true\n")
     picture = "\n".join(f"- thing {n}: taking since 2026-01-01; 10mg [{n:04d}]" for n in range(400))
-    monkeypatch.setattr(capture.now_mod, "text", lambda repo, mark_shown=False: picture)
-    monkeypatch.setattr(capture, "problems", lambda d: ["the hourly job hasn't run since 2026-10-01 00:00"])
+    monkeypatch.setattr(hourly.now_mod, "text", lambda repo, mark_shown=False: picture)
+    monkeypatch.setattr(hourly, "problems", lambda d: ["the hourly job hasn't run since 2026-10-01 00:00"])
     surface = "For you, not the owner: " + "x" * 1500
-    monkeypatch.setattr(capture.refine, "surface", lambda root: surface)
-    out = capture.session_start(world["payload"])
+    monkeypatch.setattr(hourly.refine, "surface", lambda root: surface)
+    out = hourly.session_start(world["payload"])
     parts = out.split("\n\n")
-    assert capture.HOOK_BUDGET - 100 < len(out) <= capture.HOOK_BUDGET
-    assert parts[0].startswith("engram capture needs fixing") and parts[1] == capture.READ_WHOLE and parts[3] == surface
+    assert hourly.HOOK_BUDGET - 100 < len(out) <= hourly.HOOK_BUDGET
+    assert parts[0].startswith("engram capture needs fixing") and parts[1] == hourly.READ_WHOLE and parts[3] == surface
     shown = parts[2].splitlines()
-    assert shown[-1] == capture.MORE and shown[:-1] == picture.splitlines()[:len(shown) - 1]
-    monkeypatch.setattr(capture.now_mod, "text", lambda repo, mark_shown=False: "- one thing: taking")
-    assert capture.session_start(world["payload"]).split("\n\n")[2] == "- one thing: taking"  # it fits: whole
+    assert shown[-1] == hourly.MORE and shown[:-1] == picture.splitlines()[:len(shown) - 1]
+    monkeypatch.setattr(hourly.now_mod, "text", lambda repo, mark_shown=False: "- one thing: taking")
+    assert hourly.session_start(world["payload"]).split("\n\n")[2] == "- one thing: taking"  # it fits: whole
 
 
 def test_a_launcher_at_another_path_running_the_same_code_is_not_old(world):
@@ -925,7 +925,7 @@ def test_a_launcher_at_another_path_running_the_same_code_is_not_old(world):
     git(repo, "commit", "-qm", "installed from elsewhere")
     man = json.loads(capture.db().execute("SELECT setup FROM repo").fetchone()[0])
     assert setup.missing(repo, man) == {}
-    assert capture.session_start(world["payload"]) == capture.READ_WHOLE
+    assert hourly.session_start(world["payload"]) == hourly.READ_WHOLE
     assert git(repo, "status", "--porcelain").strip() == ""  # nothing rewritten
     stale = tmp / "gone/engram"
     sp.write_text(sp.read_text().replace(str(other), str(stale)))
@@ -958,7 +958,7 @@ def flare(world):
 def test_placement_with_unknown_ids_files_the_fact_unplaced(flare):
     fact = {"line": 1, "text": "Knee stiffness is back", "quote": "knee stiffness is back today", "date": "2026-11-05",
             "kind": "symptom", "stories": ["nonsense"], "occurrence_of": "no-such-symptom", "led_from": "20990101-000000-x-0000"}
-    assert capture.run(ask=fake([fact], []), summaries=False, now=NOV5)["filed"] == 1
+    assert hourly.run(ask=fake([fact], []), summaries=False, now=NOV5)["filed"] == 1
     st = store.Store(flare["repo"])
     assert not [l for l in st.events(kind="link") if l.fm.get("author") == "engram-capture"]
     interp = {**fact, "kind": "interpretation", "occurrence_of": "knee-stiffness"}  # not an occurrence kind
@@ -969,7 +969,7 @@ def test_placement_with_unknown_ids_files_the_fact_unplaced(flare):
 def test_a_refiled_session_sees_its_facts_as_already_filed_from_the_store(flare):
     fact = {"line": 1, "text": "Knee stiffness is back", "quote": "knee stiffness is back today", "date": "2026-11-05",
             "kind": "symptom", "led_from": flare["drive"]}
-    assert capture.run(ask=fake([fact], []), summaries=False, now=NOV5)["filed"] == 1
+    assert hourly.run(ask=fake([fact], []), summaries=False, now=NOV5)["filed"] == 1
     st = store.Store(flare["repo"])
     assert [l.fm["family"] for l in st.events(kind="link") if l.fm.get("author") == "engram-capture"] == ["timeline"]
     with st.transaction() as tx:  # a renewal from the same session shares its source
@@ -979,7 +979,7 @@ def test_a_refiled_session_sees_its_facts_as_already_filed_from_the_store(flare)
         c.execute("UPDATE filed SET entries = '[]'")  # nothing kept per session: the store is what's filed
     assert capture.refile(["s6"]) == {"s6": ["s6"]}
     calls = []
-    capture.run(ask=fake([], calls), summaries=False, now=NOV5)
+    hourly.run(ask=fake([], calls), summaries=False, now=NOV5)
     assert "2026-11-05 Knee stiffness is back:" in calls[0]
     assert "2026-11-05 led to:" not in calls[0] and "2026-11-05 Orvexa: still on it:" not in calls[0]
 

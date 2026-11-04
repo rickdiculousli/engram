@@ -5,7 +5,7 @@ from datetime import timedelta
 import pytest
 
 from conftest import make_repo
-from engram import capture, llm, refine, review
+from engram import hourly, llm, refine, review
 from test_capture import LATER, TOML, fake, reply, said, turn, world  # noqa: F401
 
 TS = "2026-10-18T20:00:00Z"
@@ -40,21 +40,21 @@ def run_review(rv, *found):
 
 def test_switch_off_leaves_the_hourly_job_as_it_was(world, monkeypatch):
     monkeypatch.setattr(review, "hourly", lambda *a, **k: pytest.fail("reviewed with the switch off"))
-    out = capture.run(ask=fake([], []), summaries=False, now=LATER)
+    out = hourly.run(ask=fake([], []), summaries=False, now=LATER)
     assert out["sessions"] == 1 and out["error"] is None
     assert not (world["tmp"] / "data/review").exists()
 
 
 def test_the_hourly_job_reviews_an_idle_session_once_a_day(rv):
     rv["replies"].append([finding("tools")])
-    capture.run(ask=fake([], []), summaries=False, now=LATER)
+    hourly.run(ask=fake([], []), summaries=False, now=LATER)
     assert len(rv["prompts"]) == 1 and "c1: engram search knee --domain medical" in rv["prompts"][0]
     assert "held that day: events/b.md" in rv["prompts"][0] and "Your knee is better." in rv["prompts"][0]
     idle = [rv["path"], rv["s2"]]
     assert review.hourly("medical", rv["repo"], idle, LATER) is None  # one a day per repo
     assert review.hourly("medical", rv["repo"], idle, LATER + timedelta(days=1)) is not None
     assert len(rv["prompts"]) == 2  # the next day, the session not yet reviewed
-    assert "review" not in capture.session_start(rv["payload"])  # its news never comes at session start
+    assert "review" not in hourly.session_start(rv["payload"])  # its news never comes at session start
 
 
 def test_the_reviews_own_runs_are_never_captured_or_reviewed(rv, monkeypatch):

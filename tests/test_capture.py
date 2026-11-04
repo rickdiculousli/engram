@@ -890,6 +890,24 @@ def test_a_daily_copy_that_failed_or_went_quiet_is_its_own_line(world):
     assert last(True, timedelta(hours=20)) == capture.READ_WHOLE
 
 
+def test_the_session_start_cuts_only_the_picture_at_a_line_to_fit_the_hooks_window(world, monkeypatch):
+    toml = world["repo"] / ".engram/engram.toml"
+    toml.write_text(TOML + "[index]\nevents = true\n")
+    picture = "\n".join(f"- thing {n}: taking since 2026-01-01; 10mg [{n:04d}]" for n in range(400))
+    monkeypatch.setattr(capture.now_mod, "text", lambda repo, mark_shown=False: picture)
+    monkeypatch.setattr(capture, "problems", lambda d: ["the hourly job hasn't run since 2026-10-01 00:00"])
+    surface = "For you, not the owner: " + "x" * 1500
+    monkeypatch.setattr(capture.refine, "surface", lambda root: surface)
+    out = capture.session_start(world["payload"])
+    parts = out.split("\n\n")
+    assert capture.HOOK_BUDGET - 100 < len(out) <= capture.HOOK_BUDGET
+    assert parts[0].startswith("engram capture needs fixing") and parts[1] == capture.READ_WHOLE and parts[3] == surface
+    shown = parts[2].splitlines()
+    assert shown[-1] == capture.MORE and shown[:-1] == picture.splitlines()[:len(shown) - 1]
+    monkeypatch.setattr(capture.now_mod, "text", lambda repo, mark_shown=False: "- one thing: taking")
+    assert capture.session_start(world["payload"]).split("\n\n")[2] == "- one thing: taking"  # it fits: whole
+
+
 def test_a_launcher_at_another_path_running_the_same_code_is_not_old(world):
     repo, tmp = world["repo"], world["tmp"]
     other = tmp / "bin/engram"  # another install of the same checkout, as ~/.local/bin/engram is

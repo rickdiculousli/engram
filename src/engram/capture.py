@@ -40,8 +40,10 @@ as a journal page the advisor saves, never by this job and never as a symptom or
 
 There is no keyword filter: a word list silently loses whatever isn't on it, and the volume makes it unnecessary.
 
-The SessionStart hook only checks the install and repairs it (it's the only thing that notices a dead job), printing
-one line if a repair fails. State lives in the data folder, never in the repo.
+The SessionStart hook checks the install and repairs it (it's the only thing that notices a dead job), printing one
+line if a repair fails; then, where setup widened Claude's Bash window, that engram's output is read whole; then where
+things stand (`engram now`), cut from its end to fit what Claude Code shows whole; then the weekly refinement's files
+that won't parse. State lives in the data folder, never in the repo.
 """
 import contextlib
 import fcntl
@@ -1249,13 +1251,23 @@ def _root(domain: str) -> Path | None:
 
 
 READ_WHOLE = "Read engram's output whole, one engram command per Bash call."
+HOOK_BUDGET = 9_000  # Claude Code shows a SessionStart hook's output whole only up to 10,000 characters
+MORE = "… `engram now` for the rest"
+
+
+def fit(picture: str, room: int) -> str:
+    """The picture whole if it fits in `room` characters, else cut from its end at a line, ending with MORE."""
+    if len(picture) <= room:
+        return picture
+    cut = picture[:max(room - len(MORE), 0)]
+    return cut[:cut.rfind("\n") + 1] + MORE
 
 
 def session_start(payload: dict) -> str:
     """The SessionStart hook: check the install and repair it, saying one line only if something couldn't be fixed;
     then, where setup's Bash window is in place, that engram's output fits it whole; then, for a record whose entries
     are read straight from events, where things stand (`engram now`); then, for the agent, any weekly-refinement file
-    that won't parse (`engram refine surface`)."""
+    that won't parse (`engram refine surface`). Only the picture is cut, to what HOOK_BUDGET leaves it."""
     from engram import setup
     found = repo_of(payload.get("cwd") or os.environ.get("CLAUDE_PROJECT_DIR"))
     if not found:
@@ -1268,10 +1280,12 @@ def session_start(payload: dict) -> str:
         out.append(f"engram's daily copy {copy}: run `engram health` and tell {config.owner()} in one line.")
     if setup.WINDOW_KEY in setup.settings(found[1]):  # only a widened window holds a long timeline whole
         out.append(READ_WHOLE)
-    conf = record_conf(found[1])
-    if (conf.get("index") or {}).get("events"):
+    picture, after = "", []
+    if (record_conf(found[1]).get("index") or {}).get("events"):
         with contextlib.suppress(Exception):  # the picture is a help; a broken record mustn't block the session
-            out.append(now_mod.text(found[1], mark_shown=True))
+            picture = now_mod.text(found[1], mark_shown=True)
     with contextlib.suppress(Exception):
-        out += [t] if (t := refine.surface(found[1])) else []
-    return "\n\n".join(out)
+        after = [t] if (t := refine.surface(found[1])) else []
+    if picture:
+        out.append(fit(picture, HOOK_BUDGET - sum(len(p) + 2 for p in out + after)))  # each other part and its join
+    return "\n\n".join(out + after)

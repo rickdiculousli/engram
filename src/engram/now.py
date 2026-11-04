@@ -6,7 +6,7 @@ pack's entity kind naming it), a thread by its id (every status event about it).
 its latest entry, in the order the record wrote them, so it always matches the record and traces to the entry it came
 from. When an earlier-written entry is dated after the latest and says otherwise, both
 are shown, never one picked silently. A stopped thing shows for a month, marked stopped, then moves to the stopped
-list with its date and reason; a stop with no date is already past.
+list, with its date and reason, at the end; a stop with no date is already past.
 
 In the printed picture only (the one a session starts with), a thing still going that the owner hasn't mentioned for
 over QUIET days reads "last mentioned <month>": a fact about the line, never a to-do. The indexed rows, the standing
@@ -322,7 +322,9 @@ def theories(repo: Path) -> tuple[list[tuple[str, str, str]], list[str]]:
 
 
 def text(repo: Path, today: date | None = None, mark_shown: bool = False) -> str:
-    """Where things stand; a theory revision whose evidence re-check finished shows one line at the top, once (the
+    """Where things stand, what a session needs first at the top, since the session start cuts it from its end:
+    upcoming, the theories and open questions, the pack's sections in its order, the team, and last what stopped over a
+    month ago. A theory revision whose evidence re-check finished shows one line at the very top, once (the
     session-start hook marks it shown)."""
     today = today or date.today()
     cur = pack.for_repo(repo).current
@@ -333,14 +335,25 @@ def text(repo: Path, today: date | None = None, mark_shown: bool = False) -> str
         lines += [f"theory: {n}" for n in theorychange.notices(repo, mark=mark_shown)]
     except Exception:  # the notice is a help; it mustn't block the picture
         pass
-    for name in cur.sections:
+    up = upcoming(repo, today)
+    if up:
+        lines.append("\nupcoming:")
+        lines += [f"- {d}: {w} [{i}]" for d, w, i in up]
+    ths, qs = theories(repo)
+    if ths:
+        lines.append("\ntheories: " + "; ".join(f"{i} {s}" for i, s, _ in ths if s))
+    if qs:
+        lines.append(f"\nopen questions ({len(qs)}):")
+        lines += [f"- {q}" for q in qs]
+
+    def section(name: str):
         items = secs.get(name, [])
         if not items:
-            continue
+            return
         lines.append(f"\n{name}:")
         for c in items:
             label = c.status if c.status not in ("taking", "active") else ""
-            if name == "stopped" or c.status in FINISHED:
+            if c.status in FINISHED:
                 since = c.when or "date not sure"
             elif name in cur.threads.values():  # a status line written that day, and when the thread began
                 since = "; ".join(b for b in (f"as of {c.when}" if c.when else "", f"first session {c.started}" if c.started else "") if b)
@@ -352,20 +365,15 @@ def text(repo: Path, today: date | None = None, mark_shown: bool = False) -> str
             if c.conflict:
                 line += f" — the record disagrees: also {', '.join(c.conflict)}"
             lines.append(line)
+    for name in cur.sections:
+        if name != "stopped":
+            section(name)
     team = care_team(repo, today)
     if team:
         lines.append(f"\n{cur.team[1]} (seen in the last year):")
         lines += [f"- {n}: last {d}" for n, d in team]
-    up = upcoming(repo, today)
-    if up:
-        lines.append("\nupcoming:")
-        lines += [f"- {d}: {w} [{i}]" for d, w, i in up]
-    ths, qs = theories(repo)
-    if ths:
-        lines.append("\ntheories: " + "; ".join(f"{i} {s}" for i, s, _ in ths if s))
-    if qs:
-        lines.append(f"\nopen questions ({len(qs)}):")
-        lines += [f"- {q}" for q in qs]
+    if "stopped" in cur.sections:
+        section("stopped")
     return "\n".join(lines)
 
 

@@ -13,7 +13,7 @@ CURRENT = """
 from engram.pack import Current
 pack.current = Current(entity_kind="med-change", entity_prefix="med", detail="dose", statuses=("taking", "stopped"),
                        repeats={"taking": {"taking"}, "stopped": {"stopped"}}, groups={"supplement": "supplements"},
-                       group="medications", sections=("medications", "supplements", "stopped"))
+                       group="medications", sections=("medications", "supplements", "stopped"), ahead=("visit",))
 pack.prompts["renew"] = "Did {owner} say he's still on these?\\n{things}\\n{exchanges}"
 """
 TOML = '[domain]\nname = "notes"\nevents_dir = "events"\n[about]\nprefixes = ["series", "story"]\n'
@@ -155,3 +155,16 @@ def test_a_question_not_in_claudes_message_before_his_is_left_out(quiet, tmp_pat
     assert capture.renew("notes", repo, s2, 0, _asking([made_up], []))["renewed"] == 1
     renewal = next(e for e in Store(repo).events(kind=now.RENEWAL))
     assert "answering" not in renewal.body and "Do you still take" not in renewal.body and "“yes”" in renewal.body
+
+
+def test_what_stopped_over_a_month_ago_comes_last_with_its_date_and_reason(quiet):
+    repo, add = quiet["repo"], quiet["add"]
+    add(kind="med-change", entity="Pill Y", status="taking", date="2026-01-05", body="- dose: 10mg")
+    add(kind="med-change", entity="Pill Y", status="stopped", date="2026-04-12", body="- dose: 10mg\n- reason: made me dizzy")
+    add(kind="med-change", entity="Spray W", status="stopped", date="2026-10-10")  # within the month: in its section
+    add(kind="visit", title="Eye check", date="2026-11-02", body="- booked")
+    lines = now.text(repo, date(2026, 10, 19)).splitlines()
+    assert lines[1:4] == ["", "upcoming:", lines[3]] and lines[3].startswith("- 2026-11-02: Eye check [")  # first
+    assert lines[-2] == "stopped:" and lines[-1].startswith("- Pill Y: stopped; 2026-04-12; 10mg; why: made me dizzy [")
+    assert lines.index("medications:") < lines.index("supplements:") < lines.index("stopped:")
+    assert [l for l in lines if l.startswith("- Spray W:")][0].startswith("- Spray W: stopped; 2026-10-10 [")

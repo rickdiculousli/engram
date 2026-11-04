@@ -226,6 +226,9 @@ def test_show_opens_a_document_whole_within_the_window_else_lists_its_sections(e
     monkeypatch.setattr(cli, "WINDOW", len(beds) - 1)  # what's printed counts, not only the body
     main(["show", "garden/beds.md", "--domain", "garden"])
     assert "past the" in capsys.readouterr().out
+    monkeypatch.setattr(cli, "WINDOW", 10)
+    main(["show", "20260928-090030-harvest-42d9", "--domain", "garden"])  # an entry has no sections to list: it prints
+    assert "ref: 20260928-090030-harvest-42d9" in capsys.readouterr().out
 
 
 

@@ -270,8 +270,9 @@ def cmd_show(a):
             who = labels.who(row.get("author", ""), search.labels_people(d))
             head = (f"{row['title']}\nref: {row['ref']}\nfrom: {row['pointer']}" + (f"\nby: {who}" if who else "")
                     + (f"\n{config.voice(labels.KEY)}" if labels.coded(who) else "") + "\n")
-            if "#" not in row["ref"] and not a.as_of and len(f"{head}\n{row['body']}\n") > WINDOW:  # past the window: its sections
-                row, near, long = None, idx.resolve(row["ref"])[1], True
+            if ("#" not in row["ref"] and not a.as_of and len(f"{head}\n{row['body']}\n") > WINDOW
+                    and (secs := idx.resolve(row["ref"])[1])):  # a document past the window: its sections
+                row, near, long = None, secs, True
         if idx:
             idx.close()
         if row:

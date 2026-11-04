@@ -193,7 +193,31 @@ def test_links_reach_theory_sections_and_the_query_picks_among_them(repo, env, c
     main(["show", "../evidence/D01-soreness.md#mechanism"])  # a page's link: relative, with GitHub's anchor
     assert "Joint guarding" in capsys.readouterr().out
     main(["show", "evidence/D01-soreness.md"])
-    assert "ref: evidence/D01-soreness.md#Observation" in capsys.readouterr().out
+    out = capsys.readouterr().out  # a bare file opens whole, each section with its ref
+    assert "[ref: evidence/D01-soreness.md#Observation]\n## Observation\nSoreness after every session." in out
+    assert "[ref: evidence/D01-soreness.md#Mechanism]\n## Mechanism\nJoint guarding" in out
+
+
+def test_show_opens_a_document_whole_within_the_window_else_lists_its_sections(env, tmp_path, capsys):
+    import shutil
+    from conftest import make_repo
+    from engram.cli import main
+    garden = tmp_path / "garden"
+    shutil.copytree(Path(__file__).resolve().parents[1] / "examples/notes", garden)  # ingest never writes into the checkout's copy
+    make_repo(garden, {"garden/long.md": "# Long\n" + "".join(f"\n## Part {i}\n" + "Mulch. " * 1500 + "\n" for i in range(3))})
+    env["set_repo"]("garden", garden)
+    main(["ingest", "--domain", "garden"])
+    capsys.readouterr()
+    main(["show", "garden/beds.md", "--domain", "garden"])
+    out = capsys.readouterr().out
+    assert out.startswith("garden/beds.md\nref: garden/beds.md\n")
+    assert "[ref: garden/beds.md#North bed]\n## North bed\nTomatoes since 2026-04-12" in out
+    assert "[ref: garden/beds.md#South bed]\n## South bed\nHerbs; the basil bolted" in out
+    main(["show", "garden/long.md", "--domain", "garden"])  # three sections of 10,500 characters: past the window
+    out = capsys.readouterr().out
+    assert "Mulch." not in out
+    assert out.startswith("'garden/long.md' is past the 30,000 characters show prints whole; its sections:\n")
+    assert "- Part 0\n  ref: garden/long.md#Part 0" in out and "  ref: garden/long.md#Part 2" in out
 
 
 def test_a_whole_section_matches_any_of_its_chunks():

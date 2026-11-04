@@ -165,3 +165,18 @@ def test_capture_places_an_occurrence_on_the_complaint_pages_stable_id(rec):
     assert docreg.ID.match(lfm["from"]) and lfm["from_hint"] == "complaints/elbow-ache.md#Occurrences"
     assert git(repo, "status", "--porcelain").strip() == ""
     assert docreg.load(repo).resolve(lfm["from"]).ref == "complaints/elbow-ache.md#Occurrences"
+
+
+def test_a_document_by_id_opens_whole(rec, capsys):
+    from engram import cli
+    from engram.cli import main
+    from engram.sources import sections
+    cli._ingest("medical", sections)
+    doc = docreg.load(rec["repo"]).owner("plans/rehab.md")
+    capsys.readouterr()
+    main(["show", doc, "--domain", "medical"])
+    out = capsys.readouterr().out
+    assert out.startswith("plans/rehab.md\nref: plans/rehab.md\n")
+    for heading, text in [("Rehab plan", "Intro."), ("Why", "Tendon load."), ("Phase 1 — Isometrics", "Hold 45 seconds."),
+                          ("Success markers", "No pain.")]:
+        assert f"[ref: plans/rehab.md#{heading}]\n" in out and text in out

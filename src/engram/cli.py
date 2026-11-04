@@ -253,16 +253,20 @@ def cmd_lenses(a):
             print(f"{name} [{d}]: {l.get('about', '')}" + (f"\n  for: {l['for']}" if l.get("for") else ""))
 
 
+WINDOW = 30_000  # what show prints whole: Claude Code's default Bash output window, in force wherever setup hasn't raised it
+
+
 def cmd_show(a):
     own = None if a.domain else repo_domain(Path.cwd(), config.load())  # its own repo's record first, then the rest
     domains = sorted(resolve(Path.cwd(), config.load(), a.domain or "all"), key=lambda d: d != own)
-    choices = []
+    choices, long = [], False
     for d in domains:
         idx = open_index(index_path(d), readonly=True)
         ref = _registered(d, a.ref)
         row, near = idx.resolve(ref) if idx else (None, [])
-        if idx and not row and a.ref.startswith("doc-") and "#" not in a.ref:  # a document by id: its opening section
-            row, near = (near[0], []) if near else (None, near)
+        if near and "#" not in ref:  # a whole document, by its path or id: whole if it fits the window, else its sections
+            row = idx.whole(near[0]["ref"].partition("#")[0])
+            row, near, long = (row, [], long) if len(row["body"]) <= WINDOW else (None, near, True)
         if idx:
             idx.close()
         if row:
@@ -282,7 +286,8 @@ def cmd_show(a):
             return
         choices += near
     if choices:
-        print(f"no section {a.ref!r}; the sections of that file:")
+        print(f"{a.ref!r} is past the {WINDOW:,} characters show prints whole; its sections:" if long
+              else f"no section {a.ref!r}; the sections of that file:")
         for r in choices:
             print(f"- {r['title'].rsplit(' › ', 1)[-1]}\n  ref: {r['ref']}")
         return
@@ -291,13 +296,14 @@ def cmd_show(a):
 
 def _registered(domain: str, ref: str) -> str:
     """A document end through the record's registry (engram.docreg): `doc-…#anchor`, or an old `path#Heading` whose
-    file moved or heading was renamed, as the index names it now. Anything else is returned as given."""
+    file moved or heading was renamed, as the index names it now; a bare `doc-…` is its document's path. Anything else
+    is returned as given."""
     repo = config.load()[domain].repo
     if not repo or not record_toml(repo).exists() or not ("#" in ref or ref.startswith("doc-")):
         return ref
     from engram import docreg
     w = docreg.load(Path(repo)).resolve(ref)
-    return w.ref if w else ref
+    return (w.ref if "#" in ref else w.path) if w else ref
 
 
 def cmd_feedback(a):

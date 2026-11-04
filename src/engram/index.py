@@ -158,27 +158,25 @@ class Index:
         body = parts[0]["body"] + "".join(p["body"][OVERLAP:] for p in parts[1:])
         return {**parts[0], "ref": ref, "body": body}
 
-    def whole(self, name: str) -> dict | None:
-        """A whole file by its short name (a consult the timeline shows as one row): its sections joined in order."""
-        from engram.labels import nid
-        for (file,) in self.db.execute("SELECT DISTINCT substr(ref, 1, instr(ref, '#') - 1) FROM doc WHERE ref LIKE '%#%'"):
-            if file and nid(file) == name:
-                parts = [self.section(r) or self.get(r) for (r,) in self.db.execute(
-                    "SELECT DISTINCT coalesce(parent, ref) FROM doc WHERE ref LIKE ? ORDER BY rowid", (file.replace("%", r"\%") + "#%",))]
-                parts = [p for p in parts if p]
-                body = "\n\n".join(f"[ref: {p['ref']}]\n{p['body']}" for p in parts)  # each part's ref, to cite it
-                return {**parts[0], "ref": file, "title": file, "body": body} if parts else None
-        return None
+    def whole(self, file: str) -> dict | None:
+        """A whole file: its sections joined in order, each with its ref to cite it."""
+        parts = [self.section(r) or self.get(r) for (r,) in self.db.execute(
+            "SELECT DISTINCT coalesce(parent, ref) FROM doc WHERE ref LIKE ? ORDER BY rowid", (file.replace("%", r"\%") + "#%",))]
+        parts = [p for p in parts if p]
+        body = "\n\n".join(f"[ref: {p['ref']}]\n{p['body']}" for p in parts)
+        return {**parts[0], "ref": file, "title": file, "body": body} if parts else None
 
     def resolve(self, ref: str) -> tuple[dict | None, list[dict]]:
         """A ref as a page links it: exact, or a relative link (`../logs/x.md#Some heading`) whose anchor is the heading
         text or its slug. A bare file gives no row but its sections, so the reader can pick one."""
+        from engram.labels import nid
         if row := self.get(ref) or self.section(ref):
             return row, []
         if re.fullmatch(r"[a-z2-9]{6}", ref) and (r := self.db.execute("SELECT ref, parent FROM doc WHERE nid = ? LIMIT 1", (ref,)).fetchone()):
             return self.section(r[1]) if r[1] else self.get(r[0]), []  # a short name, as output prints it
-        if re.fullmatch(r"[a-z2-9]{6}", ref) and (whole := self.whole(ref)):
-            return whole, []
+        if re.fullmatch(r"[a-z2-9]{6}", ref) and (file := next((f for (f,) in self.db.execute(
+                "SELECT DISTINCT substr(ref, 1, instr(ref, '#') - 1) FROM doc WHERE ref LIKE '%#%'") if f and nid(f) == ref), None)):
+            return self.whole(file), []  # a whole file by its short name: a consult the timeline shows as one row
         ref = ref.strip("<>")
         while ref.startswith(("../", "./")):
             ref = ref.split("/", 1)[1]

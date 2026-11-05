@@ -1229,99 +1229,143 @@ def test_near_matches_a_month_dated_entry_only_within_its_month_and_skips_year_a
 
 
 WRONG = {"line": 7, "text": "The ache was in the left knee", "quote": "I started Orvexa", "date": "2026-10-15", "kind": "observation"}
+RIGHT = {"line": 9, "text": "The ache was in the right knee", "quote": "it was the right knee", "date": "not-sure", "kind": "observation"}
+NEXT_DAY = LATER + timedelta(days=1)
 
 
-def _correcting(confirm: str, calls: list, fact: dict):
+def _scripted(confirm: str, calls: list, *facts: dict, repeats=()):
+    """The model, as fixed replies: the facts, the repeat check, and `confirm` to each correction, whose asks go in `calls`."""
     def ask(prompt):
         if "was wrong, not that things changed" in prompt:
             calls.append(prompt)
             return confirm, 0.01
-        return json.dumps({"facts": [fact], "repeats": []}), 0.01
+        return json.dumps({"facts": list(facts), "repeats": list(repeats)}), 0.01
     return ask
 
 
-def _wrong_entry(world) -> str:
+def _added(world, title="Ache in the right knee", **fm) -> str:
     with store.Store(world["repo"]).transaction() as tx:
-        return tx.add({"title": "Ache in the right knee", "date": "2026-10-10", "kind": "observation", "about": ["series/_observations"]}, "- ache in the right knee\n").id
+        return tx.add({"title": title, "date": "2026-10-10", "kind": "observation", "about": ["series/_observations"], **fm}, f"- {title}\n").id
 
 
-def test_a_confirmed_correction_links_to_the_entry_it_replaces(world):
-    old, calls = _wrong_entry(world), []
-    assert hourly.run(ask=_correcting("learned", calls, {**WRONG, "corrects": old}), summaries=False, now=LATER)["filed"] == 1
-    st = store.Store(world["repo"])
-    new = next(e for e in st.events() if e.fm.get("supersedes") == old)
-    link = next(l for l in st.events(kind="link") if l.fm.get("rel") == "supersedes")
-    assert (link.fm["from"], link.fm["to"], link.fm["family"], link.fm["by"]) == (new.id, old, "evidence", "claude")
-    assert "I started Orvexa" in link.body and "ache in the right knee" in calls[0] and "left knee" in calls[0]
-    assert units.corrected(st) == {old} and capture.filed_from(st, "s1") == [new]  # the link isn't one more thing the session filed
-
-
-def test_an_unconfirmed_correction_files_the_fact_without_the_link(world):
-    old, calls = _wrong_entry(world), []
-    out = hourly.run(ask=_correcting("no", calls, {**WRONG, "corrects": old}), summaries=False, now=LATER)
-    assert out["filed"] == 1 and len(calls) == 1 and old in out["kept"][0]["why"]
-    st = store.Store(world["repo"])
-    assert not units.corrected(st) and not [e for e in st.events() if e.fm.get("supersedes")]
-
-
-@pytest.mark.parametrize("target", ["no-such-entry", "taken"])
-def test_a_correction_of_what_isnt_there_to_correct_asks_nothing(world, target):
-    old, calls = _wrong_entry(world), []
-    if target == "taken":
-        target = old
-        with store.Store(world["repo"]).transaction() as tx:
-            tx.add({"title": "x supersedes", "date": "2026-10-11", "kind": "link", "about": [], "from": "story/ankle", "to": old,
-                    "family": "evidence", "rel": "supersedes"}, "")
-    assert hourly.run(ask=_correcting("learned", calls, {**WRONG, "corrects": target}), summaries=False, now=LATER)["filed"] == 1
-    assert not calls and not [e for e in store.Store(world["repo"]).events() if e.fm.get("supersedes")]
-
-
-def _filed_then(world, slip_fact=None, confirm="slip", later=LATER):
-    """Files WRONG from the session, then a second pass past its mark that corrects it, in the words `confirm` answers."""
-    assert hourly.run(ask=_correcting("no", [], WRONG), summaries=False, now=LATER)["filed"] == 1
-    old = next(e for e in store.Store(world["repo"]).events() if e.fm.get("title") == WRONG["text"])
+def _first_pass(world) -> store.Event:
+    """The session files WRONG, then grows past its mark by a message that corrects it."""
+    assert hourly.run(ask=_scripted("no", [], WRONG), summaries=False, now=LATER)["filed"] == 1
     with world["path"].open("a") as f:
         f.write(said("no sorry it was the right knee", ts="2026-10-19T09:00:00Z") + "\n")
-    fact = {"line": 9, "text": "The ache was in the right knee", "quote": "it was the right knee", "date": "not-sure", "kind": "observation", "corrects": old.id, **(slip_fact or {})}
-    return old, fact
+    return next(e for e in store.Store(world["repo"]).events() if e.fm.get("title") == WRONG["text"])
 
 
-def test_a_slip_the_same_session_corrects_is_rewritten_in_place(world):
-    old, fact = _filed_then(world)
-    out = hourly.run(ask=_correcting("slip", [], fact), summaries=False, now=LATER + timedelta(days=1))
+def _target(world, monkeypatch, what: str) -> str:
+    """The entry a correction names, in each state one can be in."""
+    filed = _first_pass(world)
+    mine = {"source": "said in session s1 on 2026-10-18", "author": "engram-capture"}
+    if what == "stale":
+        monkeypatch.setattr(capture, "_now", lambda: datetime.now().astimezone() + capture.EDIT_WINDOW + timedelta(days=1))
+    elif what == "refused":  # another event file left changed: the fix won't commit around it
+        other = store.Store(world["repo"]).root / next(e.path for e in store.Store(world["repo"]).events() if e.fm.get("title") == "old")
+        other.write_text(other.read_text() + "edited\n")
+    elif what == "no words":
+        monkeypatch.delitem(pack.load("medical").prompts, "correct_confirm")
+    elif what == "taken":
+        with store.Store(world["repo"]).transaction() as tx:
+            tx.add({"title": "x", "date": "2026-10-11", "kind": "link", "about": [], "from": "story/ankle", "to": filed.id, "family": "evidence", "rel": "supersedes"}, "")
+    elif what == "a link":
+        with store.Store(world["repo"]).transaction() as tx:
+            return tx.add({"title": "x", "date": "2026-10-11", "kind": "link", "about": [], "from": "story/ankle", "to": filed.id, "family": "evidence", "rel": "strengthens"}, "").id
+    return {"another session's": lambda: _added(world, source="said in session s2 on 2026-10-10", author="engram-capture"),
+            "hand filed": lambda: _added(world),
+            "another kind": lambda: _added(world, **mine, kind="symptom"),
+            "missing": lambda: "no-such-entry"}.get(what, lambda: filed.id)()
+
+
+NOTHING_TO_CORRECT = {"taken", "missing", "a link", "no words"}
+NOT_REWRITTEN = {"another session's", "hand filed", "another kind", "stale", "refused"}
+
+
+def _expected(what: str, word: str) -> tuple[str, int]:
+    """The rules, as (what happens, confirming calls): every state of an entry against every answer."""
+    if what in NOTHING_TO_CORRECT:
+        return "alone", 0
+    if word not in ("slip", "learned"):
+        return "alone", 1
+    return "rewritten" if word == "slip" and what not in NOT_REWRITTEN else "linked", 1
+
+
+@pytest.mark.parametrize("word", ["slip", "learned", "no", "no idea"])
+@pytest.mark.parametrize("what", ["the session's own", "stale", "refused", "another session's", "hand filed", "another kind", *sorted(NOTHING_TO_CORRECT)])
+def test_a_correction_in_every_state_against_every_answer(world, monkeypatch, what, word):
+    target, calls = _target(world, monkeypatch, what), []
+    before = {e.id: e.fm.get("title") for e in store.Store(world["repo"]).events()}
+    out = hourly.run(ask=_scripted(word, calls, {**RIGHT, "corrects": target}), summaries=False, now=NEXT_DAY)
     st = store.Store(world["repo"])
-    assert out["filed"] == 1
-    new = next(e for e in st.events() if e.id == old.id)
-    assert new.fm["title"] == fact["text"] and "it was the right knee" in new.body and "left knee" not in new.body
-    assert new.fm["date"] == old.fm["date"] and new.fm["recorded"] == old.fm["recorded"]  # no date given: its own stands
-    assert not units.corrected(st) and len(capture.filed_from(st, "s1")) == 1  # one entry, no link
-    assert "Engram-Fix:" in git(world["repo"], "log", "-1", "--format=%B")
-    assert git(world["repo"], "status", "--porcelain", "--", "events").strip() == ""
-    assert "left knee" in git(world["repo"], "log", "-p", "-3", "--format=", "--", old.path)  # git keeps the old words
+    outcome, asks = _expected(what, word)
+    assert out["error"] is None and out["filed"] == 1 and len(calls) == asks
+    links = [l for l in st.events(kind="link") if l.fm.get("author") == "engram-capture" and l.fm.get("rel") == "supersedes"]
+    new = [e for e in st.events() if e.id not in before and e.kind != "link"]
+    if outcome == "rewritten":
+        assert next(e for e in st.events() if e.id == target).fm["title"] == RIGHT["text"] and not new and not links
+    elif outcome == "linked":
+        assert before[target] == next(e for e in st.events() if e.id == target).fm["title"]
+        assert [e.fm["supersedes"] for e in new] == [target] and [(l.fm["from"], l.fm["to"]) for l in links] == [(new[0].id, target)]
+        assert "it was the right knee" in links[0].body and links[0].id not in [e.id for e in capture.filed_from(st, "s1")]  # the link isn't a fact
+    else:
+        assert [e.fm.get("title") for e in new] == [RIGHT["text"]] and "supersedes" not in new[0].fm and not links
 
 
-def test_something_learned_stays_a_new_entry_beside_the_old(world):
-    old, fact = _filed_then(world)
-    hourly.run(ask=_correcting("learned", [], fact), summaries=False, now=LATER + timedelta(days=1))
-    st = store.Store(world["repo"])
-    assert units.corrected(st) == {old.id} and next(e for e in st.events() if e.id == old.id).fm["title"] == WRONG["text"]
-
-
-def test_a_slip_past_the_limits_is_not_rewritten(world, monkeypatch):
-    old, _ = _filed_then(world)
-    assert capture.editable(old, {"kind": "observation"}, "s1")
-    assert not capture.editable(old, {"kind": "symptom"}, "s1")  # another kind
-    assert not capture.editable(old, {"kind": "observation"}, "s2")  # another session
-    monkeypatch.setattr(capture, "_now", lambda: datetime.now().astimezone() + timedelta(days=8))
-    assert not capture.editable(old, {"kind": "observation"}, "s1")  # too long ago
-
-
-def test_a_link_to_the_theory_stays_on_a_rewritten_slip(world):
-    old, fact = _filed_then(world)
-    with store.Store(world["repo"]).transaction() as tx:  # the weekly sweep's, say: no session's source
-        link = tx.add({"title": "evidence", "date": "2026-10-18", "kind": "link", "about": [], "from": old.id, "to": "story/ankle",
+def test_a_rewrite_keeps_what_it_should_and_git_keeps_the_rest(world):
+    old = _first_pass(world)
+    with store.Store(world["repo"]).transaction() as tx:  # the weekly sweep's link, say: no session's source
+        link = tx.add({"title": "x", "date": "2026-10-18", "kind": "link", "about": [], "from": old.id, "to": "story/ankle",
                        "family": "evidence", "rel": "strengthens", "author": "engram-sweep"}, "").id
-    hourly.run(ask=_correcting("slip", [], fact), summaries=False, now=LATER + timedelta(days=1))
+    hourly.run(ask=_scripted("slip", [], {**RIGHT, "corrects": old.id}), summaries=False, now=NEXT_DAY)
     st = store.Store(world["repo"])
-    assert next(e for e in st.events() if e.id == old.id).fm["title"] == fact["text"]
-    assert not units.corrected(st) and next(l for l in st.events(kind="link") if l.id == link).fm["from"] == old.id
+    new = next(e for e in st.events() if e.id == old.id)
+    assert "it was the right knee" in new.body and "left knee" not in new.body and new.fm["source"].startswith("said in session s1 ")
+    assert (new.fm["date"], new.fm["reported"], new.fm["recorded"]) == (old.fm["date"], old.fm["reported"], old.fm["recorded"])  # no date given
+    assert next(l for l in st.events(kind="link") if l.id == link).fm["from"] == old.id
+    assert "Engram-Fix:" in git(world["repo"], "log", "-1", "--format=%B") and git(world["repo"], "status", "--porcelain", "--", "events").strip() == ""
+    assert "left knee" in git(world["repo"], "log", "-p", "-3", "--format=", "--", old.path)
+
+
+def test_a_rewrite_takes_a_date_the_correction_gives(world):
+    old = _first_pass(world)
+    hourly.run(ask=_scripted("slip", [], {**RIGHT, "corrects": old.id, "quote": "it was the right knee", "date": "2026-10-19"}), summaries=False, now=NEXT_DAY)
+    new = next(e for e in store.Store(world["repo"]).events() if e.id == old.id)
+    assert (new.fm["date"], new.fm["reported"]) == ("2026-10-19", "2026-10-19") and new.fm["recorded"] == old.fm["recorded"]
+
+
+def test_a_second_slip_rewrites_the_same_entry_again(world):
+    old = _first_pass(world)
+    hourly.run(ask=_scripted("slip", [], {**RIGHT, "corrects": old.id}), summaries=False, now=NEXT_DAY)
+    with world["path"].open("a") as f:
+        f.write(said("wait no it was the left hip", ts="2026-10-20T09:00:00Z") + "\n")
+    third = {**RIGHT, "line": 10, "text": "The ache was in the left hip", "quote": "it was the left hip", "corrects": old.id}
+    hourly.run(ask=_scripted("slip", [], third), summaries=False, now=NEXT_DAY + timedelta(days=1))
+    st = store.Store(world["repo"])
+    assert next(e for e in st.events() if e.id == old.id).fm["title"] == third["text"] and len(capture.filed_from(st, "s1")) == 1
+
+
+def test_two_corrections_of_one_entry_in_a_pass_keep_the_first(world):
+    old, calls = _first_pass(world), []
+    with world["path"].open("a") as f:
+        f.write(said("and it was the right hip too", ts="2026-10-19T09:00:00Z") + "\n")
+    other = {**RIGHT, "line": 10, "text": "The ache was in the right hip", "quote": "it was the right hip"}
+    out = hourly.run(ask=_scripted("learned", calls, {**RIGHT, "corrects": old.id}, {**other, "corrects": old.id}), summaries=False, now=NEXT_DAY)
+    st = store.Store(world["repo"])
+    assert out["filed"] == 2 and len(calls) == 1 and units.corrected(st) == {old.id}
+    assert [e.fm["title"] for e in st.events() if e.fm.get("supersedes") == old.id] == [RIGHT["text"]]
+
+
+def test_a_correction_the_repeat_check_drops_asks_nothing_and_changes_nothing(world, monkeypatch):
+    old, calls = _first_pass(world), []
+    monkeypatch.setattr(capture, "verify", lambda *a, **k: ({0: old.id}, {}, 0.0))
+    out = hourly.run(ask=_scripted("slip", calls, {**RIGHT, "corrects": old.id}), summaries=False, now=NEXT_DAY)
+    assert out["filed"] == 0 and not calls and next(e for e in store.Store(world["repo"]).events() if e.id == old.id).fm["title"] == WRONG["text"]
+
+
+def test_a_dry_run_says_what_it_would_rewrite_and_changes_nothing(world):
+    old = _first_pass(world)
+    head = git(world["repo"], "rev-parse", "HEAD")
+    out = hourly.run(ask=_scripted("slip", [], {**RIGHT, "corrects": old.id}), summaries=False, now=NEXT_DAY, dry_run=True)
+    assert [f["edits"] for f in out["would_file"]] == [old.id] and git(world["repo"], "rev-parse", "HEAD") == head

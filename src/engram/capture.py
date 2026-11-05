@@ -923,16 +923,12 @@ EDIT_WINDOW = timedelta(days=7)  # past this, a correction reads as something le
 DATE_KEYS = ("date", "date_note", "approx", "as_said", "range_from", "range_to", "landmark", "reported")
 
 
-def editable(st: store.Store, e: store.Event, fm: dict, stem: str) -> bool:
-    """Whether a slip can be rewritten in `e`: the same session filed it lately, it stays the same kind, and no link
-    but that session's own placement links touches it."""
+def editable(e: store.Event, fm: dict, stem: str) -> bool:
+    """Whether a slip can be rewritten in `e`: the same session filed it lately and it stays the same kind. Links to it
+    stay, since it keeps its id."""
     mine = tuple(f"{how} in session {stem[:8]} " for how in ("said", "agreed"))
-    if not str(e.fm.get("source", "")).startswith(mine) or e.fm.get("author") != "engram-capture" or fm.get("kind") != e.kind:
-        return False
-    if _now() - datetime.fromisoformat(str(e.fm["recorded"])) > EDIT_WINDOW:
-        return False
-    return not any(e.id in (units.norm(str(l.fm.get("from"))), units.norm(str(l.fm.get("to"))))
-                   and not str(l.fm.get("source", "")).startswith(mine) for l in st.events(kind="link"))
+    return (str(e.fm.get("source", "")).startswith(mine) and e.fm.get("author") == "engram-capture" and fm.get("kind") == e.kind
+            and _now() - datetime.fromisoformat(str(e.fm["recorded"])) <= EDIT_WINDOW)
 
 
 def rewrite(st: store.Store, old: str, fm: dict, body: str) -> bool:
@@ -970,7 +966,7 @@ def confirm_corrections(st: store.Store, entries: list[tuple[dict, str]], repeat
             reply, usd = ask(config.voice(words).format(entry=f"[{e.date}] {e.fm.get('title', '')}\n{e.body.strip()}", said=body.strip()))
             word = (re.match(r"\W*(\w+)", reply or "") or [None, ""])[1].lower()
             yes = word in ("slip", "learned")
-            if word == "slip" and editable(st, e, fm, stem):
+            if word == "slip" and editable(e, fm, stem):
                 fm["edits"] = fm.pop("supersedes")
         if yes:
             taken.add(old)

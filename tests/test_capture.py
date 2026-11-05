@@ -1307,19 +1307,21 @@ def test_something_learned_stays_a_new_entry_beside_the_old(world):
     assert units.corrected(st) == {old.id} and next(e for e in st.events() if e.id == old.id).fm["title"] == WRONG["text"]
 
 
-def test_a_slip_past_the_limits_is_linked_not_rewritten(world, monkeypatch):
+def test_a_slip_past_the_limits_is_not_rewritten(world, monkeypatch):
+    old, _ = _filed_then(world)
+    assert capture.editable(old, {"kind": "observation"}, "s1")
+    assert not capture.editable(old, {"kind": "symptom"}, "s1")  # another kind
+    assert not capture.editable(old, {"kind": "observation"}, "s2")  # another session
+    monkeypatch.setattr(capture, "_now", lambda: datetime.now().astimezone() + timedelta(days=8))
+    assert not capture.editable(old, {"kind": "observation"}, "s1")  # too long ago
+
+
+def test_a_link_to_the_theory_stays_on_a_rewritten_slip(world):
     old, fact = _filed_then(world)
-    st = store.Store(world["repo"])
-    assert capture.editable(st, old, {"kind": "observation"}, "s1")
-    assert not capture.editable(st, old, {"kind": "symptom"}, "s1")  # another kind
-    assert not capture.editable(st, old, {"kind": "observation"}, "s2")  # another session
-    with monkeypatch.context() as m:
-        m.setattr(capture, "_now", lambda: datetime.now().astimezone() + timedelta(days=8))
-        assert not capture.editable(st, old, {"kind": "observation"}, "s1")  # too long ago
-    with st.transaction() as tx:  # something else leans on it
-        tx.add({"title": "evidence", "date": "2026-10-18", "kind": "link", "about": [], "from": old.id, "to": "story/ankle",
-                "family": "evidence", "rel": "strengthens"}, "")
+    with store.Store(world["repo"]).transaction() as tx:  # the weekly sweep's, say: no session's source
+        link = tx.add({"title": "evidence", "date": "2026-10-18", "kind": "link", "about": [], "from": old.id, "to": "story/ankle",
+                       "family": "evidence", "rel": "strengthens", "author": "engram-sweep"}, "").id
     hourly.run(ask=_correcting("slip", [], fact), summaries=False, now=LATER + timedelta(days=1))
     st = store.Store(world["repo"])
-    assert next(e for e in st.events() if e.id == old.id).fm["title"] == WRONG["text"]
-    assert units.corrected(st) == {old.id}
+    assert next(e for e in st.events() if e.id == old.id).fm["title"] == fact["text"]
+    assert not units.corrected(st) and next(l for l in st.events(kind="link") if l.id == link).fm["from"] == old.id

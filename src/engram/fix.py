@@ -1,7 +1,7 @@
-"""engram fix: a mechanical error edited out of the record (the owner). A correction is knowledge: something
-learned later, filed as a new entry that revises the old one, which stays as what was known. A mistake of the machinery
-(a date the filer never heard, a cut title, a correction filed for one) was never known, so it is edited or deleted in
-place: the listed event files as they stand in the working tree, and the listed link lines dropped from links.jsonl, in
+"""engram fix: a mechanical error edited out of the record (the owner), or a slip the filer rewrites (capture.rewrite).
+A correction is knowledge: something learned later, filed as a new entry that revises the old one, which stays as what
+was known. A mistake of the machinery (a date the filer never heard, a cut title, a correction filed for one) or a
+misstatement corrected in the session that filed it was never known, so it is edited or deleted in place: the listed event files as they stand in the working tree, and the listed link lines dropped from links.jsonl, in
 one commit carrying an `Engram-Fix:` trailer, then pushed. Nothing else may change; the append-only check lets exactly
 these paths through (FIX_ENV). A run of the evidence sweep is undone whole (`drop_run`): every link that commit filed is
 dropped, and the fix says it reverts the commit, so the weekly page takes the run's line away with it."""

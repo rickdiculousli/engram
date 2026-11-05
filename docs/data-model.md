@@ -36,7 +36,7 @@ The fields:
 - **`supersedes`:** marks a correction; search ranks the superseded entry at half. `engram add --supersedes` writes the `supersedes` link beside it, the link chains read.
 - **`recorded`:** when it was filed; a narrowing keeps its recollection's. A migrated entry uses the author time of the first commit that held it, so reruns give the same ids.
 - **Prospective items:** kind `plan`, with `target` and `as_of`.
-- **Append-only:** a commit may add files under `events/` but never modify or delete one. The only exception is `engram fix`, for a mechanical error ([technical](technical.md#mechanical-errors)); something learned later is a new entry and a `revises` link.
+- **Append-only:** a commit may add files under `events/` but never modify or delete one. The only exception is `engram fix`, for a mechanical error ([technical](technical.md#mechanical-errors)) or a slip corrected in the session that filed it ([the filer](technical.md#the-filer)); something learned later is a new entry and a `revises` link.
 - **Frontmatter** is YAML, because GitHub mobile renders it as a table. It's parsed with PyYAML's `BaseLoader`, so `NO` stays a string, `1.50` keeps its zero, and dates stay text.
 
 Each repo names its own entry kinds in its pack (`kinds`); `interpretation`, `plan`, `revision`, `status` and `link` serve every area.

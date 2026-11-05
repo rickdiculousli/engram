@@ -11,7 +11,8 @@ YYYY-MM, YYYY or "not-sure"), "kind" (one of {kinds}), "about" (from {abouts}) a
 {owner}'s words say when other than as a plain date, give "as_said" (those words, copied exactly). When he dates a fact
 by a life event, or the fact is one (a move, a new job), give "landmark": its name from these ({landmarks}), else a new
 short one. "birth" is {owner}'s own; another person's event names them ("son-born"). When {owner} says a note listed
-below was wrong, give "corrects": its id, from its "(id ...)".
+below was wrong, give "corrects": its id, from its "(id ...)", and "text" as the note should read. Correcting himself
+within the new messages, file only the corrected fact.
 {theory}
 Reply with JSON only: {{"facts": [...], "theory": []}}.
 
@@ -114,7 +115,8 @@ The passage at issue: {passage}
 {text}
 </document>"""
 
-CORRECT_CONFIRM = """Does what {owner} said mean this note was wrong, not that things changed since? Reply yes or no alone.
+CORRECT_CONFIRM = """Does what {owner} said mean this note was wrong, not that things changed since? Reply with one word:
+slip when he misspoke or misremembered, learned when something new showed it wrong, no otherwise.
 
 {entry}
 

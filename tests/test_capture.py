@@ -1228,7 +1228,7 @@ def test_near_matches_a_month_dated_entry_only_within_its_month_and_skips_year_a
     assert ids["2026"] not in got and ids["not-sure"] not in got
 
 
-WRONG = {"line": 7, "text": "The ache was in the left knee, not the right", "quote": "I started Orvexa", "date": "2026-10-15", "kind": "observation"}
+WRONG = {"line": 7, "text": "The ache was in the left knee", "quote": "I started Orvexa", "date": "2026-10-15", "kind": "observation"}
 
 
 def _correcting(confirm: str, calls: list, fact: dict):
@@ -1247,7 +1247,7 @@ def _wrong_entry(world) -> str:
 
 def test_a_confirmed_correction_links_to_the_entry_it_replaces(world):
     old, calls = _wrong_entry(world), []
-    assert hourly.run(ask=_correcting("yes", calls, {**WRONG, "corrects": old}), summaries=False, now=LATER)["filed"] == 1
+    assert hourly.run(ask=_correcting("learned", calls, {**WRONG, "corrects": old}), summaries=False, now=LATER)["filed"] == 1
     st = store.Store(world["repo"])
     new = next(e for e in st.events() if e.fm.get("supersedes") == old)
     link = next(l for l in st.events(kind="link") if l.fm.get("rel") == "supersedes")
@@ -1272,5 +1272,54 @@ def test_a_correction_of_what_isnt_there_to_correct_asks_nothing(world, target):
         with store.Store(world["repo"]).transaction() as tx:
             tx.add({"title": "x supersedes", "date": "2026-10-11", "kind": "link", "about": [], "from": "story/ankle", "to": old,
                     "family": "evidence", "rel": "supersedes"}, "")
-    assert hourly.run(ask=_correcting("yes", calls, {**WRONG, "corrects": target}), summaries=False, now=LATER)["filed"] == 1
+    assert hourly.run(ask=_correcting("learned", calls, {**WRONG, "corrects": target}), summaries=False, now=LATER)["filed"] == 1
     assert not calls and not [e for e in store.Store(world["repo"]).events() if e.fm.get("supersedes")]
+
+
+def _filed_then(world, slip_fact=None, confirm="slip", later=LATER):
+    """Files WRONG from the session, then a second pass past its mark that corrects it, in the words `confirm` answers."""
+    assert hourly.run(ask=_correcting("no", [], WRONG), summaries=False, now=LATER)["filed"] == 1
+    old = next(e for e in store.Store(world["repo"]).events() if e.fm.get("title") == WRONG["text"])
+    with world["path"].open("a") as f:
+        f.write(said("no sorry it was the right knee", ts="2026-10-19T09:00:00Z") + "\n")
+    fact = {"line": 9, "text": "The ache was in the right knee", "quote": "it was the right knee", "date": "not-sure", "kind": "observation", "corrects": old.id, **(slip_fact or {})}
+    return old, fact
+
+
+def test_a_slip_the_same_session_corrects_is_rewritten_in_place(world):
+    old, fact = _filed_then(world)
+    out = hourly.run(ask=_correcting("slip", [], fact), summaries=False, now=LATER + timedelta(days=1))
+    st = store.Store(world["repo"])
+    assert out["filed"] == 1
+    new = next(e for e in st.events() if e.id == old.id)
+    assert new.fm["title"] == fact["text"] and "it was the right knee" in new.body and "left knee" not in new.body
+    assert new.fm["date"] == old.fm["date"] and new.fm["recorded"] == old.fm["recorded"]  # no date given: its own stands
+    assert not units.corrected(st) and len(capture.filed_from(st, "s1")) == 1  # one entry, no link
+    assert "Engram-Fix:" in git(world["repo"], "log", "-1", "--format=%B")
+    assert git(world["repo"], "status", "--porcelain", "--", "events").strip() == ""
+    assert "left knee" in git(world["repo"], "log", "-p", "-3", "--format=", "--", old.path)  # git keeps the old words
+
+
+def test_something_learned_stays_a_new_entry_beside_the_old(world):
+    old, fact = _filed_then(world)
+    hourly.run(ask=_correcting("learned", [], fact), summaries=False, now=LATER + timedelta(days=1))
+    st = store.Store(world["repo"])
+    assert units.corrected(st) == {old.id} and next(e for e in st.events() if e.id == old.id).fm["title"] == WRONG["text"]
+
+
+def test_a_slip_past_the_limits_is_linked_not_rewritten(world, monkeypatch):
+    old, fact = _filed_then(world)
+    st = store.Store(world["repo"])
+    assert capture.editable(st, old, {"kind": "observation"}, "s1")
+    assert not capture.editable(st, old, {"kind": "symptom"}, "s1")  # another kind
+    assert not capture.editable(st, old, {"kind": "observation"}, "s2")  # another session
+    with monkeypatch.context() as m:
+        m.setattr(capture, "_now", lambda: datetime.now().astimezone() + timedelta(days=8))
+        assert not capture.editable(st, old, {"kind": "observation"}, "s1")  # too long ago
+    with st.transaction() as tx:  # something else leans on it
+        tx.add({"title": "evidence", "date": "2026-10-18", "kind": "link", "about": [], "from": old.id, "to": "story/ankle",
+                "family": "evidence", "rel": "strengthens"}, "")
+    hourly.run(ask=_correcting("slip", [], fact), summaries=False, now=LATER + timedelta(days=1))
+    st = store.Store(world["repo"])
+    assert next(e for e in st.events() if e.id == old.id).fm["title"] == WRONG["text"]
+    assert units.corrected(st) == {old.id}

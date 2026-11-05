@@ -45,7 +45,7 @@ from collections import Counter
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-from engram import commitmsg, config, dates, llm, pack, periods, recsum, store, summarize, units, verbatim
+from engram import commitmsg, config, dates, fix, llm, pack, periods, recsum, store, summarize, units, verbatim
 from engram import now as now_mod
 from engram import theory as theory_mod
 from engram.paths import data_path, record_conf, record_toml
@@ -919,10 +919,45 @@ def correction_target(fact: dict, st: store.Store) -> str | None:
     return target if any(e.id == target and e.kind != "link" for e in st.events()) else None
 
 
-def confirm_corrections(st: store.Store, entries: list[tuple[dict, str]], repeats: dict, ask, p: pack.Pack) -> list[tuple[int, str | None, float]]:
+EDIT_WINDOW = timedelta(days=7)  # past this, a correction reads as something learned, whatever the call says
+DATE_KEYS = ("date", "date_note", "approx", "as_said", "range_from", "range_to", "landmark", "reported")
+
+
+def editable(st: store.Store, e: store.Event, fm: dict, stem: str) -> bool:
+    """Whether a slip can be rewritten in `e`: the same session filed it lately, it stays the same kind, and no link
+    but that session's own placement links touches it."""
+    mine = tuple(f"{how} in session {stem[:8]} " for how in ("said", "agreed"))
+    if not str(e.fm.get("source", "")).startswith(mine) or e.fm.get("author") != "engram-capture" or fm.get("kind") != e.kind:
+        return False
+    if _now() - datetime.fromisoformat(str(e.fm["recorded"])) > EDIT_WINDOW:
+        return False
+    return not any(e.id in (units.norm(str(l.fm.get("from"))), units.norm(str(l.fm.get("to"))))
+                   and not str(l.fm.get("source", "")).startswith(mine) for l in st.events(kind="link"))
+
+
+def rewrite(st: store.Store, old: str, fm: dict, body: str) -> bool:
+    """The slip's entry rewritten to the corrected fact in one marked commit, keeping its id, when it was filed and,
+    if the correction gives no date, its date. False, with nothing changed, when the commit is refused."""
+    e = next(x for x in st.events() if x.id == old)
+    undated = str(fm.get("date_note", "")).startswith("reported")
+    new = {k: v for k, v in e.fm.items() if undated or k not in DATE_KEYS} | {k: v for k, v in fm.items() if not undated or k not in DATE_KEYS}
+    new["about"] = list(dict.fromkeys([*e.about, *(fm.get("about") or [])]))
+    path = st.root / e.path
+    before = path.read_text()
+    path.write_text(store.render_event(new, body))
+    try:
+        fix.apply(st, [e.path], "a slip the owner corrected in the session that filed it")
+    except fix.Refused:
+        path.write_text(before)
+        return False
+    return True
+
+
+def confirm_corrections(st: store.Store, entries: list[tuple[dict, str]], repeats: dict, ask, p: pack.Pack, stem: str = "") -> list[tuple[int, str | None, float]]:
     """A second call, shown only the earlier entry and what was said, confirms each correction before it can push an
-    entry down; anything but yes files the fact without the link, as does a second correction of one entry. Returns
-    (index, the target it lost or None, cost) for each it asked about or refused."""
+    entry down or rewrite one; anything else files the fact alone, as does a second correction of one entry. A slip in
+    an entry that's `editable` swaps `supersedes` for `edits`. Returns (index, the target it lost or None, cost) for
+    each it asked about or refused."""
     out, taken = [], set()
     events = {e.id: e for e in st.events()}
     words = p.prompts.get("correct_confirm")
@@ -933,7 +968,10 @@ def confirm_corrections(st: store.Store, entries: list[tuple[dict, str]], repeat
         if words and old not in taken:
             e = events[old]
             reply, usd = ask(config.voice(words).format(entry=f"[{e.date}] {e.fm.get('title', '')}\n{e.body.strip()}", said=body.strip()))
-            yes = bool(re.match(r"\W*yes\b", reply or "", re.I))
+            word = (re.match(r"\W*(\w+)", reply or "") or [None, ""])[1].lower()
+            yes = word in ("slip", "learned")
+            if word == "slip" and editable(st, e, fm, stem):
+                fm["edits"] = fm.pop("supersedes")
         if yes:
             taken.add(old)
         else:
@@ -1042,7 +1080,7 @@ def file_session(domain: str, root: Path, path: Path, ask=None, dry_run: bool = 
         for i, ref in repeats.items():
             res["dropped"].append({"session": path.stem[:8], "line": lines[i], "why": f"already in {ref}",
                                    "text": entries[i][0]["title"]})
-        for i, target, usd in confirm_corrections(st, entries, repeats, ask_verify, p):
+        for i, target, usd in confirm_corrections(st, entries, repeats, ask_verify, p, path.stem):
             res["usd"] += usd
             if target:
                 res["kept"].append({"session": path.stem[:8], "line": lines[i], "why": f"filed, not as a correction of {target}",
@@ -1087,6 +1125,17 @@ def file_session(domain: str, root: Path, path: Path, ask=None, dry_run: bool = 
                                    why=str(revision.get("why", "")), said=said, date=when.get(line),
                                    source=f"agreed in session {path.stem[:8]} on {when.get(line)}")
             res["filed"] += len(r.written)
+        left = []
+        for x, w in zip(entries, places):  # before the transaction, which holds the lock the fix takes
+            old = x[0].pop("edits", None)
+            if old and rewrite(st, old, *x):
+                res["filed"] += 1
+                res["kept"].append({"session": path.stem[:8], "line": None, "why": f"rewrote {old}, the same session's slip", "text": x[0]["title"]})
+                continue
+            if old:
+                x[0]["supersedes"] = old
+            left.append((x, w))
+        entries, places = [x for x, _ in left], [w for _, w in left]
         if entries:
             with st.transaction(message=commitmsg.message("facts", n=len(entries), session=path.stem[:8])) as tx:
                 dom = st.config.get("domain", {}).get("name", "")

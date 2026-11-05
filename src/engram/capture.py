@@ -176,7 +176,7 @@ def on_record(domain: str, said: list[str], per: int = 5) -> list[str]:
         for r in search.search(words[:500], [domain], limit=per, surround=False):
             if r["ref"] not in seen:
                 seen.add(r["ref"])
-                out.append(f"[{r.get('date') or 'undated'}] {r['title']}: {' '.join(str(r.get('snip') or '').split())[:300]}")
+                out.append(f"[{r.get('date') or 'undated'}] {r['title']}: {' '.join(str(r.get('snip') or '').split())[:300]} (id {r['ref']})")
     return out
 
 
@@ -789,6 +789,10 @@ def links_for(eid: str, fm: dict, where: dict, quote: str, source: str, st: stor
             except docreg.MoveError:  # a page without the section: filed as named, the rename check guards it
                 return lfm
         out = [(ided(lfm), note) for lfm, note in out]
+    if old := fm.get("supersedes"):  # no source: it isn't something the session filed, and it's the same link `engram add` writes
+        out.append(({"title": f"{eid} supersedes {old}", "date": fm.get("reported"), "kind": "link", "about": fm.get("about"),
+                     "from": eid, "to": old, "family": "evidence", "rel": "supersedes", "by": "claude",
+                     "author": "engram-capture"}, quote[:120]))
     return out
 
 
@@ -905,6 +909,39 @@ def verify(domain: str, st: store.Store, entries: list[tuple[dict, str]], ask, p
     return hit, kept, usd
 
 
+def correction_target(fact: dict, st: store.Store) -> str | None:
+    """The entry a fact says it corrects, when that's an entry of the record, nothing corrects it yet, and the record
+    allows the link."""
+    target = units.norm(str(fact.get("corrects") or ""))
+    rels = st.config.get("links", {}).get("evidence", {}).get("rels")
+    if not target or rels and "supersedes" not in rels or target in units.corrected(st):
+        return None
+    return target if any(e.id == target and e.kind != "link" for e in st.events()) else None
+
+
+def confirm_corrections(st: store.Store, entries: list[tuple[dict, str]], repeats: dict, ask, p: pack.Pack) -> list[tuple[int, str | None, float]]:
+    """A second call, shown only the earlier entry and what was said, confirms each correction before it can push an
+    entry down; anything but yes files the fact without the link, as does a second correction of one entry. Returns
+    (index, the target it lost or None, cost) for each it asked about or refused."""
+    out, taken = [], set()
+    events = {e.id: e for e in st.events()}
+    words = p.prompts.get("correct_confirm")
+    for i, (fm, body) in enumerate(entries):
+        if i in repeats or not (old := fm.get("supersedes")):
+            continue
+        usd, yes = 0.0, False
+        if words and old not in taken:
+            e = events[old]
+            reply, usd = ask(config.voice(words).format(entry=f"[{e.date}] {e.fm.get('title', '')}\n{e.body.strip()}", said=body.strip()))
+            yes = bool(re.match(r"\W*yes\b", reply or "", re.I))
+        if yes:
+            taken.add(old)
+        else:
+            del fm["supersedes"]
+        out.append((i, None if yes else old, usd))
+    return out
+
+
 class ReplyError(RuntimeError):
     """The model's reply held no JSON object to read: an error, never "nothing to file"."""
 
@@ -956,7 +993,7 @@ def file_session(domain: str, root: Path, path: Path, ask=None, dry_run: bool = 
         kinds, abouts, home = shape(st, p.kinds)
         th = theory_shape(st, p.prompts.get("theory", ""))
         mine = filed_from(st, path.stem)
-        already = [f"{e.date} {e.fm.get('title', '')}: {' '.join(e.body.split())[:200]}" for e in mine]
+        already = [f"{e.date} {e.fm.get('title', '')}: {' '.join(e.body.split())[:200]} (id {e.id})" for e in mine]
         already += [r[:300] for x in s.exchanges for r in x.ran if r.startswith("Bash:") and FILED.search(r)]
         when = {x.line: sessions._local_date(x.ts) or _now().date().isoformat() for x in s.exchanges}
         stands, marks = standing(st), landmarks(st)
@@ -989,6 +1026,8 @@ def file_session(domain: str, root: Path, path: Path, ask=None, dry_run: bool = 
                                  p.kinds[0] if p.kinds else "observation", marks)
                 if thing and fm["kind"] == cur.entity_kind:  # an existing chain: "Pataday" joins "Pataday 0.7%"
                     fm["thing"] = thing
+                if target := correction_target(f, st):
+                    fm["supersedes"] = target
                 where = place(f, fm, st, stories, complaints, rels, p.occurrence_kinds)
                 entries.append((placed(fm, where), body))
                 lines.append(line)
@@ -1003,6 +1042,11 @@ def file_session(domain: str, root: Path, path: Path, ask=None, dry_run: bool = 
         for i, ref in repeats.items():
             res["dropped"].append({"session": path.stem[:8], "line": lines[i], "why": f"already in {ref}",
                                    "text": entries[i][0]["title"]})
+        for i, target, usd in confirm_corrections(st, entries, repeats, ask_verify, p):
+            res["usd"] += usd
+            if target:
+                res["kept"].append({"session": path.stem[:8], "line": lines[i], "why": f"filed, not as a correction of {target}",
+                                    "text": entries[i][0]["title"]})
         entries = [x for i, x in enumerate(entries) if i not in repeats]
         places = [x for i, x in enumerate(places) if i not in repeats]
         for t in parsed.get("theory") or []:

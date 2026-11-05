@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from conftest import PAGE_MD, REWIRE, git, make_repo
-from engram import capture, config, hourly, pack, rewire, setup, store
+from engram import capture, config, hourly, pack, rewire, setup, store, units
 
 TOML = """[domain]
 name = "medical"
@@ -1226,3 +1226,51 @@ def test_near_matches_a_month_dated_entry_only_within_its_month_and_skips_year_a
     assert ids["2026-06"] in got  # the message day is inside the month
     assert ids["2026-05"] not in got and ids["2026-07"] not in got  # 15 and 16 days off
     assert ids["2026"] not in got and ids["not-sure"] not in got
+
+
+WRONG = {"line": 7, "text": "The ache was in the left knee, not the right", "quote": "I started Orvexa", "date": "2026-10-15", "kind": "observation"}
+
+
+def _correcting(confirm: str, calls: list, fact: dict):
+    def ask(prompt):
+        if "was wrong, not that things changed" in prompt:
+            calls.append(prompt)
+            return confirm, 0.01
+        return json.dumps({"facts": [fact], "repeats": []}), 0.01
+    return ask
+
+
+def _wrong_entry(world) -> str:
+    with store.Store(world["repo"]).transaction() as tx:
+        return tx.add({"title": "Ache in the right knee", "date": "2026-10-10", "kind": "observation", "about": ["series/_observations"]}, "- ache in the right knee\n").id
+
+
+def test_a_confirmed_correction_links_to_the_entry_it_replaces(world):
+    old, calls = _wrong_entry(world), []
+    assert hourly.run(ask=_correcting("yes", calls, {**WRONG, "corrects": old}), summaries=False, now=LATER)["filed"] == 1
+    st = store.Store(world["repo"])
+    new = next(e for e in st.events() if e.fm.get("supersedes") == old)
+    link = next(l for l in st.events(kind="link") if l.fm.get("rel") == "supersedes")
+    assert (link.fm["from"], link.fm["to"], link.fm["family"], link.fm["by"]) == (new.id, old, "evidence", "claude")
+    assert "I started Orvexa" in link.body and "ache in the right knee" in calls[0] and "left knee" in calls[0]
+    assert units.corrected(st) == {old} and capture.filed_from(st, "s1") == [new]  # the link isn't one more thing the session filed
+
+
+def test_an_unconfirmed_correction_files_the_fact_without_the_link(world):
+    old, calls = _wrong_entry(world), []
+    out = hourly.run(ask=_correcting("no", calls, {**WRONG, "corrects": old}), summaries=False, now=LATER)
+    assert out["filed"] == 1 and len(calls) == 1 and old in out["kept"][0]["why"]
+    st = store.Store(world["repo"])
+    assert not units.corrected(st) and not [e for e in st.events() if e.fm.get("supersedes")]
+
+
+@pytest.mark.parametrize("target", ["no-such-entry", "taken"])
+def test_a_correction_of_what_isnt_there_to_correct_asks_nothing(world, target):
+    old, calls = _wrong_entry(world), []
+    if target == "taken":
+        target = old
+        with store.Store(world["repo"]).transaction() as tx:
+            tx.add({"title": "x supersedes", "date": "2026-10-11", "kind": "link", "about": [], "from": "story/ankle", "to": old,
+                    "family": "evidence", "rel": "supersedes"}, "")
+    assert hourly.run(ask=_correcting("yes", calls, {**WRONG, "corrects": target}), summaries=False, now=LATER)["filed"] == 1
+    assert not calls and not [e for e in store.Store(world["repo"]).events() if e.fm.get("supersedes")]

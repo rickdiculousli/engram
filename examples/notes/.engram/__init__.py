@@ -10,7 +10,8 @@ For each fact give "line", "text" (a headline), "quote" ({owner}'s words, copied
 YYYY-MM, YYYY or "not-sure"), "kind" (one of {kinds}), "about" (from {abouts}) and "stories" (from {stories}). When
 {owner}'s words say when other than as a plain date, give "as_said" (those words, copied exactly). When he dates a fact
 by a life event, or the fact is one (a move, a new job), give "landmark": its name from these ({landmarks}), else a new
-short one. "birth" is {owner}'s own; another person's event names them ("son-born").
+short one. "birth" is {owner}'s own; another person's event names them ("son-born"). When {owner} says a note listed
+below was wrong, give "corrects": its id, from its "(id ...)".
 {theory}
 Reply with JSON only: {{"facts": [...], "theory": []}}.
 
@@ -113,6 +114,14 @@ The passage at issue: {passage}
 {text}
 </document>"""
 
+CORRECT_CONFIRM = """Does what {owner} said mean this note was wrong, not that things changed since? Reply yes or no alone.
+
+{entry}
+
+What {owner} said:
+{said}"""
+
 pack = Pack(prompts={"file": FILE, "verify": VERIFY, "record": RECORD, "theory": THEORY, "structure": STRUCTURE,
                      "relink": RELINK, "relink_system": "You link garden notes to how the garden works.",
-                     "sweep": SWEEP, "sweep_confirm": SWEEP_CONFIRM, "narrow": NARROW, "narrow_confirm": NARROW_CONFIRM})
+                     "sweep": SWEEP, "sweep_confirm": SWEEP_CONFIRM, "narrow": NARROW, "narrow_confirm": NARROW_CONFIRM,
+                     "correct_confirm": CORRECT_CONFIRM})

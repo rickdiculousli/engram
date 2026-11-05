@@ -153,3 +153,40 @@ def test_a_classifier_change_refiles_known_sessions(world, monkeypatch):
     monkeypatch.setattr(sessions, "classify", lambda s, doms: "investments")
     out = sessions.ingest(world["doms"], root)
     assert out["read"] == 1 and filed("investments") == {"g2"} and filed("general") == set()
+
+
+def linked(uuid, parent, kind, content, **rest):
+    return json.dumps({"type": kind, "uuid": uuid, "parentUuid": parent, "timestamp": "2026-10-18T20:00:00Z", "cwd": "/tmp/x",
+                       "message": {"role": kind, "content": content}, **rest})
+
+
+def test_a_rewound_message_was_never_said(env):
+    from engram import capture
+    root = env["tmp"] / "projects"
+    p = write_session(root, "-tmp-x", "r1", [
+        linked("a", None, "user", "the frost took the north bed"),
+        linked("b", "a", "assistant", [{"type": "text", "text": "Did the south bed look black or green?"}]),
+        linked("c", "b", "user", "they were black"),
+        linked("d", "c", "assistant", [{"type": "text", "text": "Was that on old growth or new?"}]),
+        linked("e", "b", "user", "green, no change at all"),
+        linked("f", "e", "assistant", [{"type": "text", "text": "Then the south bed was spared."}]),
+    ])
+    s = sessions.parse(p, root)
+    assert [x.asked for x in s.exchanges] == ["the frost took the north bed", "green, no change at all"]
+    assert s.exchanges[1].line == 5 and s.exchanges[1].replies == ["Then the south bed was spared."]
+    assert capture.turn_before(s)[5] == "Did the south bed look black or green?"
+
+
+def test_a_tool_calls_forks_stay_and_an_end_without_a_retype_stays(env):
+    root = env["tmp"] / "projects"
+    p = write_session(root, "-tmp-x", "r2", [
+        linked("a", None, "user", "read both files"),
+        linked("b", "a", "assistant", [{"type": "text", "text": "Reading them."}]),
+        linked("c", "b", "user", [{"type": "tool_result", "content": "one"}]),
+        linked("d", "b", "user", [{"type": "tool_result", "content": "two"}]),
+        linked("e", "d", "assistant", [{"type": "text", "text": "Both read."}]),
+        linked("f", "e", "user", "thanks"),
+    ])
+    s = sessions.parse(p, root)
+    assert [x.asked for x in s.exchanges] == ["read both files", "thanks"]
+    assert s.exchanges[0].results == ["one", "two"] and "Both read." in s.exchanges[0].replies

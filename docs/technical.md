@@ -66,6 +66,7 @@ A structural change starts `engram theory relink --change <id>` detached (`relin
 
 The hourly job (`engram capture run`: `hourly.py` runs it and the session start's health check, `capture.py` files, `setup.py` installs and repairs) indexes changed sessions, keeps the set-up repos' summaries current, files each session that grew and has been idle an hour, summarizes the long records of each area it files for ([summaries](summaries.md#record-summaries)), and repairs the install.
 - **Routing:** a session belongs to the repo it was started in (its project folder name, else its first working folder), a subfolder or a worktree of it.
+- **A rewound message was never said** (`sessions.parse`, so for every reader of a session): a rewind keeps the old messages in the file, so where two typed messages follow the same one, the one off the branch the session ended on is dropped with all that followed it, Claude's replies included. Why: otherwise a retracted answer files as a fact, and the answer that replaced it attaches to a question from the dropped branch. A fact filed before its message was rewound stays until the owner says so.
 - **It reads the session whole,** cleaned like the summaries, from the message it last filed up to. A session still going is skipped. Most sessions file nothing, and are still marked. The model sees what the session already filed, read from the store by `source` (`said in session <short id> ` or `agreed in session <short id> `, without its placement links and renewals), so a refiled session doesn't file it twice; the mark is the only state kept per session. Why: the record is the one copy of what was filed.
 - **Code drops a fact** unless it's from the owner's own words: its quote in one of their messages past that point, word for word, and every number in their words or the question they answered. That question must be in Claude's turn just before their message (`capture.turn_before`): all Claude's text since their previous message, past a skill's turn, a summary or another speaker, and the current turn's text before what they sent while Claude worked. A number counts only whole (`dates.numbers`): "35" isn't in "135B", while "7 out of 10" passes on "7/10".
 - **What the model sees of the record:** every entry dated within 31 days either side of each message's day, where each tracked thing stands (the `now` chains), and search hits; any fact a listed entry states, in any words, is a repeat.
@@ -142,7 +143,7 @@ An area's words and a few small functions live in its own record repo, under `.e
 - A scratch copy is evaluated with `ENGRAM_DATA=<copy>/data ENGRAM_CONFIG=<copy>/config.toml`.
 - **A scratch index stays frozen:** searches skip the automatic refresh when `ENGRAM_FROZEN` is set or the data folder is under `scratch/`. Why: a refresh would pull new sessions into a scratch index and move its results.
 - The real record is untouched until the before-and-after review, and changes land as reviewable per-file commits.
-- **`ENGRAM_SANDBOX=1`** keeps commits local, skips pushing, and writes index and usage rows to a temporary directory. Eval runs set it.
+- **`ENGRAM_SANDBOX=1`** keeps commits local and skips pushing. Eval runs set it. Index and usage rows still go to the data folder in use, so set `ENGRAM_DATA` to keep a probe out of the real logs.
 
 ## The weekly refinement
 

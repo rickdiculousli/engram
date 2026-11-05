@@ -7,6 +7,7 @@ A session belongs to a domain only if it was started in that domain's repo (or a
 everything else is general, searched only on request. Files that haven't changed since the last run are skipped; a changed file is
 re-read whole, so a rewritten (compacted) file is handled the same way as a grown one.
 """
+from collections import defaultdict
 import hashlib
 import json
 import os
@@ -92,17 +93,59 @@ def _tool_line(b: dict) -> str:
     return f"{name}: {' '.join(str(inp[k]) for k in ('file_path', 'path', 'notebook_path') if inp.get(k))}".strip()
 
 
+def _typed(e: dict) -> bool:
+    """Whether a line is a message someone typed, not a tool's result or text the harness added."""
+    msg = e.get("message")
+    if e.get("type") != "user" or e.get("isMeta") or e.get("isSidechain") or not isinstance(msg, dict):
+        return False
+    asked = REMINDER.sub("", "\n".join(_text_of(msg.get("content"))[0])).strip()
+    return bool(asked) and not asked.startswith(NOT_A_TURN)
+
+
+def _rewound(lines: list[tuple[int, dict]]) -> set[int]:
+    """The lines a rewind left behind. A rewind keeps the old messages in the file, so where the owner went back and
+    typed again, two typed messages follow the same one: the one off the branch the session ended on goes, with all
+    that followed it. Only that goes, since a tool call's parallel results also fork the chain, and aren't taken back."""
+    by, kids, last = {}, defaultdict(list), None
+    for _, e in lines:
+        if u := e.get("uuid"):
+            by[u] = e
+            kids[e.get("parentUuid")].append(e)
+            if e.get("type") in ("user", "assistant") and not e.get("isSidechain"):
+                last = u
+    live, u = set(), last
+    while u in by and u not in live:
+        live.add(u)
+        u = by[u].get("parentUuid") or by[u].get("logicalParentUuid")
+    gone, walk = set(), []
+    for parent, follow in kids.items():
+        typed = [e["uuid"] for e in follow if _typed(e)]
+        if parent and len(typed) > 1 and live.intersection(typed):
+            walk += [u for u in typed if u not in live]
+    while walk:
+        u = walk.pop()
+        if u not in gone:
+            gone.add(u)
+            walk += [e["uuid"] for e in kids[u]]
+    return {n for n, e in lines if e.get("uuid") in gone}
+
+
 def parse(path: Path, root: Path | None = None) -> Session:
     root = root or ROOT
     s = Session(path, path.stem, path.relative_to(root).parts[0])
     cur: Exchange | None = None
     with path.open(errors="replace") as f:
+        lines = []
         for n, line in enumerate(f, 1):
             try:
                 e = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            if not isinstance(e, dict):
+            if isinstance(e, dict):
+                lines.append((n, e))
+        rewound = _rewound(lines)
+        for n, e in lines:
+            if n in rewound:
                 continue
             if e.get("cwd"):
                 s.cwds.add(e["cwd"])

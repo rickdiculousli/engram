@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 Without this, a pass grades the setup against tests the agents wrote, hands the user a list of findings, or grows the setup it was meant to trim.
 
-The prompt names `repo=<path>`, `mode=land` or `mode=dry-run <file>`, and `worktrees=<folder>`. A dry run changes nothing in the repo: it writes every item, with its landing-line checks, to `<file>` and stops.
+The prompt names `repo=<path>`, `mode=land`, `mode=approved` or `mode=dry-run <file>`, and `worktrees=<folder>`. A dry run changes nothing in the repo: it writes every item, with its landing-line checks, to `<file>` and stops. `mode=approved` is the user asking for what they said yes to now: build the approved specs through Land's steps, skip Find, land nothing else, and report. Of an earlier pass's worktrees, it finishes one that builds an approved spec and leaves the others alone.
 
 ## Read first
 

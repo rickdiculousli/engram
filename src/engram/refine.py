@@ -30,6 +30,7 @@ UNSEEN = "none:"  # a trailer opening with it: a change the owner wouldn't see, 
 REVERTS = "This reverts commit "  # git revert's line
 SWEEP = "sweep"  # the job of the evidence sweep's ledger rows: they count toward the week, never as a pass
 PAGE_JOB = "page"  # the job of the week's page's ledger row: it counts toward the week, never as a pass
+BUILD = "build"  # the job of a build on request's ledger row: it counts toward the week, never as the week's pass
 LABEL = "engram.refine"
 # Saturday 04:00, with catch-ups on Sunday and Monday for a box asleep then; a repo whose pass this week landed, is
 # running, or cost something is skipped, and one whose pass failed for nothing is tried again
@@ -131,12 +132,13 @@ def status() -> list[str]:
         rows = [r for r in ledger() if r["week"] == week() and not r["dry_run"]]
     except ValueError as e:
         return [f"weekly pass: the ledger doesn't read ({e}); no pass runs until it's fixed"]
-    out = []
+    out = [f"build on request on {r['repo']}: " + (("running" if _held() else "stopped mid-run") if r.get("running")
+           else f"FAILED ({r.get('error', '')})" if not r["ok"] else "ok") + f", ${r['cost_usd']:.2f}" for r in rows if r.get("job") == BUILD]
     for r in [r for r in rows if r.get("job") == SWEEP]:
         out.append(f"evidence sweep on {r['repo']}: " + ("running" if r.get("running") else f"FAILED ({r.get('error', '')})"
                    if not r["ok"] else "stopped at its $10 cap" if r.get("stopped") else "ok") + f", ${r['cost_usd']:.2f}"
                    + ("; the next run picks up" if r["ok"] and r.get("stopped") else ""))
-    rows = [r for r in rows if r.get("job") != SWEEP]
+    rows = [r for r in rows if r.get("job") not in (SWEEP, BUILD)]
     for name in repos():
         last = [r for r in rows if r["repo"] == name][-1:]
         if not last:
@@ -199,11 +201,11 @@ def fenced(name: str, repo: Path, wk: str) -> dict:
             "BASH_DEFAULT_TIMEOUT_MS": str((REVIEW_TIMEOUT + 300) * 1000), "BASH_MAX_TIMEOUT_MS": str((REVIEW_TIMEOUT + 300) * 1000)}
 
 
-def command(name: str, repo: Path, cap: float, dry_run: Path | None = None) -> list[str]:
+def command(name: str, repo: Path, cap: float, dry_run: Path | None = None, approved: bool = False) -> list[str]:
     """The pass for one repo: the skill handed to `claude -p` by its path, with the repo, its mode and the folder its
     worktrees go in."""
     s, work = settings(), _work()
-    mode = f"dry-run {dry_run / f'{name}.md'}" if dry_run else "land"
+    mode = f"dry-run {dry_run / f'{name}.md'}" if dry_run else "approved" if approved else "land"
     cmd = ["claude", "-p", f"Follow {own() / SKILL}: repo={repo} mode={mode} worktrees={work}",
            "--output-format", "json", "--max-budget-usd", f"{cap:.2f}", "--permission-mode", s["permission_mode"],
            "--model", s["model"], "--settings", json.dumps({"autoMode": {"allow": ["$defaults", ALLOW]}, "permissions": {
@@ -222,11 +224,16 @@ def _lock(wait: bool = False):
         yield
 
 
-def start(name: str) -> str:
+def start(name: str, approved: bool = False) -> str:
     """A pass on one repo, started detached: a session's background command is stopped after its time limit, and a pass
-    may run for hours. Its result shows in `engram health`."""
+    may run for hours. Its result shows in `engram health`. `approved` has it build only the specs the owner said yes to."""
     if name not in repos():
         sys.exit(f"engram refine: {name} is none of {', '.join(repos())}")
+    if approved and not _approved(repos()[name]):
+        sys.exit(f"engram refine: {name} has no approved spec a pass can build; nothing started. One marked `blocked:` says why")
+    if approved and subprocess.run(["git", "-C", str(repos()[name]), "status", "--porcelain", "--", SPECS], capture_output=True,
+                                   text=True).stdout.strip():
+        sys.exit(f"engram refine: {name}'s specs have uncommitted changes, which its landing would refuse; commit them first")
     if paused(repos()[name]):
         sys.exit(f"engram refine: {name} is paused in its rules; nothing started")
     fh = open(_dir() / "lock", "w")  # taken here and inherited by the pass, which holds it till it ends
@@ -238,16 +245,17 @@ def start(name: str) -> str:
         sys.exit(f"engram refine: this week's ${settings()['weekly_cap']:.0f} is spent; nothing started")
     log = _dir() / "launchd.log"
     from engram import jobs
-    subprocess.Popen(jobs.awake([sys.executable, "-m", "engram.cli", "refine", "run", "--repo", name, "--attached"]),
+    subprocess.Popen(jobs.awake([sys.executable, "-m", "engram.cli", "refine", "run", "--repo", name, "--attached", *(["--approved"] if approved else [])]),
                      pass_fds=(fh.fileno(),),
                      stdout=log.open("a"), stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, start_new_session=True)
     return f"engram refine: the pass on {name} started on its own; its result shows in `engram health`"
 
 
 def run(only: str | None = None, dry_run: Path | None = None, show: bool = False, runner=subprocess.run,
-        attached: bool = False) -> list[str]:
+        attached: bool = False, approved: bool = False) -> list[str]:
     """One pass per repo under the weekly cap, each pass's line for the log. `show` prints each pass's command instead
-    of running it; `dry_run` has each pass write its plan to that folder and land nothing."""
+    of running it; `dry_run` has each pass write its plan to that folder and land nothing; `approved` has it build only
+    the approved specs, with no sweep, health check or page, and leaves the week's pass to run as usual."""
     if not own():
         sys.exit("engram refine: set [refine] repo, engram's own repo, in the config: the pass's instructions live there")
     s, wk, targets = settings(), week(), repos()
@@ -257,7 +265,7 @@ def run(only: str | None = None, dry_run: Path | None = None, show: bool = False
     # the schedule waits out a pass on request; a pass `start` launched holds the lock it inherited
     with contextlib.nullcontext() if attached else _lock(wait=not (only or show or dry_run)):
         rows = ledger()
-        out += _sweeps(rows, wk, s, only, bool(dry_run or show))
+        out += [] if approved else _sweeps(rows, wk, s, only, bool(dry_run or show))
         for name, repo in targets.items():
             left = s["weekly_cap"] - spent(rows, wk)
             if only and name != only:
@@ -265,7 +273,7 @@ def run(only: str | None = None, dry_run: Path | None = None, show: bool = False
             if paused(repo):
                 out.append(f"{name}: paused in its rules; skipped")
                 continue
-            done = [r for r in rows if r["week"] == wk and r["repo"] == name and not r["dry_run"] and r.get("job") != SWEEP]
+            done = [r for r in rows if r["week"] == wk and r["repo"] == name and not r["dry_run"] and r.get("job") not in (SWEEP, BUILD)]
             if not (only or dry_run) and done and (done[-1]["ok"] or done[-1].get("running") or done[-1]["cost_usd"] >= 1):
                 out.append(f"{name}: already ran this week" + ("" if done[-1]["ok"] else ", stopped mid-run"
                            if done[-1].get("running") else ", and failed"))  # --repo runs it again
@@ -274,7 +282,7 @@ def run(only: str | None = None, dry_run: Path | None = None, show: bool = False
                 out.append(f"{name}: the weekly cap of ${s['weekly_cap']:.0f} is reached; stopping")
                 break
             cap = min(left, s["pass_cap"])
-            cmd = command(name, repo, cap, dry_run)
+            cmd = command(name, repo, cap, dry_run, approved)
             if show:
                 out.append(f"{name}: {shlex.join(cmd)}")
                 continue
@@ -282,12 +290,13 @@ def run(only: str | None = None, dry_run: Path | None = None, show: bool = False
             if dry_run:
                 dry_run.mkdir(parents=True, exist_ok=True)
             started = datetime.now().isoformat(timespec="seconds")
-            approved, head = _approved(repo), _head(repo)
-            row = {"week": wk, "repo": name, "started": started, "dry_run": bool(dry_run), "cost_usd": cap, "ok": False,
+            settle, head, before = _approved(repo), _head(repo), _branches(repo) if approved else []
+            job = {"job": BUILD} if approved else {}
+            row = {"week": wk, "repo": name, **job, "started": started, "dry_run": bool(dry_run), "cost_usd": cap, "ok": False,
                    "running": True}  # a pass stopped mid-run keeps its cap spent, so nothing reruns it for free
             rows.append(row)
             _write(rows)
-            ran = not dry_run
+            ran = not (dry_run or approved)
             try:
                 proc = runner(cmd, cwd=_work(), capture_output=True, text=True,
                               env=claude_env.clean(**fenced(name, repo, wk)), timeout=s["hours"] * 3600)
@@ -305,15 +314,15 @@ def run(only: str | None = None, dry_run: Path | None = None, show: bool = False
                 except (json.JSONDecodeError, TypeError, ValueError, AttributeError):
                     cost, said = cap, (proc.stdout + proc.stderr)[-2000:]
                     error = said.strip().splitlines()[-1] if said.strip() else f"exit {proc.returncode}, no output"
-            if not dry_run and (left_undone := _unfinished(repo, approved, head)):
+            if not dry_run and (left_undone := _unfinished(repo, settle, head, before)):
                 error = "; ".join(filter(None, [error, *left_undone]))
-            rows[-1] = {"week": wk, "repo": name, "started": started, "dry_run": bool(dry_run), "cost_usd": round(cost, 4),
+            rows[-1] = {"week": wk, "repo": name, **job, "started": started, "dry_run": bool(dry_run), "cost_usd": round(cost, 4),
                         "ok": not error} | ({"error": " ".join(error.split())[:400]} if error else {})
             row = rows[-1]
             _write(rows)
             (_dir() / "runs" / wk).mkdir(parents=True, exist_ok=True)
-            (_dir() / "runs" / wk / f"{name}{'-dry' if dry_run else ''}.md").write_text(said or "")
-            if not dry_run and name in config.load() and pack.load(name).prompts.get("compile"):
+            (_dir() / "runs" / wk / f"{name}{'-dry' if dry_run else '-build' if approved else ''}.md").write_text(said or "")
+            if not dry_run and not approved and name in config.load() and pack.load(name).prompts.get("compile"):
                 from engram import compile as compile_mod
                 try:  # the compiled wiki's health check runs with the pass, its cost the pass's
                     row["cost_usd"] = round(row["cost_usd"] + compile_mod.health(name)["usd"], 4)
@@ -434,15 +443,20 @@ def _head(repo: Path) -> str:
     return subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
 
 
-def _unfinished(repo: Path, approved: list[Path], head: str) -> list[str]:
+def _branches(repo: Path) -> list[str]:
+    return subprocess.run(["git", "-C", str(repo), "for-each-ref", "--format=%(refname:short)", "refs/heads/refinement/"],
+                          capture_output=True, text=True).stdout.split()
+
+
+def _unfinished(repo: Path, approved: list[Path], head: str, leave: list[str] = ()) -> list[str]:
     """What a pass that says it's fine left undone, read from the repo rather than taken from its word: an approved spec
-    it neither built nor marked blocked, a refinement branch still standing (work that never landed), and a change that
-    reached the default branch with no reviewed landing."""
+    it neither built nor marked blocked, a refinement branch still standing (work that never landed; `leave` names ones
+    a build on request found and isn't to touch), and a change that reached the default branch with no reviewed landing."""
     git = lambda *a: subprocess.run(["git", "-C", str(repo), *a], capture_output=True, text=True).stdout.split()
     title = lambda p: next((l[2:] for l in p.read_text().splitlines() if l.startswith("# ")), p.stem)
     still = set(_approved(repo))
     out = [f"approved and not built: {title(p)}" for p in approved if p in still]
-    out += [f"work left unlanded on {b}" for b in git("for-each-ref", "--format=%(refname:short)", "refs/heads/refinement/")]
+    out += [f"work left unlanded on {b}" for b in _branches(repo) if b not in leave]
     reviewed = {c for r in reviews() for c in r.get("landed", [])}
     if unreviewed := [c for c in git("log", f"--grep=^{TRAILER}: ", "--format=%H", f"{head}..HEAD") if c not in reviewed]:
         out.append("landed with no review: " + ", ".join(c[:8] for c in unreviewed))
@@ -526,7 +540,7 @@ def _seen() -> set[str]:
 def _failures(rows: list[dict], seen: set[str]) -> dict[str, tuple[str, str]]:
     """Each repo's pass that didn't finish and no page has named, by repo: (its mark in `seen`, what stopped it). A week's
     last pass on the repo speaks for it, and this week's free failure doesn't yet: a catch-up tries it again."""
-    last = {(r["week"], r["repo"]): r for r in rows if not r["dry_run"] and r.get("job") not in (SWEEP, PAGE_JOB)}
+    last = {(r["week"], r["repo"], r.get("job")): r for r in rows if not r["dry_run"] and r.get("job") not in (SWEEP, PAGE_JOB)}
     return {r["repo"]: (m, r.get("error") or "it stopped before it finished") for r in last.values()
             if not r["ok"] and (r["week"] != week() or r["cost_usd"] >= 1)
             and (m := f"pass:{r['week']}:{r['repo']}:{r['started']}") not in seen}

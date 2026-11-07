@@ -59,7 +59,7 @@ engram reviews its own value ([technical](technical.md#the-value-review)). It's 
 ## The weekly refinement
 
 How the pass behaves is each repo's rules section of `.engram/README.md` and `skills/engram-refine/SKILL.md` ([technical](technical.md#the-weekly-refinement)). The config's `[refine]` sets `repo` (engram's own, required), `weekly_cap` and `pass_cap` in dollars, `hours` (how long one pass may run, 4 by default), `model` and `permission_mode`.
-- `engram refine run --print` prints each pass's command and spends nothing; `--repo <name>` runs one repo even if it passed this week; `--dry-run <dir>` has each pass write its plan there and land nothing.
+- `engram refine run --print` prints each pass's command and spends nothing; `--repo <name>` runs one repo even if it passed this week; `--dry-run <dir>` has each pass write its plan there and land nothing; `--repo <name> --approved` builds only that repo's approved specs.
 - `engram refine install` writes and loads `engram.refine`; running it again changes nothing.
 - `engram refine review <worktree>` and `engram refine land <worktree>` are the pass's way in: a fresh reviewer's verdict, and landing what it passed.
 - The ledger, each pass's report (`refine/runs/<week>/`), each week's page for the owner (`refine/digests/<week>.html`, written and opened only when something needs them), each review and landing (`refine/reviews.jsonl`) and the job's log are in the data folder's `refine/`.

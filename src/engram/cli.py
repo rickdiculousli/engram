@@ -682,11 +682,13 @@ def cmd_refine(a):
         sys.exit(f"engram refine {a.action}: name the repo")
     if a.action in ("run", "install") and a.repo:
         sys.exit(f"engram refine {a.action}: takes no repo; run one with `engram refine run --repo NAME`")
+    if a.approved and not a.only:
+        sys.exit("engram refine run --approved: name the repo with --repo")
     if a.action == "run" and a.only and not (a.print or a.dry_run or a.attached):
-        print(refine.start(a.only))  # a pass on request outlives the session that asked for it
+        print(refine.start(a.only, a.approved))  # a pass on request outlives the session that asked for it
     elif a.action == "run":
         print("\n".join(refine.run(a.only, Path(a.dry_run).expanduser().resolve() if a.dry_run else None, a.print,
-                                   attached=a.attached)))
+                                   attached=a.attached, approved=a.approved)))
     elif a.action == "surface":
         with contextlib.suppress(Exception):  # a session start never fails on this
             if text := refine.surface(Path(a.repo).expanduser()):
@@ -1025,6 +1027,7 @@ def main(argv=None):
     s.add_argument("--spec", help="review: the approved spec this builds")
     s.add_argument("--repo", dest="only", metavar="NAME", help="run: only this repo, even if it passed this week")
     s.add_argument("--dry-run", metavar="DIR", help="run: each pass lands nothing and writes its plan to DIR/<repo>.md")
+    s.add_argument("--approved", action="store_true", help="run, with --repo: build only that repo's approved specs, through the review")
     s.add_argument("--print", action="store_true", help="run: print each pass's command; spends nothing")
     s.add_argument("--attached", action="store_true", help=argparse.SUPPRESS)  # the detached pass itself
     s.add_argument("--days", type=float, default=7)

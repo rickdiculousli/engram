@@ -10,9 +10,9 @@ from datetime import datetime
 
 from engram import archive, config, dates, evalset, ingest, labels, lint, search, store, summarize, usage
 from engram.index import open_index
-from engram.paths import RECORD_TOML, data_path, index_path, record_toml, strays
+from engram.paths import RECORD_TOML, data_path, index_path, record_toml, strays, vault_map
 from engram.scope import repo_domain, resolve
-from engram.sources import events, sections, sessions
+from engram.sources import events, sections, sessions, vault
 
 # Old names kept for callers outside engram's own code: the pinned packs' tests call `_ingest(domain, sections)`, and
 # `bench/gate.py` calls `_ingest` and `render`.
@@ -60,10 +60,10 @@ def cmd_timeline(a):
         if not a.name:
             if have["stories"] or have["symptoms"]:
                 print(f"[{d}] stories: {', '.join(have['stories'])}\n[{d}] recurring: {', '.join(have['symptoms'])}")
-                for kind in sorted(set(have) - {"stories", "symptoms"}):
+                for kind in sorted(set(have) - {"stories", "symptoms", "note"}):  # a vault's every note is too long a list
                     print(f"[{d}] {kind}: {', '.join(have[kind])}")
             continue
-        if not have["stories"] + have["symptoms"]:
+        if not have["stories"] + have["symptoms"] + have.get("note", []):  # a vault's links tell a timeline with no tags
             continue
         every = {n for v in have.values() for n in v}
         named = all(n.lower() in every or n in every for n in a.name)  # chain names, or else free text to pick them
@@ -306,7 +306,11 @@ def cmd_health(a):
             print(f"{d}: {why}")
     from engram import rewire
     for d, dom in config.load().items():
-        if dom.repo:  # the general pile has no record repo, so no rewiring
+        if vault.is_vault(dom.repo):  # read as it stands: nothing to rewire
+            why = vault.load_map(d)[1]
+            print(f"{d}: a vault, read by " + (f"the default rule; its reading map isn't used: {' '.join(why.split())}" if why
+                                               else "its reading map" if vault_map(d).exists() else "the default rule"))
+        elif dom.repo:  # the general pile has no record repo, so no rewiring
             print(f"{d}: rewiring " + ("; ".join(rewire.drift(dom.repo)) or "current, no drift"))
     from engram import setup
     print("capture: " + "\n  ".join(setup.status()))
@@ -627,6 +631,8 @@ def cmd_fix(a):
 
 def cmd_rewire(a):
     from engram import rewire
+    if a.step == "map":
+        return _vault_map(a)
     repo = Path(a.repo).expanduser().resolve()
     out = Path(a.out).expanduser() if a.out else data_path("rewire") / repo.name
     if a.drift:
@@ -651,6 +657,23 @@ def cmd_rewire(a):
         res = rewire.check(repo, out, Path(a.canon).expanduser() if a.canon else rewire.CANON)
         print(json.dumps(res, indent=1, ensure_ascii=False))
         sys.exit(0 if res["ok"] and not res["drift"] else 1)
+
+
+def _vault_map(a):
+    """A vault's reading map: its facts, or `--save <draft> --session <id>` (docs/shape.md, "A vault read your way")."""
+    from engram import rewire
+    try:
+        facts = rewire.vault_facts(a.repo)
+    except ValueError as e:
+        sys.exit(f"engram rewire: {e}")
+    if not a.save:
+        print(json.dumps(facts, indent=1, ensure_ascii=False))
+        return
+    if not (a.session and a.session[0]):
+        sys.exit("engram rewire: --save needs --session, the interview's session id")
+    if problems := rewire.save_map(a.repo, Path(a.save).expanduser(), a.session[0]):
+        sys.exit("engram rewire: not saved:\n  " + "\n  ".join(problems))
+    print(f"saved {vault_map(a.repo)}\n{ingest.record(a.repo)}")
 
 
 def cmd_refine(a):
@@ -970,14 +993,16 @@ def main(argv=None):
 
     s = sub.add_parser("rewire", help="rewiring's steps (docs/shape.md, \"Rewiring a repo\"): turns (what the owner "
                        "typed in the repo's sessions), analyse (its units, names, copies and stale items), check (a proposal "
-                       "against the owner's words and the canon, and drift since the last rewire)")
-    s.add_argument("step", choices=["turns", "analyse", "check"])
-    s.add_argument("repo")
+                       "against the owner's words and the canon, and drift since the last rewire), map (a vault's tags and properties "
+                       "as written; --save its reading map)")
+    s.add_argument("step", choices=["turns", "analyse", "check", "map"])
+    s.add_argument("repo", help="its folder; map: the vault's domain")
     s.add_argument("--before", help="only messages before this time (ISO date or datetime)")
     s.add_argument("--session", action="append", help="turns: also the owner's turns in this session (an id prefix), "
                    "the jobs interview of a repo with few sessions of its own")
     s.add_argument("--out", help="the run's folder; default the data folder's rewire/<repo>/")
     s.add_argument("--canon", help="check against this shape.md instead of engram's own")
+    s.add_argument("--save", help="map: check this draft of the reading map against --session and save it")
     s.add_argument("--drift", action="store_true", help="check only for drift that what's being committed (the index) "
                    "brings and HEAD doesn't have, with no run folder: the pre-commit's check")
     s.set_defaults(fn=cmd_rewire)

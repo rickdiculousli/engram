@@ -9,6 +9,7 @@ from fnmatch import fnmatchcase
 from engram import config, dates, labels
 from engram.index import open_index
 from engram.paths import index_path, record_conf, record_toml
+from engram.sources import vault
 from engram.sources.events import ID
 
 TERM = re.compile(r"[\w][\w./+%:-]*[\w%]|[\w]", re.UNICODE)
@@ -36,8 +37,11 @@ def _factors(row: dict) -> dict:
 
 
 def repo_conf(domain: str) -> dict:
+    """The domain's settings: a record's engram.toml, or for a vault only the lenses of its reading map."""
     d = config.load().get(domain)
-    return record_conf(d.repo) if d and d.repo else {}
+    if not (d and d.repo):
+        return {}
+    return {"lenses": vault.load_map(domain)[0].get("lenses", {})} if vault.is_vault(d.repo) else record_conf(d.repo)
 
 
 def lenses(domain: str) -> dict[str, dict]:
@@ -47,15 +51,17 @@ def lenses(domain: str) -> dict[str, dict]:
 
 def lens_factor(row: dict, weights: dict) -> float:
     """The product of a lens's weights that fit a record. Keys: `milestone`, `day-to-day` (a record on a story that
-    isn't a milestone), `node:<kind>`, `by:<whose claim, prefix>`, `file:<glob>`, `ref:<glob>` (a section), `class:<class>`."""
+    isn't a milestone), `node:<kind>`, `by:<whose claim, prefix>`, `file:<glob>`, `ref:<glob>` (a section), `class:<class>`,
+    `tag:<tag>` (a vault's section carrying it; its parent's key fits a nested tag, since a section carries its parents)."""
     f = 1.0
     node, ms, file = row.get("node") or "", row.get("milestone") or 0, row["ref"].partition("#")[0]
+    tags = (row.get("tags") or "").lower().split()
     for k, w in weights.items():
         key, _, val = k.partition(":")
         if ((k == "milestone" and ms) or (k == "day-to-day" and node and not ms) or (key == "node" and node == val)
                 or (key == "by" and (row.get("author") or "").startswith(val)) or (key == "file" and fnmatchcase(file, val))
                 or (key == "ref" and fnmatchcase(row["ref"], val))
-                or (key == "class" and row.get("class") == val)):
+                or (key == "class" and row.get("class") == val) or (key == "tag" and f"#{val.lower()}" in tags)):
             f *= w
     return f
 
@@ -85,7 +91,7 @@ def search_domain(domain: str, q: str, limit: int, after: str | None = None,
     base = {k: v for k, v in conf.get("weights", {}).items() if isinstance(v, (int, float))}
     weights = conf.get("lenses", {}).get(lens, {}).get("weights", {}) if lens else {}
     sql = (f"SELECT d.ref, d.parent, d.class, d.kind, d.date, d.date_key, d.title, d.author, d.superseded, d.pointer, "
-           f"d.node, d.milestone, bm25(doc_fts, 2.0, 1.0, 1.0) AS bm,snippet(doc_fts, 1, '[', ']', '…', {SNIP}) AS snip "
+           f"d.node, d.milestone, d.tags, bm25(doc_fts, 2.0, 1.0, 1.0) AS bm,snippet(doc_fts, 1, '[', ']', '…', {SNIP}) AS snip "
            f"FROM doc_fts JOIN doc d ON d.id = doc_fts.rowid WHERE {' AND '.join(where)} ORDER BY bm LIMIT ?")
     rows = [dict(r) for r in idx.db.execute(sql, args + [max(limit * 20, 200)])]
     for alt, syn_w in synonyms(repo_conf(domain), q):  # query expansion: a synonym's match adds to a record's score,
@@ -121,6 +127,7 @@ def search_domain(domain: str, q: str, limit: int, after: str | None = None,
         score = -r["bm"]
         for v in f.values():
             score *= v
+        r.pop("tags")  # weighs a record, and isn't printed
         out.append({**r, "domain": domain, "score": round(score, 4), "factors": {"bm25": round(-r["bm"], 4), **f}})
     out.sort(key=lambda r: -r["score"])
     # A section cut into chunks is one hit, under the section's own ref (`engram show` reads it whole): its chunks
@@ -338,7 +345,7 @@ def _surround(path, rows: list[dict], q: str = "", per_hit: int | None = None, w
                 if ref in seen or ref == hit:
                     continue
                 seen.add(ref)
-                rows_ = idx.db.execute("SELECT title, body, source, date_key, class, author, node, milestone FROM doc WHERE ref = ? OR parent = ?", (ref, ref)).fetchall()
+                rows_ = idx.db.execute("SELECT title, body, source, date_key, class, author, node, milestone, tags FROM doc WHERE ref = ? OR parent = ?", (ref, ref)).fetchall()
                 if any(_excluded(x[2], ref) for x in rows_):
                     continue
                 title = rows_[0][0] if rows_ else ref
@@ -361,7 +368,7 @@ def _surround(path, rows: list[dict], q: str = "", per_hit: int | None = None, w
                 text = " ".join(f"{t} {b}" for t, b, *_ in rows_).lower()
                 overlap = sum(1 for w in words if w in text)
                 if weights:
-                    typed_row = {"ref": ref, **dict(zip(("class", "author", "node", "milestone"), rows_[0][4:] if rows_ else ()))}
+                    typed_row = {"ref": ref, **dict(zip(("class", "author", "node", "milestone", "tags"), rows_[0][4:] if rows_ else ()))}
                     overlap = (overlap + 1) * lens_factor(typed_row, weights)
                 if way == "far":
                     overlap *= 0.5

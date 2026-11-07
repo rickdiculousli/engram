@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from engram import config, dates, search, summarize
 from engram.index import open_index
 from engram.paths import data_dir, data_path, index_path
-from engram.sources import events, said, sections, sessions, storygraph, waysin
+from engram.sources import events, said, sections, sessions, storygraph, vault, waysin
 
 STALE = timedelta(minutes=15)
 
@@ -48,7 +48,10 @@ def record(domain: str, _files=sections) -> str:
     d = config.load()[domain]
     idx = open_index(index_path(domain))
     try:
-        out = f"{domain}: {sections.SOURCE} {idx.sync_source(sections.SOURCE, sections.docs_for(d))}"
+        docs = sections.docs_for(d)
+        is_vault = vault.is_vault(d.repo)
+        docs, vlinks, vways, vstats = vault.read(d.repo, docs, vault.Reading(vault.load_map(domain)[0])) if is_vault else (docs, [], [], None)
+        out = f"{domain}: {sections.SOURCE} {idx.sync_source(sections.SOURCE, docs)}"
         conf = search.repo_conf(domain)
         if events.enabled(conf):  # a record without rendered log pages: its entries straight from their events
             out += f"; entries {idx.sync_source(events.SOURCE, events.docs_for(d))['rows']}"
@@ -62,7 +65,11 @@ def record(domain: str, _files=sections) -> str:
         p = pack.load(domain)
         lines, ways = read_pack(idx, domain, [n for n in p.read if n not in p.on_request])
         out += "".join(f"; {l}" for l in lines)
-        out += f"; story links {storygraph.sync(idx, d)}; ways in {waysin.sync(idx, d, conf, ways)}"
+        out += f"; story links {storygraph.sync(idx, d)}"
+        if is_vault:
+            vault.sync_links(idx, vlinks)
+            out += f"; vault {vstats}"
+        out += f"; ways in {waysin.sync(idx, d, conf, ways + vways)}"
         out += f"; said in sessions {idx.sync_source(said.SOURCE, said.docs_for(domain))['rows']}"
         from engram.sources import place
         out += f"; documents placed by their words {place.sync(idx, domain)}"

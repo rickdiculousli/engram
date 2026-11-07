@@ -7,12 +7,13 @@ import re
 import subprocess
 import tomllib
 from collections import Counter, defaultdict
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 
 from engram import config, dates, pack
-from engram.paths import PAGE, RECORD_TOML, record_toml
-from engram.sources import sessions
+from engram.paths import PAGE, RECORD_TOML, record_toml, vault_map
+from engram.sources import sections, sessions, vault
 from engram.sources.sections import FENCE, HEADING
 
 PASTE = re.compile(r"<pasted_content[^>]*>(.*?)</pasted_content>", re.S)
@@ -492,3 +493,79 @@ def drift(repo: Path, introduced: bool = False) -> list[str]:
         if tree := _tracked(repo, of):
             signs = {k: v for k, v in signs.items() if k not in _signs_in(tree)}
     return _say(signs)
+
+
+# A vault's reading map (docs/shape.md, "A vault read your way"): rewiring's interview with no migration behind it.
+TOP = 10  # a property's values shown: enough to tell a date from a person from a link
+
+
+def vault_facts(domain: str) -> dict:
+    """What a vault's interview starts from, as written, before any inheritance or map: its tags, its folders' notes and
+    its property names with their top values, each with counts, and the map a re-run starts from."""
+    d = config.load().get(domain)
+    if not d or not vault.is_vault(d.repo):
+        raise ValueError(f"{domain} isn't a vault: a folder with .obsidian/ and no {RECORD_TOML}")
+    tags, folders, props = Counter(), Counter(), defaultdict(Counter)
+    for rel in (r for r in sections.files(replace(d, name="")) if r.suffix == ".md"):  # no name, so no map's left-out folders
+        fm, body = vault._note((d.repo / rel).read_text(errors="replace"))
+        folders[rel.parts[0] if len(rel.parts) > 1 else "(top)"] += 1
+        tags.update({t.strip("/") for t in [*vault._list(fm.get("tags") or fm.get("tag") or []), *vault.inline_tags(body)]})
+        for k, v in fm.items():
+            if k not in ("tags", "tag", "aliases", "alias"):
+                props[k].update({str(x)[:60] for x in (v if isinstance(v, list) else [v])})
+        for k, v in vault.FIELD.findall(vault.CODE.sub("", body)):
+            props[k.lower()][v.strip()[:60]] += 1
+    saved, why = vault.load_map(domain)
+    return {"tags": dict(tags.most_common()), "folders": dict(folders.most_common()),
+            "properties": {k: {"notes": sum(c.values()), "values": dict(c.most_common(TOP))} for k, c in sorted(props.items())},
+            "map": saved, **({"map not used": why} if why else {})}
+
+
+def _said_in(session: str) -> str:
+    """What the owner typed in one session, flattened for matching: no injected text, brief or paste."""
+    kept = []
+    for root in roots():
+        for p in root.rglob(f"{session}*.jsonl"):
+            if "subagents" not in p.parts:
+                kept += [PASTE.sub(" ", e.asked) for e in sessions.parse(p, root).exchanges
+                         if not (e.meta or e.summary or sessions.brief(e.asked))]
+    return _flat("\n".join(kept))
+
+
+def save_map(domain: str, draft: Path, session: str) -> list[str]:
+    """Check a draft of a vault's reading map and lay it over the saved one, so a re-run changes what the owner changed
+    and keeps the rest; `default` hands a tag, folder or property back to the default rule. Every new job quotes the
+    owner, word for word, in this session. Gives the problems, and saves only with none."""
+    try:
+        new = tomllib.loads(draft.read_text())
+    except (OSError, tomllib.TOMLDecodeError) as e:
+        return [f"{draft} doesn't load: {e}"]
+    problems = vault._problems(new)
+    saved = vault.load_map(domain)[0]
+    jobs = list(dict.fromkeys(new.get("jobs") or saved.get("jobs") or [])) if not problems else []
+    words = _said_in(session) if set(jobs) - set(saved.get("jobs", [])) else ""
+    for job in set(jobs) - set(saved.get("jobs", [])):
+        quotes = [a or b for a, b in QUOTE.findall(str(job))]
+        if not quotes:
+            problems.append(f"job {job!r} quotes none of the owner's words")
+        problems += [f"job {job!r}: \"{q}\" isn't in session {session}'s owner turns word for word" for q in quotes if not found(q, words)]
+    if not jobs and not problems:
+        problems.append("a reading map holds the owner's confirmed jobs")
+    if problems:
+        return problems
+    read = {t: {**saved.get("read", {}).get(t, {}), **new.get("read", {}).get(t, {})} for t in vault.READINGS}
+    read = {t: {k: v for k, v in entries.items() if v != "default"} for t, entries in read.items()}
+    lines = ["jobs = " + json.dumps(jobs, ensure_ascii=False)]
+    for t, entries in read.items():
+        if entries:
+            lines += [f"\n[read.{t}]", *(f"{json.dumps(k, ensure_ascii=False)} = {json.dumps(v)}" for k, v in sorted(entries.items()))]
+    for name, lens in {**saved.get("lenses", {}), **new.get("lenses", {})}.items():
+        lines.append(f"\n[lenses.{json.dumps(name, ensure_ascii=False)}]")
+        lines += [f"{k} = {json.dumps(lens[k], ensure_ascii=False)}" for k in ("about", "for") if lens.get(k)]
+        lines += [f"weights = {{ {', '.join(f'{json.dumps(k, ensure_ascii=False)} = {v}' for k, v in lens.get('weights', {}).items())} }}"]
+    p = vault_map(domain)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp = p.with_suffix(".tmp")
+    tmp.write_text("\n".join(lines) + "\n")
+    tmp.replace(p)
+    return []

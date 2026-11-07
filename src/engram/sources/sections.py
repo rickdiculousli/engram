@@ -9,6 +9,7 @@ from engram.config import Domain
 from engram.index import Doc
 from engram.labels import nid
 from engram.paths import DIR, record_conf, record_toml
+from engram.sources import vault
 
 SOURCE = "repo-sections"
 HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*#*\s*$")
@@ -25,7 +26,7 @@ def _own(d: Domain) -> dict:
 def excluded(d: Domain) -> list[str]:
     """Paths kept out of the index: engram's own folder, the domain's configured ones, and the record's own `[index] exclude`
     (data a skill reads, or rows its pack reads)."""
-    return [f"{DIR}/", *d.exclude, *_own(d).get("exclude", [])]  # the pack, settings and design are engram's, not record
+    return [f"{DIR}/", *d.exclude, *_own(d).get("exclude", []), *vault.skip(d.repo, d.name)]  # the pack, settings and design are engram's, not record
 
 
 def spine(rel: str, folders: list[str]) -> str:
@@ -47,8 +48,9 @@ def files(d: Domain) -> list[Path]:
         out = git.stdout.split("\0")
     keep = []
     skip = excluded(d)
+    bare = vault.is_vault(d.repo)  # a vault reads the same in git and outside it: hidden folders stay out of both
     for rel in out:
-        if not rel or any(rel == e or rel.startswith(e) for e in skip):
+        if not rel or any(rel == e or rel.startswith(e) for e in skip) or (bare and any(x.startswith(".") for x in Path(rel).parts)):
             continue
         if any(part.startswith("_template") for part in Path(rel).parts):
             continue

@@ -55,9 +55,21 @@ Every source is a `pull(state) -> Iterable[Row]` with a declared freshness. Each
 | Source | Reads | Index file |
 |---|---|---|
 | a domain's repo | its working tree: entries, threads, documents (a compiled area's wiki pages among them), minus its excludes; a folder outside git is searched too, every file but hidden ones, with no history | that domain |
+| a vault's reader | an Obsidian vault's notes, as [its reader](#a-vaults-reader) fills them | that domain |
 | `events` | each entry as itself, with its links: a handed-over source by its text, a kept file never | that domain |
 | `sessions` | `~/.claude/projects/*/*.jsonl`, through their checked summaries only | by classification |
 | a pack's sources | what its reader reads: rows the area's own tools keep, or text outside git, some only on request | that domain |
+
+### A vault's reader
+
+`sources/vault.py`, on when the folder has `.obsidian/` and no `.engram/engram.toml`. It fills the sections `repo-sections` cuts with what the vault says, the owner's [reading map](shape.md#a-vault-read-your-way) deciding how; the same in git and outside it, with hidden folders, the app's trash and the templates folder left out.
+
+- **Tags:** a section's, inline or from its note's frontmatter, nested ones with their parents, go in its row's `tags` column as `#`-prefixed tokens, where search matches them and lenses weigh them. A tag the owner calls a story, or the default rule takes, is a thread. A dated section with no thread of its own, a daily note's line, sits on the most specific threads of the notes it links to.
+- **Left out:** a tag or folder the map leaves out isn't indexed, the tag's token cut from the section's text too.
+- **Dates:** a section without one takes its note's: a name starting with a date or in the all-digit format the vault's daily notes set, a `date` property, a property the owner called a date.
+- **Who said it:** a property the owner called that.
+- **Ways in by link:** a note is a way in, kind `note`, by path, since two notes may share a name. Its name and `aliases` name it, and it lights its own sections and every section linking to it, from the text or a frontmatter value, resolved to the note Obsidian opens (`vault.Names`, the order of its own `getLinkpathDest`). A note linked by more than a timeline could read lights only its own ([technical](technical.md#a-vaults-default-rule)). A tag the owner asks by name is a way in, kind `tag`, lighting its sections, however short its name. Both light by link or tag only, never by mention: a note's name is often an everyday word, and matching every name in every section is slow.
+- **Typed links:** a frontmatter property or `key:: [[note]]` field named after a rel in `vault.RELS` (`supersedes`, `revises`, `disagrees`, `led-to`), or a name the owner gave one, is that link, from the note holding it. Every other link is untyped, never a link row. Without git there's no "as it stood".
 
 ### Session classification
 
@@ -106,7 +118,7 @@ A record and every version of it come back as one unit that counts as one result
 3. **Theory:** after the rows, each node the rows strengthen or weaken, with its status, rows for (counted) and rows against (listed while 10 or fewer), most-cited first; the loops the question touches, with their paths (each thread weighed by the question, rarer threads more, loops within 60% of the best match shown); joins only for what the question names, or among the loops shown.
 
 - **One real-world thing is one row.** Files the record names as whole items (`[timeline] whole`) collapse into one row, with the date from its heading or file name, every thread its sections are on, and milestone if any section is one. Links to any of its sections point at the row. Search still finds its sections one by one.
-- **Named chains:** `engram timeline <thread | recurring thing | tracked thing | person | test | node>` gives just that chain. A recurring thing by name gives its listed occurrences plus what its name and the owner's words for it pick up.
+- **Named chains:** `engram timeline <thread | recurring thing | tracked thing | person | test | node | a vault's note>` gives just that chain. A recurring thing by name gives its listed occurrences plus what its name and the owner's words for it pick up.
 - **A graph walk from the hits was rejected:** it found fewer records at the same size and lost the time order, because the links reach most of a record within two steps.
 - **Output:** a table with the columns named once, a quarter smaller than JSON lines (`--format jsonl`): n, date (`~` when approximate, and both ends, `~<from> to <to>`, when the owner gave two; `dates.printed` reads it from the heading the index built, and a search hit's date prints the same), period (its mark, on a period question), on, who, kind, milestone, what (the headline, cut to 12 words), id, after (rows it follows on), and where present, versions, now and version of; a column empty in every row is left out. On a merged timeline, `on` names a row's threads; a row on none reads `search match` when the search found it, `linked to a row` when only a led-to link brought it. The cleanup is deterministic: thread tags, ids, a date the ref repeats and default values are left out.
 - **Several domains in scope** (`--domain a,b`): each one with stories answers, its header line naming the domain.
@@ -122,11 +134,11 @@ A record and every version of it come back as one unit that counts as one result
 
 ## Weights and lenses
 
-The domain repo's `engram.toml` holds both:
+The domain repo's `engram.toml` holds both; a vault's [reading map](shape.md#a-vault-read-your-way) holds lenses alone:
 - **`[weights]`** apply to every search.
 - **`[lenses.<name>]`** each have an `about` line, a `for` line, and weights that multiply on top. `engram search --lens <name>` applies one, and `engram lenses` lists them. `kinds` names the question kinds it's the default for, which replay uses.
 
-A weight's key says which records it fits: `milestone`; `day-to-day` (a record on a thread that isn't a milestone); `node:<kind>`; `by:<whose claim>`, matched as a prefix; `file:<glob>` and `ref:<glob>`; `class:<class>`. A weight of 0 excludes a kind of record. A record's kind, milestone flag and `by` come from its entry, or from `events/_nodes.jsonl` for a section that isn't one. Surroundings are ranked by query words scaled by the same weights. Each search logs its lens.
+A weight's key says which records it fits: `milestone`; `day-to-day` (a record on a thread that isn't a milestone); `node:<kind>`; `by:<whose claim>`, matched as a prefix; `file:<glob>` and `ref:<glob>`; `class:<class>`; `tag:<tag>` (a vault's section carrying it, written without `#`; `tag:book` fits `#book` and, through its parent, `#book/fiction`). A weight of 0 excludes a kind of record. A record's kind, milestone flag and `by` come from its entry, or from `events/_nodes.jsonl` for a section that isn't one. Surroundings are ranked by query words scaled by the same weights. Each search logs its lens.
 
 ## Scope
 

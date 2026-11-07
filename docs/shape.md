@@ -120,6 +120,24 @@ Onboarding is the first rewiring. The `engram-rewire` skill (`skills/engram-rewi
 - **A departure names its anchor and a reason** quoting a job, a failure or the owner, in the repo's `engram.toml`. One two repos make the same way becomes a lesson here if every repo still passes its check; else it's a spec.
 - **It runs again** when a job is added, dropped or renamed, or a copy has no home. A correction that keeps the jobs' names only moves `[rewire] at` (the id of their names and quotes). A set-up repo's pre-commit refuses drift the commit brings (`engram rewire check --drift`), and `engram health` shows all of it for each repo.
 
+## A vault read as it stands
+
+A folder with `.obsidian/` and no `.engram/engram.toml`, pointed at from the config, is read and never written: tags are threads and lenses, daily notes and date properties date its sections, a note's name lights its sections and backlinks, and a property named after a link rel is that link ([search](search.md#a-vaults-reader)). Nothing files for it, and neither setup, the weekly pass nor health asks it for a rewiring. A record repo with `.obsidian/` stays a record.
+
+### A vault read your way
+
+Rewiring's interview with no migration behind it, the `engram-rewire` skill's read-only mode: the owner's jobs and kinds of ask, from their words in that session and confirmed by talking, each kind becoming a reading and nothing else kept.
+
+| Axis | Reading |
+|---|---|
+| time | a thread tag |
+| category | a category tag, with a lens by tag or folder |
+| entity | a tag asked by name, a way in lighting its sections |
+| owner | a property for who said it |
+| lifecycle, aggregate | none: they need entries, so a rewiring |
+
+The result is the reading map, `vaults/<domain>.toml` in engram's config folder, never the vault. It holds only `jobs` (each quoting the owner, which a re-run starts from), `[read]` (`tags`, `folders`, `properties`) and `[lenses]`. `engram rewire map <domain>` prints the vault's tags, folders and properties as written; `--save <draft> --session <id>` checks the draft's tables and readings, and each new job's quotes word for word against that session's owner turns, then lays it over the saved map, so a re-run changes what the owner changed and keeps the rest. Each read refuses anything else in the map: a refused map is ignored whole, the default rule reads the vault ([technical](technical.md#a-vaults-default-rule)), and health says why in a line. Weights stay unset but for a lens's lift, since weighting is learned from use.
+
 ## Lessons that cost something
 
 - **A doc saying it's done isn't evidence.** Audit claims against code and live data.

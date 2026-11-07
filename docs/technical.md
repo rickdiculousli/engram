@@ -147,6 +147,15 @@ An area's words and a few small functions live in its own record repo, under `.e
 - The real record is untouched until the before-and-after review, and changes land as reviewable per-file commits.
 - **`ENGRAM_SANDBOX=1`** keeps commits local and skips pushing. Eval runs set it. Index and usage rows still go to the data folder in use, so set `ENGRAM_DATA` to keep a probe out of the real logs.
 
+## A vault's default rule
+
+Which tags are threads when the owner hasn't said (`vault._stories`): a tag is a thread unless it's on more than 90 sections, or on more than 5% of the notes and at least 40; and it joins at least two notes. A dated section with no thread of its own takes the most specific threads of the notes it links to, as far as each has room. The owner's `story` overrides all of it. Why:
+- **A timeline is read whole,** and engram's assumes a thread of dozens of rows; a tag like `#book` is a category of hundreds. The cap of 90 leaves room for the corrections a timeline brings in, under the 100 rows a one-tag timeline may run to. `tests/test_vault.py` holds it on an 8,000-note made-up vault and, given `ENGRAM_PUBLIC_VAULT`, on a public vault at a pinned commit.
+- **Only a dated section borrows.** A daily note's line is an event on the story it links to; a wiki page linking to a note is reached through that note's backlinks anyway, and on a real vault its borrowing filled a status tag with pages that were on no story.
+- **A tag on one note isn't a story:** the note's name reaches it, and each such tag is one more thread a free-text question could merge.
+- **The floor of 40 notes is for small vaults,** where a real story can pass 5%: taking a category for a thread costs a short timeline, and taking a story for a category loses it.
+- **A note linked by more than 90 sections lights only its own,** for the same reason: on a real vault, naming a hub note brought hundreds of rows. Search still finds the best of its linkers by their words.
+
 ## The weekly refinement
 
 `refine.py`, for the owner's call that a weekly pass refines engram and each repo it serves.

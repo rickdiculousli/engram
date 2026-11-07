@@ -81,6 +81,11 @@ def config_files() -> list[Path]:
     return [box, Path(over).expanduser()] if over else [box]
 
 
+def vault_map(domain: str) -> Path:
+    """A vault's reading map: in engram's config folder, since nothing is written into a vault."""
+    return config_files()[0].parent / "vaults" / f"{domain}.toml"
+
+
 def index_path(domain: str) -> Path:
     return data_path("{domain}.sqlite", domain)
 

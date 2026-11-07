@@ -19,6 +19,7 @@ CREATE INDEX IF NOT EXISTS way_phrase ON way(phrase);
 CREATE TABLE IF NOT EXISTS way_ref (kind TEXT NOT NULL, key TEXT NOT NULL, ref TEXT NOT NULL, PRIMARY KEY (kind, key, ref));
 """
 MAX_WORDS = 4  # a longer phrase (a quoted sentence) never turns up whole in a question, so it doesn't name a way in
+LINKED = ("note", "tag")  # a vault's: they light what links to them or carries them, never mere mentions (note names are everyday words)
 FORMS = {"topical", "oral", "cream", "ointment", "solution", "drops", "spray", "gel", "foam", "shampoo", "tablet", "capsule"}
 
 
@@ -128,7 +129,8 @@ def sync(idx, d: Domain, conf: dict, more: list = ()) -> int:
     keys = _keys(d, conf, docs)
     for w in more:
         k = keys.setdefault((w.kind, w.key), {"phrases": [], "refs": set(), "roles": []})
-        k["phrases"] += [p for p in _phrases(*w.phrases) if p not in k["phrases"]]
+        said = [p.lower() for p in w.phrases] if w.kind == "tag" else _phrases(*w.phrases)  # a tag the owner asks by, however short
+        k["phrases"] += [p for p in said if p not in k["phrases"]]
         k["refs"] |= set(w.refs)
     if (conf.get("ways") or {}).get("theory"):  # a discovery file (evidence/D03-cervicogenic-eye.md) and what bears on it
         for (to,) in db.execute("SELECT DISTINCT to_ref FROM link WHERE family = 'evidence' AND rel IN ('strengthens', 'weakens')"):
@@ -137,7 +139,7 @@ def sync(idx, d: Domain, conf: dict, more: list = ()) -> int:
                 w["refs"] |= {to} | {f for (f,) in db.execute("SELECT from_ref FROM link WHERE to_ref = ? AND family = 'evidence'", (to,))}
     names = {}
     for (kind, key), w in keys.items():
-        for p in w["phrases"]:
+        for p in w["phrases"] if kind not in LINKED else ():
             names.setdefault(p, []).append((kind, key))
     if names:
         pattern = re.compile(r"\b(" + "|".join(sorted(map(re.escape, names), key=len, reverse=True)) + r")\b", re.I)
@@ -162,7 +164,8 @@ def named(db, text: str) -> list[tuple[str, str, str]]:
     low, out, taken = text.lower(), [], []
     for kind, key, phrase in sorted(db.execute("SELECT kind, key, phrase FROM way"), key=lambda r: -len(r[2])):
         for m in re.finditer(r"\b" + re.escape(phrase) + r"\b", low):
-            if not any(a <= m.start() < b for a, b in taken):  # "cervical mri" wins over "mri"
+            # "cervical mri" wins over "mri"; two notes sharing a name are both named by it
+            if not any(a <= m.start() < b and not (kind in LINKED and low[a:b] == phrase) for a, b in taken):
                 taken.append((m.start(), m.end()))
                 out.append((kind, key, phrase))
                 break

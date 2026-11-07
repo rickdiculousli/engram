@@ -1,11 +1,13 @@
 import shutil
 import stat
 import subprocess
+from pathlib import Path
 
 import pytest
 
 from conftest import PAGE_MD, NOTES_PACK, REWIRE, git, make_repo
-from engram import hourly, pack, setup
+from engram import config, hourly, pack, search, setup
+from engram.cli import main
 
 
 def notes_repo(path, name="notes"):
@@ -151,3 +153,16 @@ def test_a_pack_reads_what_core_cant_and_core_indexes_it_like_any_source(env, tm
         setup.setup(repo, env["tmp"] / "LaunchAgents", load=False)  # a pack that only reads is never filed for
     with pytest.raises(SystemExit, match="no pack reads a source called nothing"):
         cli.main(["ingest", "--source", "nothing"])
+
+
+def test_the_example_shop_is_read_through_its_pack_and_never_filed_for(env, tmp_path, capsys):
+    shop = tmp_path / "shop"
+    shutil.copytree(Path(__file__).resolve().parents[1] / "examples/shop", shop)
+    make_repo(shop, {})
+    env["set_repo"]("shop", shop, pack=shop / ".engram", summaries=True)
+    assert not pack.load("shop").prompts.get("file") and config.load()["shop"].summaries
+    main(["ingest", "--domain", "shop"])
+    hits = search.search("what's happening with the Hendersons", ["shop"], limit=3)
+    assert hits and hits[0]["ref"] == "jobs.jsonl#oak-table"
+    with pytest.raises(SystemExit, match="can't file"):
+        setup.setup(shop)

@@ -1,0 +1,11 @@
+# A small made-up area: one person's woodworking shop, whose own tool keeps the jobs (docs/shape.md, "Which pattern each
+# kind of knowledge takes"). To try it, add this to your config, with the folder's absolute path:
+#   [domains.shop]
+#   repo = "<this folder>"
+#   pack = "<this folder>/.engram"  # the pack reads the rows
+#   summaries = true                # the hourly job keeps what was said about them findable
+[domain]
+name = "shop"
+
+[index]
+exclude = ["jobs.jsonl"]  # the pack reads the rows; not again as a file

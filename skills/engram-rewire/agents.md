@@ -4,7 +4,8 @@
 
 - **Which command:** a single fact, `engram search "<the question in their words>"`; a history or the frame around something, `engram timeline <thing>`; a record or a document, `engram show <ref>`; where things stand, `engram now`; the theory, `engram theory`.
 - **Another domain's hit is a lead:** open it with `engram show` before stating it.
-- **What <the owner> hands over whole** (a letter, a report, a result) is saved as its own file. Facts from talk are left to the hourly job, which files them from the session.
+- **What <the owner> hands over whole** (a letter, a report, a result) is saved as its own file. <only where engram files for the repo> Facts from talk are left to the hourly job, which files them from the session.
+- <only where the repo's own tool keeps the items> **The tool answers what it computes:** run its own command for a total or where things stand. When <the owner> comes back to a name, or asks what was said or why, `engram search` or `engram timeline`.
 - <only where engram files for the repo> **Read engram's output whole:** don't pipe or cut it, and run one engram command per Bash call.
 
 # The weekly refinement

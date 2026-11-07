@@ -1,0 +1,3 @@
+{"id": "oak-table", "client": "the Hendersons", "job": "Oak dining table", "state": "open", "since": "2026-09-02", "quote": 2400}
+{"id": "walnut-shelves", "client": "Dana", "job": "Walnut shelves", "state": "invoiced", "since": "2026-10-05", "quote": 900}
+{"id": "ash-bench", "client": "Dana", "job": "Ash bench", "state": "paid", "since": "2026-08-20", "quote": 650}

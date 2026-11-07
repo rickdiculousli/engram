@@ -17,6 +17,20 @@ The layout every record takes in engram, and the lessons learned getting real re
 | **Session summary** | what a session said, checked against its quotes | the only form a session takes in an index |
 | **Wiki** | what's handed over, compiled: a page per concept, the concepts linking into each other, the sources that bear on each summarised under it, the owner's own writing linked whole | Claude's to keep, by edits code checks and splices in; every quote verbatim from what it cites; committed, changed only by the compiler; read in Obsidian |
 
+## Which pattern each kind of knowledge takes
+
+A kind of knowledge takes its pattern from who writes it. Decide it per kind: an area mixes them.
+
+| Pattern | Suits | Who writes it | Engram's part |
+|---|---|---|---|
+| **Read as it stands** | notes the owner already keeps | the owner | searches them and changes nothing |
+| **The owner's tool plus talk** | what must add up, or what code acts on or checks against, with the debate around it | the tool, or a filer of its own | a pack reads the rows; `summaries = true` in the domain's config keeps the talk findable as session summaries ([example](../examples/shop/)) |
+| **Compiled** | what's handed over to be taken in | Claude, checked by code | keeps the wiki |
+| **Filed from talk** | facts that come up in conversation, with no tool behind them | engram's filer | files and checks them, and tells the story |
+
+- **What the tool computes, the tool answers:** a total or a nudge comes from the tool's own command, and engram serves what was said about it, so nothing is computed twice.
+- **Filing is a whole repo's switch:** engram files for a repo through `engram setup` and its pack's `file` words, or not at all. In a repo it doesn't file for, what was said stays findable as summaries, and what must be acted on is the repo's own filer's to write. The hourly compile runs under the same switch, so a compiled area is set up.
+
 ## Identity
 
 - **Everything has a fixed id for life:** entries, documents, linked sections, theory nodes, and each tracked thing (a medication, a holding, a person). Moving a file or rewording a heading never breaks a link.
@@ -45,14 +59,14 @@ The layout every record takes in engram, and the lessons learned getting real re
 
 ## How Claude calls engram
 
-- **The repo's AGENTS.md gets two sections, from `skills/engram-rewire/agents.md`:** one on search, which names the command for each kind of ask (`search`, `timeline`, `show`, `now`, `theory`), puts the repo's own record first, makes a hit from another domain a lead, opened before it's stated, and saves whole documents the owner hands over as their own files, since facts from talk are filed by the hourly job; in a repo engram files for, it also says to read engram's output whole, one command per Bash call, which only that repo's widened Bash window holds; and the weekly refinement's. A compiled area's section also says how things are handed over (`engram source add`), that `wiki/` is the compiler's and how to put back a hand edit, that a draft's sources live in the wiki's source pages, and which other domain a post may search, whose hits are leads and never filed into it.
+- **The repo's AGENTS.md gets two sections, from `skills/engram-rewire/agents.md`:** one on search, which names the command for each kind of ask (`search`, `timeline`, `show`, `now`, `theory`), puts the repo's own record first, makes a hit from another domain a lead, opened before it's stated, and saves whole documents the owner hands over as their own files, since facts from talk are filed by the hourly job; where the repo's own tool keeps the items, that the tool answers what it computes and engram what was said; in a repo engram files for, it also says to read engram's output whole, one command per Bash call, which only that repo's widened Bash window holds; and the weekly refinement's. A compiled area's section also says how things are handed over (`engram source add`), that `wiki/` is the compiler's and how to put back a hand edit, that a draft's sources live in the wiki's source pages, and which other domain a post may search, whose hits are leads and never filed into it.
 - **Skills keep their judgment; only their finding and write steps change.**
 - **Session start reads local data only.**
 
 ## How new facts get in
 
 - **No manual judgments.** The owner talks; nothing is ever a list for them to approve.
-- **Who files is the repo's choice.** Engram files facts from talk (below), unless the repo keeps its own schema-checked store and filer: then a pack reads it and engram never files for it; `summaries = true` in its `[domains.<name>]` keeps its talk findable all the same, as session summaries.
+- **Who files is the repo's choice** ([patterns](#which-pattern-each-kind-of-knowledge-takes)): engram, or a store and filer of the repo's own, which a pack then reads.
 - **One filer for facts from talk:** an hourly job reads each session that's been idle an hour, whole and cleaned, and files only what a good advisor would note. Most sessions file nothing.
 - **Code guards, not prompt hopes:** quotes word for word in the owner's messages; numbers in their words or the question they answered; full dates from the day they spoke; repeats checked against the record using the fact's own wording; a new occurrence of a known thing always filed; a session marked only after a successful run.
 - **Knowledge that needs ingesting is compiled:** what the owner hands over is kept as saved (`engram source add`), and each source, spark and settled post is compiled into the wiki by one checked call whose edits code splices into its pages. A spark is filed when the owner asks, and the hourly job catches the rest. Nothing is fetched from outside until the owner says go; the health check lists gaps worth it in `open.md`.
@@ -95,7 +109,7 @@ What makes engram speak an area's language, kept in the area's own repo in `.eng
 - **What engram can't read itself,** read by the pack: rows the area's own tools keep, or text outside git, given to engram as records with their links and ways in.
 - **Its own tests,** which drive engram with the pack, so a change in engram that breaks the area shows before it lands.
 
-`examples/notes/` is the smallest one: words only.
+`examples/notes/` is the smallest one: words only. `examples/shop/` is the smallest that reads a tool's rows.
 
 ## Rewiring a repo
 

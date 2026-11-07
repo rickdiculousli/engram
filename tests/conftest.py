@@ -65,7 +65,7 @@ def env(tmp_path, monkeypatch):
         lines = cfg.read_text() if cfg.exists() else ""
         lines += f'[domains.{domain}]\nrepo = "{repo}"\nremotes = {list(remotes or [])!r}\nexclude = {list(exclude or [])!r}\n'
         lines += f'pack = "{pack}"\n' if pack else ""
-        lines += "".join(f"{k} = {str(v).lower() if isinstance(v, bool) else v!r}\n" for k, v in more.items())
+        lines += "".join(f"{k} = {str(v).lower() if isinstance(v, bool) else repr(v)}\n" for k, v in more.items())
         cfg.write_text(lines.replace("'", '"'))
 
     return {"tmp": tmp_path, "data": data, "set_repo": set_repo}

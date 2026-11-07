@@ -129,7 +129,7 @@ Any folder of Markdown, text or CSV, in git or not: full-text search by section,
 
 - **An Obsidian vault:** read by its own structure, nothing in it changed. Tags become threads you get as a timeline, daily notes date what's in them, naming a note brings its backlinks, and a note whose properties say `supersedes: "[[Old note]]"` comes back with the old one folded under it. To read its tags, properties and folders your way, ask Claude for the short interview in the `engram-rewire` skill; its result stays in engram's config folder. Without git there's no "as it stood" ([shape](docs/shape.md#a-vault-read-as-it-stands))
 - **For stories, timelines, corrections and filing:** rewire a git copy of it
-- **Your own tool, with its own store:** write a [pack](docs/shape.md#a-pack) that reads it; engram never files there
+- **Your own tool, with its own store:** write a [pack](docs/shape.md#a-pack) that reads it; engram never files there. `summaries = true` in its `[domains.<name>]` keeps what you said about it findable too, at model cost; on a box with no repo set up, `engram capture install` adds the hourly job that does it
 - **Not yet:** no importer for Apple Notes, Keep or spreadsheets, so export to Markdown or CSV
 
 ## Evolve

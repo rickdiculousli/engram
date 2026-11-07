@@ -1,3 +1,4 @@
+import contextlib
 import json
 import os
 import plistlib
@@ -1369,3 +1370,32 @@ def test_a_dry_run_says_what_it_would_rewrite_and_changes_nothing(world):
     head = git(world["repo"], "rev-parse", "HEAD")
     out = hourly.run(ask=_scripted("slip", [], {**RIGHT, "corrects": old.id}), summaries=False, now=NEXT_DAY, dry_run=True)
     assert [f["edits"] for f in out["would_file"]] == [old.id] and git(world["repo"], "rev-parse", "HEAD") == head
+
+
+def test_a_domain_engram_only_reads_has_its_summaries_kept_current_and_nothing_filed(world, env, monkeypatch):
+    other = make_repo(world["tmp"] / "repos/desk", {".engram/engram.toml": '[domain]\nname = "desk"\n'})
+    head = git(other, "rev-parse", "HEAD")
+    env["set_repo"]("desk", other, pack=None, summaries=True)
+    env["set_repo"]("quiet", make_repo(world["tmp"] / "repos/quiet", {"a.md": "a"}), pack=None)
+    got = []
+    monkeypatch.setattr(hourly.summarize, "run", lambda d: got.append(d) or {"stopped": None})
+    out = hourly.run(ask=fake([], []), now=LATER)
+    assert out["error"] is None and got == ["medical", "desk"]  # the set-up repo, then the one that asks; never the rest
+    with contextlib.closing(capture.db()) as c:
+        assert [d for (d,) in c.execute("SELECT domain FROM repo")] == ["medical"]
+    assert git(other, "rev-parse", "HEAD") == head and not git(other, "status", "--porcelain")
+    assert hourly.run(ask=fake([], []), dry_run=True, now=LATER)["error"] is None and got == ["medical", "desk"]  # spends nothing
+
+
+def test_the_hourly_job_stays_while_a_domain_only_wants_its_summaries(world, env):
+    plist = world["tmp"] / "LaunchAgents" / f"{setup.LABEL}.plist"
+    env["set_repo"]("desk", world["tmp"] / "repos/desk", pack=None, summaries=True)
+    setup.teardown(world["repo"])
+    assert plist.exists()
+
+
+def test_the_hourly_job_installs_on_a_box_with_no_repo_set_up(env, monkeypatch):
+    got = {}
+    monkeypatch.setattr(setup, "timed_job", lambda agents, label, args, log, load, **when: got.update(label=label, args=args, load=load, **when))
+    setup.install_hourly()
+    assert got["label"] == setup.LABEL and got["args"][-2:] == ["capture", "run"] and got["load"] and got["every"] == 3600

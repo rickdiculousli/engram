@@ -170,6 +170,11 @@ def install_job(man: dict):
                  bool(man.get("load")), every=3600)
 
 
+def install_hourly() -> Path:
+    """The hourly job on a box with no repo set up, for the domains that only want their summaries kept current."""
+    return timed_job(None, LABEL, [*engram_cmd(), "capture", "run"], data_path("capture.log"), True, every=3600)
+
+
 def timed_job(agents: Path | None, label: str, args: list[str], log: Path, load: bool, **when) -> Path:
     """A job no repo owns (the daily copy, the weekly pass), installed only where `refused()` lets the hourly job be."""
     if why := refused().get("job"):
@@ -339,7 +344,8 @@ def _teardown(root: Path) -> list[str]:
         c.execute("DELETE FROM repo WHERE domain = ?", (domain,))
         others = c.execute("SELECT count(*) FROM repo").fetchone()[0]
     c.close()
-    if not others:  # the hourly job serves every repo set up; it goes with the last one
+    from engram import config
+    if not others and not any(d.summaries for d in config.load().values()):  # the hourly job goes with the last thing it serves
         jobs.remove(Path(man["launch_agents_dir"]), LABEL, bool(man.get("load")))
     return [f"{domain}: torn down ({root}); records untouched"]
 

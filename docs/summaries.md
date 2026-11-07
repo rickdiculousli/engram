@@ -22,9 +22,11 @@ These apply to session summaries, record summaries, and the advisor's answers.
 
 ## Session summaries
 
+A session cleaned up from this box can't grow, so it's fetched from its mirror again only if a prompt's version moved or its summary was lost, or when named; a program's own runs never are, having no turn of the owner's.
+
 They make what was said findable even when the owner's wording, the advisor's and the record's differ, and they carry recurring things across sessions.
 
-- **Scope:** every main session started in a set-up repo that has a turn of the owner's. The summaries are the only part of a session any index holds; raw turns are never indexed. Skipped: subagent transcripts (their outcome is in the parent session), headless `claude -p` runs and sessions started by a launcher's prompt (nobody in them is talking with the owner), and sessions written to in the last 2 hours.
+- **Scope:** every main session started in a set-up repo, or a domain whose config says `summaries = true`, that has a turn of the owner's. The summaries are the only part of a session any index holds; raw turns are never indexed. Skipped: subagent transcripts (their outcome is in the parent session), headless `claude -p` runs and sessions started by a launcher's prompt (nobody in them is talking with the owner), and sessions written to in the last 2 hours.
 - **The read:** a whole session at once, up to 200,000 characters of cleaned conversation; only a longer session is cut into parts that overlap by 2 exchanges. Opus at low effort (`claude -p`, the owner's subscription), one call per part, strict JSON, no tools and its own system prompt. Code fills in the segment number, its lines and its timestamps. Why Opus low on whole sessions: in a blind review against smaller models on segments with stitching, it had the fewest unfaithful items, at low cost.
 - **Cleaning,** before any model sees the text:
   - **Dropped:** tool calls, tool output, system reminders, hook output, retries a later turn superseded, and Claude's narration between commands when a final reply follows.

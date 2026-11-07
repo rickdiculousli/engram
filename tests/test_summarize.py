@@ -313,3 +313,24 @@ def test_a_delegated_agents_session_is_never_the_owners_words(tmp_path):
                             exchanges=[ex("which bed for the tomatoes?")])
     assert summarize.speaker(agent, "and the log", "Sam") == ("Prompt", "and the log")
     assert summarize.speaker(mine, "which bed for the tomatoes?", "Sam") == ("Sam", "which bed for the tomatoes?")
+
+
+def test_a_session_cleaned_up_here_is_fetched_again_only_if_something_could_have_changed(world, env, monkeypatch):
+    monkeypatch.setattr(summarize, "LAUNCHED", ("-T-desk-",))
+    root = sessions.ROOT
+    sql = sqlite3.connect(data_path("sessions-state.sqlite"))
+    sql.execute("CREATE TABLE IF NOT EXISTS file (path TEXT PRIMARY KEY, bytes INTEGER, mtime_ns INTEGER, head_sha TEXT, "
+                "domain TEXT, exchanges INTEGER, docs INTEGER, rewrites INTEGER DEFAULT 0, seen TEXT, gone TEXT)")
+    gone = {n: root / folder / f"{n}.jsonl" for n, folder in
+            [("kept", "proj"), ("old", "proj"), ("lost", "proj"), ("seat", "x-T-desk-1")]}
+    for p in gone.values():
+        sql.execute("INSERT OR REPLACE INTO file (path, domain, gone) VALUES (?, 'medical', 'now')", (str(p),))
+    sql.commit()
+    sql.close()
+    now = {"segment": summarize.segment_version("medical"), "stitch": summarize.STITCH_VERSION}
+    d = summarize.store_dir("medical")
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "kept.json").write_text(json.dumps({"prompt_version": now}))
+    (d / "old.json").write_text(json.dumps({"prompt_version": {**now, "stitch": "older"}}))
+    assert sorted(p.stem for p, _ in summarize.known_sessions("medical")) == ["lost", "old"]
+    assert [p.stem for p, _ in summarize.known_sessions("medical", ["kept"])] == ["kept"]  # asked for by name

@@ -540,7 +540,10 @@ def _payload(a) -> dict:
 
 def cmd_capture(a):
     from engram import capture, hourly
-    if a.action == "status":
+    if a.action == "install":
+        from engram import setup
+        print(setup.install_hourly())
+    elif a.action == "status":
         from engram import setup
         print("\n".join(setup.status(Path(a.repo).expanduser() if a.repo else None)))
     elif a.action == "refile":
@@ -946,10 +949,11 @@ def main(argv=None):
     s.set_defaults(fn=cmd_wiki)
 
     s = sub.add_parser("capture", help="file what the owner says in a repo's sessions: run (the hourly job), check (the "
-                                       "session-start health check and repair), status (whether it's running), "
+                                       "session-start health check and repair), status (whether it's running), install (the "
+                                       "hourly job, on a box where no repo is set up), "
                                        "refile <session-prefix>... (clear sessions' filed mark so the next run reads them "
                                        "again; deletes nothing)")
-    s.add_argument("action", choices=["run", "check", "status", "refile"])
+    s.add_argument("action", choices=["run", "check", "status", "install", "refile"])
     s.add_argument("sessions", nargs="*", help="refile: session id prefixes")
     s.add_argument("--payload", help="check: the hook's JSON payload (default: stdin)")
     s.add_argument("--repo", help="status: just this repo")

@@ -103,10 +103,13 @@ def _local(ts: str | None) -> str:
         return ts
 
 
+def _launched() -> tuple[str, ...]:
+    return LAUNCHED + tuple(m for d in config.load().values() for m in d.sessions_from)
+
+
 def speaker(s: sessions.Session, said: str, owner: str) -> tuple[str, str]:
     """Who wrote a user turn, and the words to show for it: the owner's (labelled `owner`) verbatim, a skill by name only."""
-    launched = LAUNCHED + tuple(m for d in config.load().values() for m in d.sessions_from)
-    if sessions.by_agent(s) or any(m in s.project for m in launched):
+    if sessions.by_agent(s) or any(m in s.project for m in _launched()):
         return "Prompt", said
     for pat, label in AUTOMATED:
         m = pat.match(said)
@@ -807,8 +810,19 @@ def _load_session(path: Path) -> sessions.Session | None:
     return s
 
 
+def _settled(path: Path, domain: str) -> bool:
+    """A session cleaned up from this box can't grow, so it's fetched from the mirror again only if a prompt moved or
+    its summary was lost; one a program started has no turn of the owner's to summarize. Keeps the hourly job off the
+    network for sessions nothing can change, which matters once a harness's thousands of runs age out."""
+    if any(m in path.parent.name for m in _launched()):
+        return True
+    p = store_dir(domain) / f"{path.stem}.json"
+    return p.exists() and _versions(json.loads(p.read_text())) == {"segment": segment_version(domain), "stitch": STITCH_VERSION}
+
+
 def known_sessions(domain: str | None = None, stems: list[str] | None = None) -> list[tuple[Path, str]]:
-    """Main sessions filed into a domain; subagents are skipped, since their outcome is in the parent session."""
+    """Main sessions filed into a domain; subagents are skipped, since their outcome is in the parent session. Naming
+    a session reads it whatever its state."""
     st = sqlite3.connect(data_path("sessions-state.sqlite"), timeout=30)
     doms = list(config.load())
     rows = st.execute(f"SELECT path, domain, gone FROM file WHERE domain IN ({', '.join('?' * len(doms))}) "
@@ -820,6 +834,8 @@ def known_sessions(domain: str | None = None, stems: list[str] | None = None) ->
         if domain and dom != domain or stems and p.stem not in stems:
             continue
         if not gone and p.exists() and datetime.now().timestamp() - p.stat().st_mtime < IDLE.total_seconds():
+            continue
+        if not stems and not p.exists() and _settled(p, dom):
             continue
         out.append((p, dom))
     return out

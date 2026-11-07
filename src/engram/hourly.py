@@ -1,8 +1,8 @@
 """The two jobs around the filer: the hourly job and the install's health.
 
 The hourly job (`engram capture run`, `engram.jobs`), one run at a time: it indexes changed sessions (under "DO NOT
-STORE GARBAGE" that means their checked summaries, kept current for the repos set up; raw transcripts are never
-indexed); files each session started in a repo set up that has grown since it was last filed and has been idle an hour
+STORE GARBAGE" that means their checked summaries, kept current for the repos set up and any domain whose config says
+`summaries = true`, which files nothing; raw transcripts are never indexed); files each session started in a repo set up that has grown since it was last filed and has been idle an hour
 (`capture.file_session`, then `capture.renew`); for the areas that have them, narrows hedged dates by new dated
 documents (`narrow.run`), compiles onto the map, summarizes long records and runs the value review; re-checks theory
 changes whose re-check never ran, syncs each repo's document ids, repairs the install and retries a failed push.
@@ -73,7 +73,8 @@ def run(ask=None, dry_run: bool = False, summaries: bool = True, now: datetime |
         try:
             sessions.ingest(config.load())
             if summaries and not dry_run:
-                for d in repos:  # without raw transcripts in the index, a session is searchable through its summary
+                # without raw transcripts in the index, a session is searchable through its summary
+                for d in [*repos, *(n for n, v in config.load().items() if v.summaries and n not in repos)]:
                     if stopped := summarize.run(d)["stopped"]:
                         _error(out, f"summaries {d} stopped: {stopped}")
             summarize.index_all()

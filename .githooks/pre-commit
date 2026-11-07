@@ -3,8 +3,8 @@
 # No tracked .venv, no instance named in src/ (instance.py), the tests pass, and so do the packs this box pins (packs.py).
 # Under the weekly pass (ENGRAM_REFINE, set by refine.fenced), nothing staged in the paths it may not change.
 cd "$(git rev-parse --show-toplevel)" || exit 1
-if [ -n "$ENGRAM_REFINE" ] && ! git diff --cached --quiet -- bench/gate.py skills/engram-refine .githooks; then
-  echo "pre-commit: the weekly pass may not change bench/gate.py, skills/engram-refine/ or .githooks/" >&2
+if [ -n "$ENGRAM_REFINE" ] && ! git diff --cached --quiet -- bench/gate.py skills/engram-refine .githooks src/engram/landing.py; then
+  echo "pre-commit: the weekly pass may not change bench/gate.py, skills/engram-refine/, .githooks/ or src/engram/landing.py" >&2
   exit 1
 fi
 if [ -n "$(git ls-files -- .venv)" ]; then

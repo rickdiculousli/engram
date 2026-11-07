@@ -134,7 +134,7 @@ Any folder of Markdown, text or CSV, in git or not: full-text search by section,
 
 ## Evolve
 
-Off until `engram refine install`. Then every week `engram refine` tunes engram and each repo against that repo's jobs, capped by default at $100 a week of Claude Code's reported cost (`[refine] weekly_cap`). A change lands by itself only if one revert undoes it and nothing in your record is lost; anything bigger, or dropping something you asked for, waits for your yes.
+Off until `engram refine install`. Then every week `engram refine` tunes engram and each repo against that repo's jobs, capped by default at $100 a week of Claude Code's reported cost (`[refine] weekly_cap`). A change lands by itself only if one revert undoes it, nothing in your record is lost, it leaves how your record gets written alone, and a fresh reviewer passes it; anything bigger, or dropping something you asked for, waits for your yes.
 
 <p align="center">
   <picture>

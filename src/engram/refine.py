@@ -7,6 +7,7 @@ import contextlib
 import fcntl
 import json
 import math
+import os
 import re
 import shlex
 import shutil
@@ -35,10 +36,15 @@ LABEL = "engram.refine"
 SCHEDULE = [{"Weekday": 6, "Hour": 4, "Minute": 0}, {"Weekday": 0, "Hour": 9, "Minute": 30},
             {"Weekday": 1, "Hour": 19, "Minute": 30}]
 ALLOW = ("The weekly refinement pass: editing files in the repo it was given and in its own worktrees, running that "
-         "repo's checks, committing on a refinement branch, fast-forward merging it into the repo's default branch and "
-         "pushing to origin, when the rules section of the repo's .engram/README.md allows it.")
+         "repo's checks, committing on a refinement branch, running `engram refine review` and `engram refine land` on it, "
+         "which merge and push it when a review passed it, and pushing its specs, when the rules section of the repo's "
+         ".engram/README.md allows it.")
 # what the pass may not change in engram's own repo: denied to its edits here, refused at commit by engram's pre-commit
-OFF_LIMITS = ("bench/gate.py", "skills/engram-refine/**", ".githooks/**")
+OFF_LIMITS = ("bench/gate.py", "skills/engram-refine/**", ".githooks/**", "src/engram/landing.py")
+# how a pass could stop short or land past the review: waiting needs something to wake it, and a pass ends with its turn
+NO_WAITING = ("Monitor", "ScheduleWakeup")
+NO_LANDING = ("Bash(git merge *)", "Bash(git -C * merge *)")
+REVIEW_TIMEOUT = 1800  # seconds one review may run; a pass's Bash calls wait this long and a little more
 DIGEST_CAP = 3.0  # what one digest may spend
 DIGEST = """Write one self-contained HTML page (inline CSS, no scripts, nothing loaded from elsewhere) that tells {owner} \
 what this week's refinement of their repos brings them to decide. Reply with the page alone, from <!doctype html> \
@@ -46,7 +52,8 @@ to </html>.
 
 It's for reading, not acting. For each item below that needs them: a plain title; what it would change for them; its \
 cost; the recommendation; the evidence; then the answers they can give: yes, no, defer, or tell me more. A spec \
-approved but not built says why it waits, or if it gives no reason, that the week's pass didn't finish it; jobs still proposed are shown as written, asking if that's it. Changes \
+approved but not built says why it waits, or if it gives no reason, that the week's pass didn't finish it; jobs still proposed are shown as written, asking if that's it. A pass \
+that didn't finish is one plain line, with no answers: what it left undone, unless a spec here already says so. Changes \
 already made are one plain line each, with no answers. Each item says which repo it's in. Write in the specs' own plain voice, to {owner} as "you", with \
 no file paths, commands, field names, statuses or other machinery; leave out what an item doesn't say, and add nothing.
 
@@ -82,7 +89,8 @@ def week(now: datetime | None = None) -> str:
 
 
 def _dir() -> Path:
-    d = data_path("refine")
+    """The ledger's folder, the real one under a pass too (`fenced` names it), so its reviews are counted and kept."""
+    d = Path(os.environ.get("ENGRAM_REFINE") or data_path("refine"))
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -142,8 +150,14 @@ def status() -> list[str]:
     return out
 
 
+def reviews() -> list[dict]:
+    """Each review `landing.review` ran and each landing `landing.land` made."""
+    f = _dir() / "reviews.jsonl"
+    return [json.loads(line) for line in f.read_text().splitlines() if line.strip()] if f.exists() else []
+
+
 def spent(rows: list[dict], wk: str) -> float:
-    return round(sum(r["cost_usd"] for r in rows if r["week"] == wk), 4)
+    return round(sum(r["cost_usd"] for r in [*rows, *reviews()] if r["week"] == wk), 4)
 
 
 def _work() -> Path:
@@ -168,9 +182,9 @@ def copy_data(to: Path):
 def fenced(name: str, repo: Path, wk: str) -> dict:
     """The env a pass runs in: engram on a copy of the data folder, its repo rows dropped so nothing there serves a
     real repo, cleared at the next pass's start; the real gate folder for the baseline; a config laid over the box's
-    that keeps a repo only for the domain under pass (none for engram's own), as the gate's freeze writes it; the mark
-    engram's pre-commit refuses OFF_LIMITS under; and no background work, since a one-shot pass that waits on any ends
-    with its work unlanded."""
+    that keeps a repo only for the domain under pass (none for engram's own), as the gate's freeze writes it; the
+    mark engram's pre-commit refuses OFF_LIMITS under, naming the real ledger's folder; and no background work: a pass
+    ends with its turn, so what it left running dies unfinished, and a long check or review holds its turn open."""
     shutil.rmtree(data_path("scratch") / "refine-data", ignore_errors=True)
     at = data_path("scratch") / "refine-data" / f"{wk}-{name}"
     copy_data(at / "data")
@@ -181,7 +195,8 @@ def fenced(name: str, repo: Path, wk: str) -> dict:
     (at / "config.toml").write_text("".join(f"[domains.{n}]\nrepo = {json.dumps(str(repo) if n == name else '')}\n"
                                             for n in config.load()))
     return {"ENGRAM_DATA": str(at / "data"), "ENGRAM_CONFIG": str(at / "config.toml"),
-            "ENGRAM_GATE": str(data_path("gate")), "ENGRAM_REFINE": "1", "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1"}
+            "ENGRAM_GATE": str(data_path("gate")), "ENGRAM_REFINE": str(_dir()), "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1",
+            "BASH_DEFAULT_TIMEOUT_MS": str((REVIEW_TIMEOUT + 300) * 1000), "BASH_MAX_TIMEOUT_MS": str((REVIEW_TIMEOUT + 300) * 1000)}
 
 
 def command(name: str, repo: Path, cap: float, dry_run: Path | None = None) -> list[str]:
@@ -192,7 +207,7 @@ def command(name: str, repo: Path, cap: float, dry_run: Path | None = None) -> l
     cmd = ["claude", "-p", f"Follow {own() / SKILL}: repo={repo} mode={mode} worktrees={work}",
            "--output-format", "json", "--max-budget-usd", f"{cap:.2f}", "--permission-mode", s["permission_mode"],
            "--model", s["model"], "--settings", json.dumps({"autoMode": {"allow": ["$defaults", ALLOW]}, "permissions": {
-               "deny": [f"{t}(**/{p})" for p in OFF_LIMITS for t in ("Edit", "Write")]}}),
+               "deny": [f"{t}(**/{p})" for p in OFF_LIMITS for t in ("Edit", "Write")] + [*NO_WAITING, *NO_LANDING]}}),
            "--add-dir", str((own() / SKILL).parent), "--add-dir", str(repo), "--add-dir", str(work)]
     return cmd + (["--add-dir", str(dry_run)] if dry_run else [])
 
@@ -267,6 +282,7 @@ def run(only: str | None = None, dry_run: Path | None = None, show: bool = False
             if dry_run:
                 dry_run.mkdir(parents=True, exist_ok=True)
             started = datetime.now().isoformat(timespec="seconds")
+            approved, head = _approved(repo), _head(repo)
             row = {"week": wk, "repo": name, "started": started, "dry_run": bool(dry_run), "cost_usd": cap, "ok": False,
                    "running": True}  # a pass stopped mid-run keeps its cap spent, so nothing reruns it for free
             rows.append(row)
@@ -289,8 +305,10 @@ def run(only: str | None = None, dry_run: Path | None = None, show: bool = False
                 except (json.JSONDecodeError, TypeError, ValueError, AttributeError):
                     cost, said = cap, (proc.stdout + proc.stderr)[-2000:]
                     error = said.strip().splitlines()[-1] if said.strip() else f"exit {proc.returncode}, no output"
+            if not dry_run and (left_undone := _unfinished(repo, approved, head)):
+                error = "; ".join(filter(None, [error, *left_undone]))
             rows[-1] = {"week": wk, "repo": name, "started": started, "dry_run": bool(dry_run), "cost_usd": round(cost, 4),
-                        "ok": not error} | ({"error": " ".join(error.split())[:200]} if error else {})
+                        "ok": not error} | ({"error": " ".join(error.split())[:400]} if error else {})
             row = rows[-1]
             _write(rows)
             (_dir() / "runs" / wk).mkdir(parents=True, exist_ok=True)
@@ -309,7 +327,7 @@ def run(only: str | None = None, dry_run: Path | None = None, show: bool = False
             out.append(f"the week's page is already {page}; what this run brought waits for the next")
         elif ran:
             started = datetime.now().isoformat(timespec="seconds")
-            paid, line = digest(targets, min(DIGEST_CAP, s["weekly_cap"] - spent(rows, wk)), runner)
+            paid, line = digest(targets, min(DIGEST_CAP, s["weekly_cap"] - spent(rows, wk)), runner, rows)
             if paid:
                 rows.append({"week": wk, "repo": "", "job": PAGE_JOB, "started": started, "dry_run": False,
                              "cost_usd": round(paid, 4), "ok": page.exists()})
@@ -401,6 +419,36 @@ def conversations(repo: Path, days: float = 7, session: str | None = None, cap: 
     return "\n".join(out)
 
 
+def _approved(repo: Path) -> list[Path]:
+    """The specs the owner approved that the pass still has to settle: build, or mark `blocked:`."""
+    out = []
+    for spec in sorted((repo / SPECS).glob("*.md")):
+        with contextlib.suppress(ValueError, yaml.YAMLError):  # one that won't parse is told at session start
+            fields = frontmatter.split(spec.read_text())[0] or {}
+            if fields.get("status") == "approved" and "blocked" not in fields:
+                out.append(spec)
+    return out
+
+
+def _head(repo: Path) -> str:
+    return subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+
+
+def _unfinished(repo: Path, approved: list[Path], head: str) -> list[str]:
+    """What a pass that says it's fine left undone, read from the repo rather than taken from its word: an approved spec
+    it neither built nor marked blocked, a refinement branch still standing (work that never landed), and a change that
+    reached the default branch with no reviewed landing."""
+    git = lambda *a: subprocess.run(["git", "-C", str(repo), *a], capture_output=True, text=True).stdout.split()
+    title = lambda p: next((l[2:] for l in p.read_text().splitlines() if l.startswith("# ")), p.stem)
+    still = set(_approved(repo))
+    out = [f"approved and not built: {title(p)}" for p in approved if p in still]
+    out += [f"work left unlanded on {b}" for b in git("for-each-ref", "--format=%(refname:short)", "refs/heads/refinement/")]
+    reviewed = {c for r in reviews() for c in r.get("landed", [])}
+    if unreviewed := [c for c in git("log", f"--grep=^{TRAILER}: ", "--format=%H", f"{head}..HEAD") if c not in reviewed]:
+        out.append("landed with no review: " + ", ".join(c[:8] for c in unreviewed))
+    return out
+
+
 def _landed(repo: Path) -> list[tuple[str, str, str]]:
     """(commit, day, line) for each commit on the repo's branch whose message has a `Refinement:` line and that no later
     commit reverts, oldest first. The line is read wherever it sits in the message: a blank line before Claude's
@@ -475,23 +523,34 @@ def _seen() -> set[str]:
         return set()
 
 
-def digest(targets: dict[str, Path], budget: float, runner=subprocess.run) -> tuple[float, str]:
-    """The week's one page for the owner, across the repos, when something there needs them: each spec waiting on
-    them, each landed change not yet in a page, and their jobs while still proposed. One `claude -p` with no tools
+def _failures(rows: list[dict], seen: set[str]) -> dict[str, tuple[str, str]]:
+    """Each repo's pass that didn't finish and no page has named, by repo: (its mark in `seen`, what stopped it). A week's
+    last pass on the repo speaks for it, and this week's free failure doesn't yet: a catch-up tries it again."""
+    last = {(r["week"], r["repo"]): r for r in rows if not r["dry_run"] and r.get("job") not in (SWEEP, PAGE_JOB)}
+    return {r["repo"]: (m, r.get("error") or "it stopped before it finished") for r in last.values()
+            if not r["ok"] and (r["week"] != week() or r["cost_usd"] >= 1)
+            and (m := f"pass:{r['week']}:{r['repo']}:{r['started']}") not in seen}
+
+
+def digest(targets: dict[str, Path], budget: float, runner=subprocess.run, rows: list[dict] | None = None) -> tuple[float, str]:
+    """The week's one page for the owner, across the repos, when something there needs them: each pass that didn't
+    finish, each spec waiting on them, each landed change not yet in a page, and their jobs while still proposed. One `claude -p` with no tools
     writes it, the page goes in the data folder and opens in the browser, and only then are its changes marked shown.
     Returns (cost, a line for the log, empty when nothing needed them: then nothing is written or opened)."""
     seen, items, changed = _seen(), [], set()
-    for repo in targets.values():
+    failed = _failures(rows or [], seen)
+    for name, repo in targets.items():
         new = [(sha, day, line) for sha, day, line in _landed(repo) if sha not in seen and not line.startswith(UNSEEN)]
         portrait = ""
         with contextlib.suppress(ValueError, yaml.YAMLError):  # a broken page is told at session start
             portrait = _portrait(repo)
-        part = ([f"## Jobs still proposed\n\n{portrait}"] if portrait else []) + \
+        part = ([f"## A pass that didn't finish\n\n{failed[name][1]}"] if name in failed else []) + \
+            ([f"## Jobs still proposed\n\n{portrait}"] if portrait else []) + \
             [f"## A spec\n\n{p.read_text()}" for p in _specs(repo)[0]] + \
             (["## Changed since the last page\n\n" + "\n".join(f"- {day}: {line}" for _, day, line in new)] if new else [])
         if part:
             items.append(f"# In {repo.name}\n\n" + "\n\n".join(part))
-        changed |= {sha for sha, _, _ in new}
+        changed |= {sha for sha, _, _ in new} | ({failed[name][0]} if name in failed else set())
     if not items:
         return 0.0, ""
     if budget < 0.5:

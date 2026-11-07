@@ -41,7 +41,9 @@ def test_the_pass_serves_engram_then_each_domain_and_skips_a_paused_one(served):
             "--output-format", "json", "--max-budget-usd", "30.00", "--permission-mode", "auto", "--model", "opus",
             "--settings", json.dumps({"autoMode": {"allow": ["$defaults", refine.ALLOW]}, "permissions": {"deny": [
                 "Edit(**/bench/gate.py)", "Write(**/bench/gate.py)", "Edit(**/skills/engram-refine/**)",
-                "Write(**/skills/engram-refine/**)", "Edit(**/.githooks/**)", "Write(**/.githooks/**)"]}}),
+                "Write(**/skills/engram-refine/**)", "Edit(**/.githooks/**)", "Write(**/.githooks/**)",
+                "Edit(**/src/engram/landing.py)", "Write(**/src/engram/landing.py)", "Monitor", "ScheduleWakeup",
+                "Bash(git merge *)", "Bash(git -C * merge *)"]}}),
             "--add-dir", f"{served['own']}/skills/engram-refine", "--add-dir", str(repo), "--add-dir", str(work)]
     assert not (served["data"] / "refine/ledger.jsonl").exists()
 
@@ -97,8 +99,8 @@ def test_a_pass_runs_engram_on_a_scratch_copy_and_a_config_fenced_to_its_repo(se
                 repos = {n: d.repo for n, d in config.load().items()}
             seen[Path(name).name] = (copy, rows, env["ENGRAM_GATE"], repos, left.exists())
             assert all((copy / f).exists() for f in ("summaries/med/s.md", "record-summaries/med/r.json", "moved/med.json"))
-            assert env["ENGRAM_REFINE"] == "1"  # engram's pre-commit refuses the pass its off-limits paths
-            assert env["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"] == "1"  # a pass can't end waiting on work that dies with it
+            assert env["ENGRAM_REFINE"] == str(served["data"] / "refine")  # the pre-commit's mark, and the real ledger's folder
+            assert env["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"] == "1"  # what it leaves running would die with its turn
         return type("P", (), {"returncode": 0, "stdout": json.dumps({"total_cost_usd": 1.0, "result": "ok"}), "stderr": ""})()
     refine.run(runner=runner)
     copy, rows, gate, repos, stale = seen["med"]
@@ -136,7 +138,7 @@ def test_engrams_pre_commit_refuses_the_pass_its_off_limits_paths(tmp_path):
     stub.mkdir()
     (stub / "uv").write_text("#!/bin/sh\nexit 0\n")  # the hook's other checks pass
     (stub / "uv").chmod(0o755)
-    files = ["bench/gate.py", "skills/engram-refine/SKILL.md", ".githooks/packs.py", "src/engram/refine.py"]
+    files = ["bench/gate.py", "skills/engram-refine/SKILL.md", ".githooks/packs.py", "src/engram/landing.py", "src/engram/refine.py"]
     repo = make_repo(tmp_path / "engram", {f: "x\n" for f in files} | {".githooks/pre-commit": (HOOKS / "pre-commit").read_text()})
 
     def commit(f, marked):
@@ -147,7 +149,7 @@ def test_engrams_pre_commit_refuses_the_pass_its_off_limits_paths(tmp_path):
                            capture_output=True, text=True)
         git(repo, "reset", "-q", "--hard")
         return r.returncode
-    assert [commit(f, True) for f in files] == [1, 1, 1, 0]
+    assert [commit(f, True) for f in files] == [1, 1, 1, 1, 0]
     assert commit("bench/gate.py", False) == 0
 
 
@@ -352,7 +354,7 @@ def test_a_failed_pass_is_told_in_health_and_only_a_free_failure_is_retried(serv
 
     assert refine.run(runner=runner)[:2] == ["engram: failed, $30.00; week $30.00 of $50",
                                              "med: failed, $0.00; week $30.00 of $50"]  # never started: nothing spent
-    assert [(r["repo"], r["ok"], r["error"]) for r in refine.ledger()] == [
+    assert [(r["repo"], r["ok"], r["error"]) for r in refine.ledger() if r["repo"]] == [
         ("engram", False, "timed out after 4 hours"),
         ("med", False, "didn't start: FileNotFoundError: [Errno 2] No such file or directory: 'claude'")]
     again = refine.run(show=True)
@@ -378,7 +380,7 @@ def test_a_pass_cut_by_its_budget_says_so(served):
         returncode, stderr = 1, ""
         stdout = json.dumps({"is_error": True, "subtype": "error_max_budget_usd", "total_cost_usd": 30.0, "result": ""})
     refine.run(only="med", runner=lambda cmd, **kw: Proc())
-    assert refine.ledger()[-1]["error"] == "error max budget usd"
+    assert [r for r in refine.ledger() if r["repo"]][-1]["error"] == "error max budget usd"
 
 
 

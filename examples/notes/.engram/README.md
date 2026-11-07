@@ -30,6 +30,8 @@ Small to medium changes that are two-way doors: refine, simplify, reduce, combin
 3. What they see changes by one noticeable line at most.
 4. Where their data lives and who sees it stay the same.
 5. It fits the week's budget (`[refine] weekly_cap` in engram's config).
+6. A fresh reviewer passed it. If it objects, the pass may fix it once, when the fault is fixable at its root cause, and a second fresh review must pass it.
+7. It doesn't change how a record gets written: what gets filed, how, or by what.
 
 Everything else is a spec. Removing anything they asked for is always a spec.
 

@@ -43,6 +43,7 @@ def box_config(tmp_path, monkeypatch):
     (tmp_path / "xdg/engram/config.toml").write_text('owner = "Sam"\n')
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
     monkeypatch.delenv("ENGRAM_CONFIG", raising=False)
+    monkeypatch.delenv("ENGRAM_REFINE", raising=False)  # under a weekly pass's commit, it names the real ledger's folder
     (tmp_path / "no-sessions").mkdir()  # never this box's sessions either
     monkeypatch.setattr("engram.sources.sessions.ROOT", tmp_path / "no-sessions")
     for v in GIT_LOCAL:  # run from a git hook, these would point every repo a test makes at the repo committing

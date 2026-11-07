@@ -678,7 +678,7 @@ def _vault_map(a):
 
 def cmd_refine(a):
     from engram import refine
-    if a.action in ("surface", "conversations") and not a.repo:
+    if a.action in ("surface", "conversations", "review", "land") and not a.repo:
         sys.exit(f"engram refine {a.action}: name the repo")
     if a.action in ("run", "install") and a.repo:
         sys.exit(f"engram refine {a.action}: takes no repo; run one with `engram refine run --repo NAME`")
@@ -696,6 +696,14 @@ def cmd_refine(a):
         if not repo.is_dir():
             sys.exit(f"engram refine conversations: {a.repo} is neither a folder nor one of {', '.join(refine.repos())}")
         print(refine.conversations(repo, a.days, a.session))
+    elif a.action == "review":
+        from engram import landing
+        passed, told = landing.review(Path(a.repo).expanduser().resolve(), Path(a.spec).expanduser().resolve() if a.spec else None)
+        print(told)
+        sys.exit(0 if passed else 1)
+    elif a.action == "land":
+        from engram import landing
+        print(landing.land(Path(a.repo).expanduser().resolve()))
     else:
         print(f"timed job: {refine.install()}")
 
@@ -1010,9 +1018,11 @@ def main(argv=None):
     s = sub.add_parser("refine", help="the weekly refinement: run (one pass per repo engram serves, under the week's "
                        "cap, each leaving a page for the owner), surface (spec files that won't parse, for the agent at a session "
                        "start), install (its timed job), "
-                       "conversations (a repo's week of the owner's messages, for the pass)")
-    s.add_argument("action", choices=["run", "surface", "install", "conversations"])
-    s.add_argument("repo", nargs="?", help="surface: the repo's folder; conversations: its folder or its name")
+                       "conversations (a repo's week of the owner's messages, for the pass), review and land (a fresh reviewer's "
+                       "verdict on a pass's worktree, and landing what it passed)")
+    s.add_argument("action", choices=["run", "surface", "install", "conversations", "review", "land"])
+    s.add_argument("repo", nargs="?", help="surface: the repo's folder; conversations: its folder or its name; review, land: the pass's worktree")
+    s.add_argument("--spec", help="review: the approved spec this builds")
     s.add_argument("--repo", dest="only", metavar="NAME", help="run: only this repo, even if it passed this week")
     s.add_argument("--dry-run", metavar="DIR", help="run: each pass lands nothing and writes its plan to DIR/<repo>.md")
     s.add_argument("--print", action="store_true", help="run: print each pass's command; spends nothing")

@@ -16,7 +16,7 @@ The prompt names `repo=<path>`, `mode=land` or `mode=dry-run <file>`, and `workt
   - its rules section, "How the weekly pass may change this repo": the user's leash. Its limits override everything below. `paused = true` under `[refine]` in `<repo>/.engram/engram.toml` → stop and write nothing.
   - its Jobs section: the yardstick. `jobs: proposed` in the page's front matter → this pass writes specs only (an approved spec is still built).
 - The repo's `AGENTS.md` (or `CLAUDE.md`): its checks and commit rules apply to every change.
-- `<repo>/.engram/specs/*.md` with `status: approved`: the user said yes. Build these first, through Land's steps. Their yes covers what the spec's plan names, even where the rules section would make it a spec, but never the record. Then set `status: built`. One it still can't build stays `approved` with `blocked: >-` in its front matter and the why, one line, indented on the next, which the owner's page shows.
+- `<repo>/.engram/specs/*.md` with `status: approved`: the user said yes. Build these first, through Land's steps. Their yes covers what the spec's plan names, even where the rules section would make it a spec, but never the record. Set `status: built` in the build's own commit, or, where `.engram` is its own repository, there once it has landed. One it still can't build stays `approved` with `blocked: >-` in its front matter and the why, one line, indented on the next, which the owner's page shows.
 - The week's conversations, by script, never a transcript whole:
   `engram refine conversations <repo>`
   (`--session <id>` reads one session). On engram's own repo it ends with the value review's findings on engram's tools: each a record a session needed that no engram call surfaced. The conversations and these findings are the only evidence of use: never a question set, eval or fixture, and never other agent-written audits, reviews or notes. When the Jobs section names other repos, read theirs too.
@@ -33,6 +33,7 @@ A change lands on its own only if every item of the rules section's "Lands on it
 
 - **One revert undoes it:** one commit, no data migration, nothing outside the repo.
 - **Nothing in the record is lost:** the diff touches no record path the rules section lists, or a count before and after matches.
+- **How a record gets written:** judge what the change does when it runs, not which paths it touches. A change to what gets filed, how, or by what is a spec: a revert takes back the code, not what it filed.
 - **The budget:** the pass's own cap, and the week's.
 
 It also needs the rules section to allow it and the jobs to be confirmed. Settle and record items one at a time (land it, or write its spec or its dry-run entry), so a pass cut off by its budget keeps what it finished. Everything else is a spec. Removing anything the user asked for is always a spec, and so is any change in `.engram/` outside `.engram/specs/`.
@@ -51,11 +52,20 @@ B=$(git -C <repo> symbolic-ref --short HEAD)
 git -C <repo> worktree add -b refinement/<yyyy-mm-dd>-<slug> "$W" "$B"
 ```
 
-A worktree of this repo already in `<worktrees>` is an earlier pass's unlanded work: finish it if it still holds, otherwise remove it and its branch. A worktree has no `.venv`: make its own with `uv sync`. Never link the checkout's: a linked `.venv` gets committed, and once wiped the live one. Make the change, and end its commit message with the trailer `Refinement: <what changed for the user, one line, plain words>`; for a change they wouldn't see, write `Refinement: none: <what changed, one line>`, which stays off their page. Run the repo's checks in `$W`, commit under the repo's commit rules, then `git -C <repo> merge --ff-only <branch>` and `git -C <repo> push origin "$B"`. If a check fails or the merge won't fast-forward after one rebase, drop the change and write it as a spec. Remove the worktree and branch either way.
+A worktree of this repo already in `<worktrees>` is an earlier pass's unlanded work: finish it if it still holds, otherwise remove it and its branch. A worktree has no `.venv`: make its own with `uv sync`. Never link the checkout's: a linked `.venv` gets committed, and once wiped the live one. Make the change, and end its commit message with the trailer `Refinement: <what changed for the user, one line, plain words>`; for a change they wouldn't see, write `Refinement: none: <what changed, one line>`, which stays off their page. Run the repo's checks in `$W`, commit under the repo's commit rules, then:
+
+```sh
+engram refine review "$W"   # with --spec <repo>/.engram/specs/<its file> when it builds an approved spec
+engram refine land "$W"     # when the review passed: merges, pushes, removes the worktree and branch
+```
+
+Every change takes this path, however small; nothing else lands one. The review is a fresh reviewer that sees the committed diff and the repo's rules, never your reasoning, so don't try to brief it.
+
+When it objects, the change is yours to judge. If the fault is fixable at its root cause (the first place the system went wrong, not a guard where it surfaced, and everywhere else the same fault sits), amend the commit and review once more; that second review has to pass it. Otherwise, or on a second objection, a failed check, or a branch that won't fast-forward after one rebase, drop the change and write it as a spec with the findings as its evidence, removing the worktree and branch. An approved spec's build goes the same way, except that the spec stays `approved` with `blocked:`.
 
 ## Spec
 
-One file per idea, `.engram/specs/<yyyy-mm-dd>-<slug>.md`, committed through the same steps. When `<repo>/.engram` is its own git repository (a public repo keeping its owner's page private), commit and push the spec there directly instead:
+One file per idea, `.engram/specs/<yyyy-mm-dd>-<slug>.md`, committed through the same steps; a branch that only adds new open specs lands with no review. When `<repo>/.engram` is its own git repository (a public repo keeping its owner's page private), commit and push the spec there directly instead:
 
 ```markdown
 ---
@@ -75,4 +85,4 @@ After the week's passes, engram writes the user one page across repos of each op
 
 ## Report
 
-The final message is for the scheduler's log: what landed (one line each), what was specced, and anything that failed. End it, and a dry-run file, with: "You can refine this weekly pass too: say what it should stop touching, to be bolder, or to pause, in any session."
+The pass ends with your turn and nothing wakes it: settle every item before you stop. The final message is for the scheduler's log: what landed (one line each), what was specced, and anything that failed. End it, and a dry-run file, with: "You can refine this weekly pass too: say what it should stop touching, to be bolder, or to pause, in any session."

@@ -51,7 +51,7 @@ B=$(git -C <repo> symbolic-ref --short HEAD)
 git -C <repo> worktree add -b refinement/<yyyy-mm-dd>-<slug> "$W" "$B"
 ```
 
-A worktree has no `.venv`: make its own with `uv sync`. Never link the checkout's: a linked `.venv` gets committed, and once wiped the live one. Make the change, and end its commit message with the trailer `Refinement: <what changed for the user, one line, plain words>`; for a change they wouldn't see, write `Refinement: none: <what changed, one line>`, which stays off their page. Run the repo's checks in `$W`, commit under the repo's commit rules, then `git -C <repo> merge --ff-only <branch>` and `git -C <repo> push origin "$B"`. If a check fails or the merge won't fast-forward after one rebase, drop the change and write it as a spec. Remove the worktree and branch either way.
+A worktree of this repo already in `<worktrees>` is an earlier pass's unlanded work: finish it if it still holds, otherwise remove it and its branch. A worktree has no `.venv`: make its own with `uv sync`. Never link the checkout's: a linked `.venv` gets committed, and once wiped the live one. Make the change, and end its commit message with the trailer `Refinement: <what changed for the user, one line, plain words>`; for a change they wouldn't see, write `Refinement: none: <what changed, one line>`, which stays off their page. Run the repo's checks in `$W`, commit under the repo's commit rules, then `git -C <repo> merge --ff-only <branch>` and `git -C <repo> push origin "$B"`. If a check fails or the merge won't fast-forward after one rebase, drop the change and write it as a spec. Remove the worktree and branch either way.
 
 ## Spec
 

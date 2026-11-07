@@ -46,7 +46,7 @@ to </html>.
 
 It's for reading, not acting. For each item below that needs them: a plain title; what it would change for them; its \
 cost; the recommendation; the evidence; then the answers they can give: yes, no, defer, or tell me more. A spec \
-approved but not built says why it waits; jobs still proposed are shown as written, asking if that's it. Changes \
+approved but not built says why it waits, or if it gives no reason, that the week's pass didn't finish it; jobs still proposed are shown as written, asking if that's it. Changes \
 already made are one plain line each, with no answers. Each item says which repo it's in. Write in the specs' own plain voice, to {owner} as "you", with \
 no file paths, commands, field names, statuses or other machinery; leave out what an item doesn't say, and add nothing.
 
@@ -168,8 +168,9 @@ def copy_data(to: Path):
 def fenced(name: str, repo: Path, wk: str) -> dict:
     """The env a pass runs in: engram on a copy of the data folder, its repo rows dropped so nothing there serves a
     real repo, cleared at the next pass's start; the real gate folder for the baseline; a config laid over the box's
-    that keeps a repo only for the domain under pass (none for engram's own), as the gate's freeze writes it; and the
-    mark engram's pre-commit refuses OFF_LIMITS under."""
+    that keeps a repo only for the domain under pass (none for engram's own), as the gate's freeze writes it; the mark
+    engram's pre-commit refuses OFF_LIMITS under; and no background work, since a one-shot pass that waits on any ends
+    with its work unlanded."""
     shutil.rmtree(data_path("scratch") / "refine-data", ignore_errors=True)
     at = data_path("scratch") / "refine-data" / f"{wk}-{name}"
     copy_data(at / "data")
@@ -180,7 +181,7 @@ def fenced(name: str, repo: Path, wk: str) -> dict:
     (at / "config.toml").write_text("".join(f"[domains.{n}]\nrepo = {json.dumps(str(repo) if n == name else '')}\n"
                                             for n in config.load()))
     return {"ENGRAM_DATA": str(at / "data"), "ENGRAM_CONFIG": str(at / "config.toml"),
-            "ENGRAM_GATE": str(data_path("gate")), "ENGRAM_REFINE": "1"}
+            "ENGRAM_GATE": str(data_path("gate")), "ENGRAM_REFINE": "1", "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1"}
 
 
 def command(name: str, repo: Path, cap: float, dry_run: Path | None = None) -> list[str]:
@@ -431,8 +432,8 @@ def _landed(repo: Path) -> list[tuple[str, str, str]]:
 
 
 def _specs(repo: Path) -> tuple[list[Path], list[str]]:
-    """(each spec waiting on the owner: open, or approved but blocked; each spec whose front matter won't parse). A
-    deferred spec waits for the owner to raise it again, so it's in neither."""
+    """(each spec on the owner's page: open, or approved and not yet built, as a pass that didn't land one leaves it; each
+    spec whose front matter won't parse). A deferred spec waits for the owner to raise it again, so it's in neither."""
     out, broken = [], []
     for spec in sorted((repo / SPECS).glob("*.md")):
         try:
@@ -440,7 +441,7 @@ def _specs(repo: Path) -> tuple[list[Path], list[str]]:
         except (ValueError, yaml.YAMLError) as e:
             broken.append(f"- {spec}: {str(e).splitlines()[0]}")
             continue
-        if fields.get("status", "open") == "open" or (fields.get("status") == "approved" and "blocked" in fields):
+        if fields.get("status", "open") in ("open", "approved"):
             out.append(spec)
     return out, broken
 

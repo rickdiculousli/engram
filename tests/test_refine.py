@@ -98,6 +98,7 @@ def test_a_pass_runs_engram_on_a_scratch_copy_and_a_config_fenced_to_its_repo(se
             seen[Path(name).name] = (copy, rows, env["ENGRAM_GATE"], repos, left.exists())
             assert all((copy / f).exists() for f in ("summaries/med/s.md", "record-summaries/med/r.json", "moved/med.json"))
             assert env["ENGRAM_REFINE"] == "1"  # engram's pre-commit refuses the pass its off-limits paths
+            assert env["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"] == "1"  # a pass can't end waiting on work that dies with it
         return type("P", (), {"returncode": 0, "stdout": json.dumps({"total_cost_usd": 1.0, "result": "ok"}), "stderr": ""})()
     refine.run(runner=runner)
     copy, rows, gate, repos, stale = seen["med"]
@@ -175,14 +176,14 @@ def test_a_digest_brings_waiting_specs_and_each_change_once_then_nothing_when_no
     assert cost == 1.5 and line == str(page) and page.read_text() == "<!DOCTYPE html><html>page</html>"
     cmd, prompt = calls[0]
     assert cmd[:2] == ["claude", "-p"] and cmd[cmd.index("--tools") + 1] == "" and "3.00" in cmd
-    assert "# Spec a" in prompt and "# Spec d" in prompt and "# Spec b" not in prompt and "# Spec c" not in prompt
+    assert "# Spec a" in prompt and "# Spec d" in prompt and "# Spec b" in prompt and "# Spec c" not in prompt  # approved and unbuilt shows, blocked or not
     day = git(med, "log", "-1", "--format=%as").strip()
     assert f"- {day}: the advisor's rules are shorter" in prompt and f"# In {med.name}" in prompt
     assert calls[1:] == [(["open", str(page)], None)] or refine.sys.platform != "darwin"
     refine.digest({"med": med}, 3.0, run)
     assert "# Spec a" in calls[-2][1] and "rules are shorter" not in calls[-2][1]  # a change shows once, a spec until answered
-    for f in "ad":
-        (med / f".engram/specs/{f}.md").write_text("---\nstatus: rejected\n---\n")
+    for f in "abd":
+        (med / f".engram/specs/{f}.md").write_text("---\nstatus: built\n---\n")
     n = len(calls)
     assert refine.digest({"med": med}, 3.0, run) == (0.0, "") and len(calls) == n  # nothing to discuss: no page
 

@@ -59,6 +59,69 @@ def test_tokens_find_the_right_section(medical, query, heading):
     assert top and top[0]["ref"] == f"log.md#{heading}"
 
 
+def test_a_question_reads_the_record_again_only_when_it_changed(medical, monkeypatch, capsys):
+    import fcntl
+    from datetime import timedelta
+    from engram import ingest
+    from engram.paths import data_path
+    reads, real = [], ingest._record
+    monkeypatch.setattr(ingest, "_record", lambda d, derived: reads.append((d, derived)) or real(d, derived))
+    main(["search", "HbA1c", "--domain", "medical"])
+    assert reads == []  # nothing changed since the ingest
+    (medical / "notes/plan.md").write_text("# Plan\n\nWalk daily, and stretch the zygomorph.\n")  # saved, not committed
+    capsys.readouterr()
+    main(["search", "zygomorph", "--domain", "medical"])
+    assert "notes/plan.md" in capsys.readouterr().out and reads == [("medical", False)]  # the files only: nothing built by searching
+    main(["search", "zygomorph", "--domain", "medical"])
+    assert len(reads) == 1
+    monkeypatch.setattr(ingest, "STALE", timedelta(0))  # a pack's own sources aren't in git: those are read again by the clock
+    main(["search", "zygomorph", "--domain", "medical"])
+    assert len(reads) == 1
+    monkeypatch.setattr(ingest, "_own_sources", lambda d: True)
+    main(["search", "zygomorph", "--domain", "medical"])
+    assert len(reads) == 2
+    monkeypatch.setattr(ingest, "PATIENCE", 0.2)
+    with open(data_path("{domain}.lock", "medical"), "a") as held:  # a read under way: a question waits a little, then answers
+        fcntl.flock(held, fcntl.LOCK_EX)
+        main(["search", "zygomorph", "--domain", "medical"])
+        assert len(reads) == 2
+    main(["search", "zygomorph", "--domain", "medical"])
+    assert len(reads) == 3
+    monkeypatch.undo()
+
+
+def test_a_record_in_a_subfolder_of_a_bigger_repo_is_read_again_at_each_edit(env, capsys):
+    outer = make_repo(env["tmp"] / "outer", {"notes/plan.md": "# Plan\n\nWalk daily.\n", "other/x.md": "# X\n\nElsewhere.\n"})
+    env["set_repo"]("notes", outer / "notes")
+    main(["ingest", "--domain", "notes"])
+    for word in ("zygomorph", "quixotry"):  # a second edit to a file git already calls changed
+        (outer / "notes/plan.md").write_text(f"# Plan\n\nWalk daily, and mind the {word}.\n")
+        capsys.readouterr()
+        main(["search", word, "--domain", "notes"])
+        assert "plan.md" in capsys.readouterr().out, word
+    (outer / "notes/plan.md").unlink()  # and a file that's gone
+    capsys.readouterr()
+    main(["search", "quixotry", "--domain", "notes"])
+    assert "plan.md" not in capsys.readouterr().out
+
+
+def test_claudes_window_is_the_projects_setting_then_the_users_then_the_default(tmp_path, monkeypatch):
+    from pathlib import Path
+    from engram import cli
+    proj, home = make_repo(tmp_path / "proj", {"a.md": "x\n"}), tmp_path / "home"
+    (home / ".claude").mkdir(parents=True)
+    (proj / ".claude").mkdir()
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+    monkeypatch.chdir(proj)
+    assert cli._window() == cli.WINDOW
+    (home / ".claude/settings.json").write_text('{"bashOutputMaxChars": 50000}')
+    assert cli._window() == 50000
+    (proj / ".claude/settings.json").write_text('{"bashOutputMaxChars": 100000}')
+    assert cli._window() == 100000
+    (proj / ".claude/settings.json").write_text("{not json")  # one that won't parse says nothing
+    assert cli._window() == 50000
+
+
 def test_exact_phrase_excludes_reordered_words(medical):
     refs = [r["ref"] for r in search.search('"connection refused"', ["medical"])]
     assert refs == ["log.md#Net A"]

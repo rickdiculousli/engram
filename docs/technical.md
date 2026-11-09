@@ -21,11 +21,18 @@ The machinery calls, made without the owner (they read outcomes, not machinery),
 
 What the owner said in a session becomes rows on its threads, drawn from the stitched session summaries at ingest (`sources/said.py`), so a timeline shows what was only said beside what was filed.
 - **What:** symptom reports, other reports, decisions and changes of mind, and from the chronology the entries the owner said and outside sources' words passed on, credited to that source. Claude's own analysis and advice stay out, and so do records filed during the session and open questions.
-- **Placement:** an occurrence sits on its recurring thread's threads; anything else on the threads its top 10 hits vote for, keeping any within 60% of the top vote. Placing uses the ranking only (`surround=False`), so a re-index stays fast.
+- **Placement:** an occurrence sits on its recurring thread's threads; anything else on the threads its top 10 hits vote for, keeping any within 60% of the top vote. Placing is a search per passage, so it runs in the hourly job and `engram ingest`, never while a question waits ([when the index is read](#when-the-index-is-read)).
 - **Each row** is dated the day it was said, quoted, and points to the session line: `session:<id>:<line>@said-<section>-<n>`.
 - **Only indexed sessions:** a session kept out of the index (eval work) stays out.
 - **Unplaced analyses:** an open question or discovery file none of whose sections is on a thread is placed by the threads its opening 80 words find as a search (`sources/place.py`, source `placed`). Only the record's own analyses are placed: placing every unplaced document finds no more records, for more tokens.
 - **An entry with no thread** takes the threads of the other entries in its series, or on its thing's chain, most entries first (`events.inherited`); a pooled series gives none.
+
+## When the index is read
+
+- **A question reads the record again when it changed** (`ingest.refresh_if_stale`, in search and timeline): the domain's settings, the day, the commit and the size and time of each changed or new file under the record's folder make one hash (`ingest.state`), kept with the last read; one that can't be told never counts as read. Why not a timer: a fact filed a minute ago was missing from the next answer, and a timeline never looked at all. A pack's own sources sit outside git, so those are still read again after 15 minutes.
+- **What's built by searching the record waits for the hourly job:** the threads of what was said in sessions and of documents on none take a search per passage, which made a search wait many seconds. The hourly job ends by reading every domain whole, so they're at most an hour behind the record.
+- **One read of a domain at a time** (`<domain>.lock`): a question finding one under way waits a few seconds for it, reads only if the index is still behind, and past that answers from the index as it is. Why: two reads at once collided on the same rows, and several questions asked together each started their own.
+- **A timeline keeps within Claude's window** (`timeline.fit`, [search](search.md#the-one-call-timeline)). Why fold rather than cut or print: past the window Claude Code hands over a preview and a file, so the advisor read none of it in order. The rows folded are day-to-day rows of the stories the search picked, which the owner's lens rule ranks last; what the caller named, a row inside the question's period, and any row another row or the theory points at never fold, and a fold that wouldn't print shorter isn't made.
 
 ## Stable document ids
 

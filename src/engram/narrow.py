@@ -36,7 +36,7 @@ def candidates(st: store.Store, day: str) -> list[store.Event]:
 def dated(domain: str, files: list[str]) -> dict[str, str | None]:
     """Each file the index holds once refreshed, with the earliest date the index gives it; None when it gives none. A
     file it doesn't hold is left out. A refresh that recorded an error raises."""
-    ingest.record(domain)
+    ingest.record(domain, derived=False)  # only the files' dates are read here
     out = {}
     with contextlib.closing(open_index(index_path(domain), readonly=True)) as idx:
         if err := next((s["last_error"] for s in idx.sources() if s["source"] == sections.SOURCE and s["last_error"]), None):

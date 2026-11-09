@@ -267,10 +267,42 @@ def test_timeline_rows_say_what_they_are_and_drop_columns_empty_in_every_row(env
     assert capsys.readouterr().out.splitlines()[1] == "n\tdate\twho\tkind\twhat\tid"  # no milestone, no after: empty in every row
     main(["timeline", "what happened with the north bed this season?", "--domain", "garden"])
     assert capsys.readouterr().out.splitlines()[1] == "n\tdate\ton\twho\tkind\twhat\tid\tafter"
+    import contextlib
+    from engram.index import open_index
+    from engram.paths import index_path
+    with contextlib.closing(open_index(index_path("garden"))) as idx:
+        idx.record_error("repo-sections", "boom")
+    main(["timeline", "north-bed", "--domain", "garden"])
+    assert json.loads(capsys.readouterr().out.splitlines()[0])["errors in"] == "repo-sections"  # a read that failed is said
     assert timeline.render({"records": 0}, [], "tsv") == '{"records":0}'  # no rows, no column line
     with pytest.raises(SystemExit):
         main(["timeline", "--help"])
     assert "name  " in (h := capsys.readouterr().out) and "free text" in h.split("name  ", 1)[1].split("\n", 1)[0]
+
+def test_a_timeline_past_the_window_folds_the_day_to_day_runs_of_the_stories_the_search_picked():
+    from engram import timeline
+    rows = [{"n": i, "_ref": f"r{i}", "date": f"2026-01-{i:02}", "on": "knee", "kind": "symptom", "what": "ached " * 12,
+             **({"milestone": 1} if i in (1, 6, 12) else {"_fold": True})} for i in range(1, 13)]
+    theory = [{"theory": "D1", "status": "open", "what": "posture drives it", "id": "abc234", "_refs": []}]
+    header = {"chain": "knee", "records": 12}
+    assert timeline.fit(header, rows + theory, 10_000, "tsv") == (header, rows + theory)  # it fits: as it is
+    h, out = timeline.fit(header, rows + theory, 900, "tsv")
+    assert [r.get("n", r.get("theory")) for r in out] == [1, "2-5", 6, "7-11", 12, "D1"]  # milestones and the theory stay
+    assert out[1] == {"n": "2-5", "_refs": [], "date": "2026-01-02 to 2026-01-05", "on": "knee", "what": "4 day-to-day rows: 4 symptom"}
+    assert h["folded"].startswith("9 day-to-day rows") and len(timeline.render(h, out, "tsv")) < 900
+    assert all(json.loads(l) for l in timeline.render(h, out, "jsonl").splitlines())
+    named = [{k: v for k, v in r.items() if k != "_fold"} for r in rows]  # a chain the caller named has nothing to fold
+    assert timeline.fit(header, named, 900, "tsv") == (header, named)
+    # a row another row follows on, or the theory holds against itself, is never folded out of sight
+    rows[5]["after"], theory[0]["against"] = [3], [9]
+    _, out = timeline.fit(header, rows + theory, 900, "tsv")
+    assert [r.get("n", r.get("theory")) for r in out] == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, "D1"]  # no run of three is left
+    rows[5].pop("after")
+    _, out = timeline.fit(header, rows + theory, 900, "tsv")
+    assert [r.get("n", r.get("theory")) for r in out] == [1, "2-5", 6, 7, 8, 9, 10, 11, 12, "D1"]
+    short = [{"n": i, "_ref": f"r{i}", "what": "x", "_fold": True} for i in range(1, 4)]  # folding these would print more, not less
+    assert timeline.fit({}, short, 5, "tsv") == ({}, short)
+
 
 def test_a_whole_section_matches_any_of_its_chunks():
     from engram.evalset import matches

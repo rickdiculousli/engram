@@ -3,6 +3,7 @@ import argparse
 import contextlib
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -40,6 +41,7 @@ def _header(domains: list[str]) -> str:
 def cmd_search(a):
     domains = resolve(Path.cwd(), config.load(), a.domain)
     ingest.refresh_if_stale(domains)
+    ingest.refresh_sessions()
     if a.lens and not any(a.lens in search.lenses(d) for d in domains):
         sys.exit(f"engram: no lens {a.lens!r} in {', '.join(domains)}; `engram lenses` lists them")
     results = search.search(a.query, domains, limit=a.limit, after=a.after, kind=a.kind, cls=a.cls, lens=a.lens,
@@ -52,9 +54,22 @@ def cmd_search(a):
     print(search.render(results, a.explain))
 
 
+def _window() -> int:
+    """Claude's Bash window where this runs: the project's own setting (setup widens it in a repo it sets up), else
+    the user's, else Claude Code's default."""
+    from engram import setup
+    top = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True).stdout.strip()
+    for root in (Path(top or Path.cwd()), Path.home()):
+        if isinstance(w := setup.settings(root).get(setup.WINDOW_KEY), int):
+            return w
+    return WINDOW
+
+
 def cmd_timeline(a):
     from engram import timeline
     domains, told = resolve(Path.cwd(), config.load(), a.domain), False
+    if a.name:
+        ingest.refresh_if_stale(domains)
     for d in domains:
         have = timeline.names(d)
         if not a.name:
@@ -68,10 +83,15 @@ def cmd_timeline(a):
         every = {n for v in have.values() for n in v}
         named = all(n.lower() in every or n in every for n in a.name)  # chain names, or else free text to pick them
         header, rows = timeline.chain(d, a.name, None) if named else timeline.chain(d, [], " ".join(a.name))
+        with contextlib.closing(open_index(index_path(d), readonly=True)) as idx:
+            if failed := [s["source"] for s in idx.sources() if s["last_error"]]:  # loud when a read failed, as a search's header is
+                header["errors in"] = ", ".join(failed)
+        header, rows = timeline.fit({"domain": d, **header} if len(domains) > 1 else header, rows,
+                                    int(_window() * 0.95) // len(domains), a.format)
         usage.log_search(d, f"timeline {' '.join(a.name)}", [d], "timeline",
                          [{"domain": d, "rank": 1, "ref": ref, "score": 0, "factors": {}}
                           for r in rows for ref in ([r["_ref"]] if "_ref" in r else r["_refs"])])
-        print(timeline.render({"domain": d, **header} if len(domains) > 1 else header, rows, a.format))
+        print(timeline.render(header, rows, a.format))
         told = True
     if a.name and not told:
         sys.exit("engram: no stories here; a repo gets them once it's rewired, and `engram timeline` lists what there is")

@@ -15,7 +15,8 @@
 
 | Job | Runs |
 |---|---|
-| re-read the record files and sessions | inside `engram search`, whenever the last read is over 15 minutes old |
+| re-read the record files | inside `engram search` and `engram timeline`, when the files changed since the last read; a pack's own sources, which git doesn't show changing, when that read is over 15 minutes old; everything, with what's built by searching the record, at the end of each hourly run and in `engram ingest` ([technical](technical.md#when-the-index-is-read)) |
+| re-read the sessions | inside `engram search`, whenever the last read is over 15 minutes old |
 | the hourly filer, `engram capture run` (a timed job; it also narrows a roughly dated entry when a dated document turns up ([technical](technical.md#the-filer)), and compiles a compiled area's due items into its wiki), plus each set-up repo's session-start check and pre-commit lint and drift check | every hour, at session start, at each commit, all through `~/.local/bin/engram` |
 | the weekly refinement, `engram refine run` (a timed job, `engram refine install`): one pass per repo engram serves, under `[refine] weekly_cap` | Saturday 04:00, or on wake; Sunday and Monday catch-ups skip a repo whose pass this week landed, is running or cost something, and retry one that failed for nothing; `engram refine run --repo NAME` starts one pass on its own and returns |
 | the evidence sweep ([technical](technical.md#the-evidence-sweep)): each domain whose pack has `sweep` words, run by `engram refine run` before the passes, under its $10 stop and the week's cap; what's new or changed since its last read, against the loops and Discoveries, each link confirmed by a second call | with the weekly refinement, once a week by its own mark (a `--repo` run or a catch-up doesn't repeat it); skipped when the repo is paused; a dry run runs nothing; `engram theory sweep --domain NAME` runs one by hand, `--replay FILE` lands an approved set with no model calls |

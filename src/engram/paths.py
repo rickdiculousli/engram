@@ -13,6 +13,7 @@ HOOKS = f"{DIR}/hooks"  # git's hooks for a record repo
 # A caller asks `data_path(<entry>)` for its path, and `engram health` names what's there that this doesn't list.
 DATA = {
     "{domain}.sqlite": "a domain's index",
+    "{domain}.lock": "held while a domain's record is read into its index",
     "usage-{domain}.sqlite": "a domain's searches and what they cost",
     "capture.sqlite": "what the hourly filer read and filed, per session",
     "capture.lock": "held while the hourly filer runs",

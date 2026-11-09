@@ -1000,6 +1000,18 @@ def test_a_reply_without_json_is_an_error_and_the_mark_stays(world):
     assert run([], ACHE)["filed"] == 1  # the next run reads it again
 
 
+def test_the_hourly_run_ends_with_the_index_read_and_a_domain_it_cant_read_isnt_the_runs_failure(world, env):
+    from engram import ingest
+    from engram.index import open_index
+    from engram.paths import index_path
+    env["set_repo"]("elsewhere", env["tmp"] / "repos/not-on-this-box", pack=None)
+    out = run([], ACHE)
+    assert out["filed"] == 1 and out["error"] is None
+    with contextlib.closing(open_index(index_path("medical"), readonly=True)) as idx:
+        mark = idx.db.execute("SELECT watermark FROM ingest_state WHERE source = 'repo-sections'").fetchone()[0]
+    assert mark == ingest.state(config.load()["medical"])  # what it filed is in the index: no question has to read it first
+
+
 def test_a_failed_commit_takes_back_its_entry_files(world):
     repo = world["repo"]
     links = repo / "events" / store.LINKS

@@ -4,6 +4,7 @@ serves only indexing and search (story and series tags, ids, the file path insid
 gives, default values) is left out."""
 import json
 import re
+from collections import Counter
 from datetime import date
 from pathlib import Path
 
@@ -230,6 +231,9 @@ def chain(domain: str, names: str | list[str], about: str | None = None) -> tupl
             row["version of"] = at(r["of"])
         if r.get("_versions"):
             row["_unit"] = r["_versions"]
+        if about and not (r["m"] or r["ref"] in found or set(r["on"]) & set(asked) or "versions" in row or "now" in row
+                          or row.get("period") in ("in", "probably")):
+            row["_fold"] = True  # a day-to-day row of a story the search picked: what `fit` folds when the whole won't fit
         out.append(row)
     theory = _theory(db, num, domain, then, asked, about, votes)
     idx.close()
@@ -472,6 +476,44 @@ def _theory(db, num: dict[str, int], domain: str | None = None, then: str | None
         out.append({"theory": "join", "status": e.strength, "what": f"{g.label(e.a)} → {to}, {e.rel}: {e.note}",
                     "id": nid[0] if nid else "", "_refs": [e.entry] if e.entry else []})
     return out
+
+
+def fit(header: dict, rows: list[dict], room: int, fmt: str = "jsonl") -> tuple[dict, list[dict]]:
+    """The timeline as it is while it prints within `room` characters. Past Claude's window the reader gets a preview
+    and a file, never the history, so then each run of three or more day-to-day rows from the stories the search picked
+    folds into one row: the rows' numbers, their dates and stories, and how many of each kind. The chains the caller
+    named, milestones, the search's own finds, versions, rows inside the question's period, any row another row or the
+    theory points at, and the theory itself stay as they are."""
+    if len(whole := render(header, rows, fmt)) <= room:
+        return header, rows
+    cited = {n for r in rows for n in [*r.get("after", []), *(r["against"] if isinstance(r.get("against"), list) else []),
+                                       *([int(r["version of"])] if str(r.get("version of", "")).isdigit() else [])]}
+    out, run, folded = [], [], 0
+
+    def close():
+        nonlocal folded
+        if len(run) < 3:
+            out.extend(run)
+        else:
+            days = [r["date"] for r in run if r.get("date")]
+            on = Counter(s for r in run for s in str(r.get("on", "")).split(", ") if s)
+            kinds = Counter(r.get("kind") or "record" for r in run)
+            out.append({"n": f"{run[0]['n']}-{run[-1]['n']}", "_refs": [],
+                        **({"date": days[0] if days[0] == days[-1] else f"{days[0]} to {days[-1]}"} if days else {}),
+                        **({"on": ", ".join(s for s, _ in on.most_common(3))} if on else {}),
+                        "what": f"{len(run)} day-to-day rows: " + ", ".join(f"{n} {k}" for k, n in kinds.most_common())})
+            folded += len(run)
+        run.clear()
+    for r in rows:
+        if r.get("_fold") and r["n"] not in cited:
+            run.append(r)
+        else:
+            close()
+            out.append(r)
+    close()
+    told = {**header, "folded": f"{folded} day-to-day rows of the stories the search picked, so the history fits one read; "
+                                "`engram timeline <a chain>` gives that chain whole"}
+    return (told, out) if folded and len(render(told, out, fmt)) < len(whole) else (header, rows)  # never a longer one
 
 
 def render(header: dict, rows: list[dict], fmt: str = "jsonl") -> str:

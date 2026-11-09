@@ -532,7 +532,7 @@ def run(out: Path, pack: str = ""):
                 result["filer"][s["id"][:8]] = filer_result(res, rep)
             except Exception as e:
                 result["filer"][s["id"][:8]] = {"error": type(e).__name__, "prompts": sha(rep.prompts)}
-        cli._ingest(D, sections)  # then the record re-read by this code, as the 15-minute refresh would
+        cli._ingest(D, sections)  # then the record re-read whole by this code, as the hourly job and `engram ingest` do
         result["index"] = index_hash(index_path(D))
         result["direct"] = {}
         for f in _sets():

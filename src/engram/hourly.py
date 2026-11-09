@@ -5,7 +5,9 @@ STORE GARBAGE" that means their checked summaries, kept current for the repos se
 `summaries = true`, which files nothing; raw transcripts are never indexed); files each session started in a repo set up that has grown since it was last filed and has been idle an hour
 (`capture.file_session`, then `capture.renew`); for the areas that have them, narrows hedged dates by new dated
 documents (`narrow.run`), compiles onto the map, summarizes long records and runs the value review; re-checks theory
-changes whose re-check never ran, syncs each repo's document ids, repairs the install and retries a failed push.
+changes whose re-check never ran, syncs each repo's document ids, repairs the install, retries a failed push, and
+re-reads every domain's record into its index, what's built by searching it included (`ingest.record`), so no question
+waits for that.
 
 The install's health: the SessionStart hook checks the install and repairs it (it's the only thing that notices a dead
 job), printing one line if a repair fails; then, where setup widened Claude's Bash window, that engram's output is read
@@ -21,7 +23,7 @@ import subprocess
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from engram import capture, config, daily, narrow, pack, recsum, refine, review, setup, store, summarize
+from engram import capture, config, daily, ingest, narrow, pack, recsum, refine, review, setup, store, summarize
 from engram import now as now_mod
 from engram.paths import data_path, record_conf
 from engram.sources import sessions
@@ -143,6 +145,10 @@ def run(ask=None, dry_run: bool = False, summaries: bool = True, now: datetime |
                     _error(out, f"docs sync {d}: {type(e).__name__}: {e}")
                 out["repairs"] += setup.repair(d)
                 retry_push(root, out)
+            for d, dom in config.load().items():  # the index takes in what this run filed and summarized, and what's
+                if dom.repo and dom.repo.exists():  # built by searching it; a read that fails is the index's to say
+                    with contextlib.suppress(Exception):  # (`engram health`, every search header), never this run's
+                        ingest.record(d)
             with contextlib.closing(capture.db()) as c, c:
                 c.execute("INSERT INTO run VALUES (?, ?, ?, ?, ?, ?, ?)", (capture._now().isoformat(timespec="seconds"),
                           int(out["error"] is None), out["sessions"], out["filed"], len(out["dropped"]), out["usd"], out["error"]))

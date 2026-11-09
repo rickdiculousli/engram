@@ -613,6 +613,11 @@ def test_relative_phrases():
     assert days("this week") == [("2026-09-21", True)]
     assert days("a few days ago") == [("2026-09-20", True)]
     assert capture.relative_days("3 months ago", "2026-05-31") == [("2026-02-28", "2026-02-28", True, "3 months ago")]  # by calendar months
+    assert days("the day before yesterday") == [("2026-09-21", False)]
+    assert days("the night before last week's game") == [("2026-09-16", True)]  # "last week" is read as it always was
+    assert days("1.5 years ago") == [("2025-03-23", True)] and days("half a year ago") == [("2026-03-23", True)]  # never "5 years", "a year"
+    assert days("a year and a half ago") == [("2025-03-23", True)] and days("1.25 years ago") == []  # a count never starts inside a number
+    assert days("48 hours ago") == [("2026-09-23", False)] and days("half an hour ago") == [("2026-09-23", False)]  # hours: read as they always were
 
 
 SAID = "2026-10-24"  # a Saturday

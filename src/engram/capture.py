@@ -278,7 +278,7 @@ def conversation(s: sessions.Session, upto: int) -> str:
 DATEISH = re.compile(r"^(\d{4}-\d{1,2}(-\d{1,2})?|\d{1,2}[-/]\d{1,2}([-/]\d{2,4})?)$")
 WORDS = {"a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9,
          "ten": 10, "few": 3, "a few": 3}  # "a couple of" is a span of its own
-_N = r"(\d+|a few|few|an?|one|two|three|four|five|six|seven|eight|nine|ten)"
+_N = r"((?<![\d.,])\d+|a few|few|an?|one|two|three|four|five|six|seven|eight|nine|ten)"  # never the tail of "1.5"
 _ABOUT = r"\b(?:(?:about|around|roughly|approximately|maybe)\s+)?"
 _UNIT = r"(day|week|month|year)s?"
 WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
@@ -299,6 +299,11 @@ def _back(day: date, n: int, unit: str) -> date:
         return day - timedelta(days=n * (7 if unit == "week" else 1))
     y, m = divmod(day.year * 12 + day.month - 1 - n * (12 if unit == "year" else 1), 12)
     return date(y, m + 1, min(day.day, periods._month_end(y, m + 1).day))
+
+
+def _half(day: date, unit: str) -> date:
+    """Half a unit before the day: six months for a year, 15 days for a month, 4 for a week."""
+    return _back(day, 6, "month") if unit == "year" else day - timedelta(days={"day": 0, "week": 4, "month": 15}[unit])
 
 
 def _third(m: re.Match, day: date) -> tuple[date, date] | None:
@@ -334,8 +339,12 @@ RELATIVE = [
                 r"\s+" + _UNIT + r")\s+ago\b", re.I), _either, True),
     (re.compile(_ABOUT + r"(?:a\s+)?couple(?:\s+of)?\s+" + _UNIT + r"\s+ago\b", re.I),
      lambda m, d: (_back(d, 4, m[1].lower()), _back(d, 1, m[1].lower())), True),
+    (re.compile(_ABOUT + r"(?:" + _N + r"\s+" + _UNIT + r"\s+and\s+a\s+half|(?<![\d.,])(\d+)\.5\s+" + _UNIT + r")\s+ago\b", re.I),
+     lambda m, d: _half(_back(d, _count(m[1] or m[3]), (m[2] or m[4]).lower()), (m[2] or m[4]).lower()), True),
+    (re.compile(r"\bhalf\s+an?\s+" + _UNIT + r"\s+ago\b", re.I), lambda m, d: _half(d, m[1].lower()), True),
     (re.compile(r"\b(today|this morning|this afternoon|this evening|tonight|just now|\w+(?: or \w+)? (?:hour|minute)s?(?: or \w+)? ago)\b", re.I),
      lambda m, d: d, False),
+    (re.compile(r"\b(day before yesterday)\b", re.I), lambda m, d: d - timedelta(days=2), False),
     (re.compile(r"\b(yesterday|last night)\b", re.I), lambda m, d: d - timedelta(days=1), False),
     (re.compile(_ABOUT + _N + r"\s+(day)s?\s+ago\b", re.I), lambda m, d: _back(d, _count(m[1]), "day"), None),
     (re.compile(_ABOUT + _N + r"\s+(week|month|year)s?\s+ago\b", re.I), lambda m, d: _back(d, _count(m[1]), m[2].lower()), True),

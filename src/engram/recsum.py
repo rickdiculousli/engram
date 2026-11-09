@@ -41,7 +41,7 @@ def check(sentence: dict, body: str) -> str | None:
         return "over 40 words"
     have = dates.numbers(body)
     for n in dates.NUMBER.findall(text):
-        if n not in have:
+        if dates.plain(n) not in have:
             return f"number {n} not in the record"
     return None
 

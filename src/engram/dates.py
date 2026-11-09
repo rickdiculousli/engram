@@ -34,13 +34,19 @@ def first_in(text: str) -> str | None:
 
 
 NUMBER = re.compile(r"\d+(?:[.,/:-]\d+)*")
+THOUSANDS = re.compile(r"\d{1,3}(?:,\d{3})+")
+
+
+def plain(n: str) -> str:
+    """A number by its value, however its thousands are written: "2,000" is 2000."""
+    return THOUSANDS.sub(lambda m: m[0].replace(",", ""), n)
 
 
 def numbers(text: str) -> set[str]:
-    """The whole numbers in a text, plus each part of a fraction, range, time or date ("7/10" gives 7 and 10 too); never
-    a piece of a longer number, so "35" isn't in "135B" and "60" isn't in "1,600"."""
+    """The whole numbers in a text, each by its value (`plain`), plus each part of a fraction, range, time or date
+    ("7/10" gives 7 and 10 too); never a piece of a longer number, so "35" isn't in "135B" and "60" isn't in "1,600"."""
     out = set()
-    for n in NUMBER.findall(text):
+    for n in map(plain, NUMBER.findall(text)):
         out |= {n, *filter(None, re.split(r"[/:-]", n))}
     return out
 

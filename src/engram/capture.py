@@ -548,11 +548,23 @@ def _his(item: dict, later: dict[int, str], turns: dict[int, str]) -> str | None
     return None
 
 
+SPELLED = re.compile(rf"\b(?:({'|'.join(TENS)})(?:[- ]({'|'.join(list(AGES)[1:10])}))?|"
+                     rf"({'|'.join(sorted((w for w in AGES if w != 'one'), key=len, reverse=True))})|(twice))\b"
+                     r"(?!\s+(?:hundred|thousand|million|billion|point)\b)", re.I)
+
+
+def spelled(words: str) -> set[str]:
+    """The numbers words spell out, as digits: "two weeks" holds 2, "twenty-five" 25, "twice" 2. Never "one", which is
+    mostly a pronoun ("no one told me"), nor the first word of a larger number ("two hundred")."""
+    return {str(TENS[m[1].lower()] + (AGES[m[2].lower()] if m[2] else 0) if m[1] else AGES[m[3].lower()] if m[3] else 2)
+            for m in SPELLED.finditer(words)}
+
+
 def check(fact: dict, later: dict[int, str], turns: dict[int, str], said_on: str | None = None) -> str | None:
     """Why a fact can't be filed as the owner's, or None. A fact is filed only from the owner's own words: its quote
     found word for word in his messages after the filed-up-to point, and every number in it in his words or the question
     he answered, found in Claude's turn just before his; a date may also be the day he said it or follow from his words
-    ("yesterday", "3 days ago"). At most 40 words."""
+    ("yesterday", "3 days ago"). A number counts by its value: "2,000" is his "2000", and "2" his "two". At most 40 words."""
     why = _his(fact, later, turns)
     if why:
         return why
@@ -561,10 +573,10 @@ def check(fact: dict, later: dict[int, str], turns: dict[int, str], said_on: str
         return "missing text or quote"
     if len(text.split()) > 40:
         return "over 40 words"
-    context = dates.numbers("\n".join([words, asked]))
-    days = dates_said(words, said_on)
+    mine = "\n".join([words, asked])
+    context, days = dates.numbers(mine) | spelled(mine), dates_said(words, said_on)
     for n in dates.NUMBER.findall(text):
-        if n not in context and not _date_fits(n, days):
+        if dates.plain(n) not in context and not _date_fits(n, days):
             return f"number {n} not in the record"
     return None
 

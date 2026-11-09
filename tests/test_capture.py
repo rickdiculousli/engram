@@ -398,6 +398,15 @@ def test_dates_from_the_day_he_said_it_and_numbers_from_his_words_and_the_questi
         == "number 35 not in the record"
     assert capture.check(fact(13, "Sam says spreads near 60.", "ok, go with that", turns[13]), later, turns, "2026-09-22") \
         == "number 60 not in the record"
+    # a number counts by its value: his thousands however they're written, and a number he spelled out
+    later[17] = "about 2,000 units for two weeks, twice a day, twenty-five drops"
+    took = lambda text: capture.check(fact(17, text, "about 2,000 units"), later, {}, "2026-09-22")
+    assert took("Sam took about 2000 units for 2 weeks, 2 times a day, 25 drops.") is None
+    assert took("Sam took it 3 times a day.") == "number 3 not in the record" and took("Sam took 20 drops.") == "number 20 not in the record"
+    # never "one" (mostly a pronoun), nor the first word of a larger number
+    later[21] = "no one told me, I'll start it with two hundred units"
+    start = lambda text: capture.check(fact(21, text, "I'll start it"), later, {}, "2026-09-22")
+    assert start("Sam will start 1 tablet.") == "number 1 not in the record" and start("Sam will start 2 units.") == "number 2 not in the record"
     assert capture.check(fact(15, "Sam's pain was 7 out of 10 on 2026-09-22.", "pain was 7/10 today"), later, {}, "2026-09-22") is None
 
 

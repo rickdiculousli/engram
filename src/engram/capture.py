@@ -560,11 +560,20 @@ def spelled(words: str) -> set[str]:
             for m in SPELLED.finditer(words)}
 
 
-def check(fact: dict, later: dict[int, str], turns: dict[int, str], said_on: str | None = None) -> str | None:
+NAMED = re.compile(r"[A-Za-z][A-Za-z-]*$")  # the letters a number is glued to: B12, CO2, US-1000
+WHEN = {"early", "mid", "late", "pre", "post", "week", "day", "month", "year", "q", "h", "fy", "x"}  # mid-2024, week-6, Q3, q6h, x2
+YEAR = re.compile(r"(?:19|20)\d\d")
+
+
+def check(fact: dict, later: dict[int, str], turns: dict[int, str], said_on: str | None = None, his: str = "") -> str | None:
     """Why a fact can't be filed as the owner's, or None. A fact is filed only from the owner's own words: its quote
     found word for word in his messages after the filed-up-to point, and every number in it in his words or the question
     he answered, found in Claude's turn just before his; a date may also be the day he said it or follow from his words
-    ("yesterday", "3 days ago"). A number counts by its value: "2,000" is his "2000", and "2" his "two". At most 40 words."""
+    ("yesterday", "3 days ago"). A number counts by its value: "2,000" is his "2000", and "2" his "two". One glued to
+    letters before it (B12, CO2, US-1000) is part of a name: it counts when that whole name is in the question he
+    answered or anywhere in his own messages of the session (`his`), since he names a thing once and says "it" after.
+    A when or a how-often written that way (mid-2024, week-6, Q3, q6h, x2), or any year, is no name: said of one
+    thing earlier, it would date or dose another. At most 40 words."""
     why = _his(fact, later, turns)
     if why:
         return why
@@ -574,10 +583,13 @@ def check(fact: dict, later: dict[int, str], turns: dict[int, str], said_on: str
     if len(text.split()) > 40:
         return "over 40 words"
     mine = "\n".join([words, asked])
-    context, days = dates.numbers(mine) | spelled(mine), dates_said(words, said_on)
-    for n in dates.NUMBER.findall(text):
-        if dates.plain(n) not in context and not _date_fits(n, days):
-            return f"number {n} not in the record"
+    context, days, his = dates.numbers(mine) | spelled(mine), dates_said(words, said_on), f"{his}\n{asked}".lower()
+    for m in dates.NUMBER.finditer(text):
+        name = NAMED.search(text[:m.start()])
+        named = name and not YEAR.fullmatch(m[0]) and not WHEN & set(name[0].lower().split("-")) and \
+            re.search(rf"(?<![a-z0-9]){re.escape((name[0] + m[0]).lower())}(?![0-9])", his)
+        if dates.plain(m[0]) not in context and not _date_fits(m[0], days) and not named:
+            return f"number {m[0]} not in the record"
     return None
 
 
@@ -1057,14 +1069,14 @@ def file_session(domain: str, root: Path, path: Path, ask=None, dry_run: bool = 
                                               theory=th[3].replace("{upto}", str(upto)) if th else "", already="\n".join(already) or "nothing",
                                               record=record_context(domain, st, later, when, stands, p.prompts.get("record", ""))))
         parsed = reply_json(reply)
-        turns = turn_before(s)
+        turns, his = turn_before(s), "\n".join(owners(s).values())
         entries, lines, places = [], [], []
         for f in parsed.get("facts") or []:
             try:
                 line = int(f.get("line"))
             except (TypeError, ValueError):
                 line = -1
-            why = check(f, later, turns, when.get(line))
+            why = check(f, later, turns, when.get(line), his)
             thing = now_mod.chain_for(st, str(f.get("entity") or "")) if cur.entity_kind and f.get("kind") == cur.entity_kind else None
             if not why and cur.entity_kind and f.get("kind") == cur.entity_kind:
                 why = entity_repeat(f, stands, cur, thing)

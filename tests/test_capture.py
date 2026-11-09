@@ -403,6 +403,20 @@ def test_dates_from_the_day_he_said_it_and_numbers_from_his_words_and_the_questi
     took = lambda text: capture.check(fact(17, text, "about 2,000 units"), later, {}, "2026-09-22")
     assert took("Sam took about 2000 units for 2 weeks, 2 times a day, 25 drops.") is None
     assert took("Sam took it 3 times a day.") == "number 3 not in the record" and took("Sam took 20 drops.") == "number 20 not in the record"
+    # a number glued to letters is part of a name: it counts when he used that whole name himself, anywhere in the session
+    later[19] = "i'll skip it then"
+    mine = "is the VX-200 any good? https://example.com/vx-200-home"
+    skip = lambda text, his=mine: capture.check(fact(19, text, "i'll skip it then"), later, {}, "2026-09-22", his)
+    assert skip("Sam decided to skip the VX-200.") is None
+    assert skip("Sam decided to skip the VX-20.") == "number 20 not in the record"  # the whole name, never a piece of one
+    assert skip("Sam decided to skip 200 of them.") == "number 200 not in the record"  # an amount is still his to give
+    assert skip("Sam decided to skip the VX-200.", "is that device any good?") == "number 200 not in the record"  # only Claude named it
+    assert skip("Sam's surgery was in mid-2024, at week-6.", "the surgery was last summer") == "number 2024 not in the record"
+    # a when or a how-often he wrote glued, of one thing, never dates or doses another
+    earlier = "dad's bypass was mid-2024. doc said the other one 400 q6h, and I took it x2. my Q3 was rough, post-op-day-3 worst"
+    for text, n in [("Sam had his own scan in mid-2024.", "2024"), ("Sam skips it q6h.", "6"), ("Sam skipped it x2.", "2"),
+                    ("Sam skipped it in Q3.", "3"), ("Sam skipped it on post-op-day-3.", "3")]:
+        assert skip(text, earlier) == f"number {n} not in the record", text
     # never "one" (mostly a pronoun), nor the first word of a larger number
     later[21] = "no one told me, I'll start it with two hundred units"
     start = lambda text: capture.check(fact(21, text, "I'll start it"), later, {}, "2026-09-22")

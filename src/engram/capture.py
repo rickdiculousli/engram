@@ -233,17 +233,21 @@ def standing(st: store.Store) -> list[tuple["now_mod.Current", set[str]]]:
 
 
 def entity_repeat(fact: dict, stands: list, cur: pack.Current, thing: str | None = None) -> str | None:
-    """Why an entity entry is a repeat, or None: its thing (its chain, matched through its names, entity strings and
-    aliases by now.chain_for) already stands at that status in the record, with the same detail if he gave one."""
+    """Why an entity entry is a repeat, or None: its thing already stands at that status in the record, with the same
+    detail if he gave one. The chain it joins (`thing`, from now.chain_for) is the only one judged: another chain under
+    the same name may stand where this one doesn't, and a restart after a stop is a change. Without one, any chain its
+    names match. A detail is the same when the chain's holds it and every number he gave is one of the chain's, whole:
+    "5 mg" isn't in "2.5 mg"."""
     ent, status = str(fact.get("entity") or ""), str(fact.get("status") or "")
     if not ent or status not in cur.repeats:
         return None
     k, names = thing or now_mod.key(ent, cur), {_n(ent), _n(ent.split("(")[0])}
     for c, al in stands:
-        if c.thing != k and not names & al:
+        if c.thing != k and (thing or not names & al):
             continue
-        shown = _n(fact.get(cur.detail) or "") if cur.detail else ""
-        if c.status in cur.repeats[status] and (not shown or status not in now_mod.ONGOING or shown in _n(c.detail)):
+        shown, held = _n(fact.get(cur.detail) or "") if cur.detail else "", _n(c.detail)
+        same = shown in held and dates.numbers(shown) <= dates.numbers(held)
+        if c.status in cur.repeats[status] and (not shown or status not in now_mod.ONGOING or same):
             return f"repeat: {c.name} is already {c.status} in the record"
     return None
 
@@ -1053,7 +1057,8 @@ def file_session(domain: str, root: Path, path: Path, ask=None, dry_run: bool = 
             if not why and cur.entity_kind and f.get("kind") == cur.entity_kind:
                 why = entity_repeat(f, stands, cur, thing)
             if why:
-                res["dropped"].append({"session": path.stem[:8], "line": f.get("line"), "why": why, "text": str(f.get("text", ""))[:120]})
+                res["dropped"].append({"session": path.stem[:8], "line": f.get("line"), "why": why, "text": str(f.get("text", ""))[:120],
+                                       "quote": str(f.get("quote", ""))[:200]})
             else:
                 fm, body = entry(f, when[int(f["line"])], path.stem, kinds, abouts, home,
                                  "\n".join([later[line], str(f.get("answering", ""))]), cur,

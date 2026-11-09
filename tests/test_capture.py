@@ -978,6 +978,20 @@ def test_the_same_occurrence_is_still_a_repeat(tension):
         assert [d["why"].startswith("already in") and where in d["why"] for d in out["dropped"]] == [True], (fact, where)
 
 
+def test_a_restart_or_a_changed_dose_is_not_a_repeat():
+    from engram import now
+    cur = pack.Current(entity_kind="med-change", detail="dose", repeats={"taking": {"taking"}})
+    at = lambda thing, status, dose="": (now.Current(thing, "Quillmar", status, "", dose, "", ""), {"quillmar"})
+    start = {"entity": "Quillmar", "status": "taking"}
+    two = [at("treatment/quillmar", "taking"), at("med/quillmar", "stopped")]  # one thing on two chains
+    assert capture.entity_repeat(start, two, cur, "med/quillmar") is None  # the chain it joins stands stopped: a restart
+    assert capture.entity_repeat(start, two, cur, "treatment/quillmar") == "repeat: Quillmar is already taking in the record"
+    assert capture.entity_repeat(start, two, cur)  # no chain of its own: any chain its name matches
+    dose = lambda said, held: capture.entity_repeat({**start, "dose": said}, [at("med/quillmar", "taking", held)], cur, "med/quillmar")
+    assert dose("5 mg", "5 mg nightly") and dose("nightly", "5 mg nightly") and dose("10 mg", "10 mg (two 5 mg tablets)")
+    assert dose("5 mg", "2.5 mg nightly") is None and dose("5 mg", "15 mg nightly") is None  # a new dose that reads inside the old one
+
+
 def test_same_occurrence_dates():
     same = capture.same_occurrence
     assert same({"date": "2026-11-05"}, [("2026-11-03", False)]) and not same({"date": "2026-11-05"}, [("2026-11-02", False)])

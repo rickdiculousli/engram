@@ -124,6 +124,27 @@ def test_system_reminders_notifications_and_summaries_are_not_sams_turns(world):
     assert [(x.line, x.asked, x.summary) for x in xs][:1] == [(3, "real question", False)] and xs[1].summary
 
 
+def test_his_words_in_a_message_that_also_loads_a_skill_are_his_turn_and_a_rewound_one_was_never_said(world):
+    root = world["root"]
+    line = lambda uuid, parent, content, **more: json.dumps({**json.loads(turn("user", content)), "uuid": uuid, "parentUuid": parent, **more})
+    skill = lambda uuid, parent, words: [
+        line(f"c{uuid}", parent, f"<command-message>review</command-message>"),
+        line(uuid, f"c{uuid}", [{"type": "text", "text": words}, {"type": "text", "text": "Base directory for this skill: /x"}],
+             isMeta=True, commandTextBlocks={"own": 1, "all": 2})]
+    alone = line("m", "u2", [{"type": "text", "text": "Base directory for this skill: /x"}], isMeta=True)
+    p = write_session(root, "-Users-x-scratch-e", "e2", [line("u0", None, "hello"), *skill("u1", "u0", "move the review to Tuesday"),
+                                                        *skill("u2", "u0", "move the review to Thursday"), alone])
+    assert [(x.asked, x.meta) for x in sessions.parse(p, root).exchanges] == [
+        ("hello", False), ("move the review to Thursday", False),  # the message he took back, skill and all, was never said
+        ("Base directory for this skill: /x", True)]  # a skill loaded with no words of his stays the harness's
+    blocks = lambda *texts: [{"type": "text", "text": t} for t in texts]
+    counted = lambda own, every, *texts: sessions._said({"isMeta": True, "commandTextBlocks": {"own": own, "all": every},
+                                                         "message": {"content": blocks(*texts)}})
+    assert counted(2, 3, "mine", "SKILL A", "SKILL B") == ("mine", False)  # `own` counts the skill's blocks: only the rest are his
+    assert counted(1, 3, "mine", "more", "SKILL") == ("mine\nmore", False)
+    assert counted(5, 2, "mine", "SKILL") == ("mine\nSKILL", True) and counted(1, 3, "mine", "SKILL") == ("mine\nSKILL", True)  # counts that don't fit
+
+
 def test_harness_seats_are_investments_and_title_generators_are_skipped(world):
     root = world["root"]
     write_session(root, "-private-var-folders-ab-cd-T-seat-9tltwo6d", "s1",

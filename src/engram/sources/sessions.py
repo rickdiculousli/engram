@@ -93,13 +93,26 @@ def _tool_line(b: dict) -> str:
     return f"{name}: {' '.join(str(inp[k]) for k in ('file_path', 'path', 'notebook_path') if inp.get(k))}".strip()
 
 
+def _said(e: dict) -> tuple[str, bool]:
+    """A user line's text, and whether the harness wrote it. A message that also loads a skill arrives as a command
+    line and, under it, one line the harness marks its own: the typed text blocks first, then the skill's.
+    `commandTextBlocks` counts them as Claude Code reads them back: `all` text blocks, the last `own` of them the
+    skill's, so the first `all - own` are the turn. Counts that don't fit the line leave it the harness's."""
+    texts = _text_of((e.get("message") or {}).get("content"))[0]
+    count = e.get("commandTextBlocks") or {}
+    own, every = count.get("own"), count.get("all")
+    fits = isinstance(own, int) and isinstance(every, int) and every == len(texts) and 0 <= own < every
+    if typed := bool(e.get("isMeta")) and fits:
+        texts = texts[:every - own]
+    return REMINDER.sub("", "\n".join(texts)).strip(), bool(e.get("isMeta")) and not typed
+
+
 def _typed(e: dict) -> bool:
     """Whether a line is a message someone typed, not a tool's result or text the harness added."""
-    msg = e.get("message")
-    if e.get("type") != "user" or e.get("isMeta") or e.get("isSidechain") or not isinstance(msg, dict):
+    if e.get("type") != "user" or e.get("isSidechain") or not isinstance(e.get("message"), dict):
         return False
-    asked = REMINDER.sub("", "\n".join(_text_of(msg.get("content"))[0])).strip()
-    return bool(asked) and not asked.startswith(NOT_A_TURN)
+    asked, meta = _said(e)
+    return bool(asked) and not meta and not asked.startswith(NOT_A_TURN)
 
 
 def _rewound(lines: list[tuple[int, dict]]) -> set[int]:
@@ -118,8 +131,8 @@ def _rewound(lines: list[tuple[int, dict]]) -> set[int]:
         live.add(u)
         u = by[u].get("parentUuid") or by[u].get("logicalParentUuid")
     gone, walk = set(), []
-    for parent, follow in kids.items():
-        typed = [e["uuid"] for e in follow if _typed(e)]
+    for parent, follow in kids.items():  # a message that loads a skill forks at its command line, its typed words a line below
+        typed = [e["uuid"] for e in follow if _typed(e) or any(_typed(k) for k in kids.get(e["uuid"], []))]
         if parent and len(typed) > 1 and live.intersection(typed):
             walk += [u for u in typed if u not in live]
     while walk:
@@ -165,11 +178,11 @@ def parse(path: Path, root: Path | None = None) -> Session:
                 continue
             if t == "user":
                 s.entrypoint = s.entrypoint or str(e.get("entrypoint") or "")
-                texts, results = _text_of(msg.get("content"))
-                asked = REMINDER.sub("", "\n".join(texts)).strip()
+                results = _text_of(msg.get("content"))[1]
+                asked, meta = _said(e)
                 if asked and not asked.startswith(NOT_A_TURN):
                     cur = Exchange(n, e.get("timestamp"), asked, str(e.get("uuid") or ""), summary=asked.startswith(SUMMARY),
-                                   meta=bool(e.get("isMeta")))
+                                   meta=meta)
                     s.exchanges.append(cur)
                 if cur and results:
                     cur.results += results

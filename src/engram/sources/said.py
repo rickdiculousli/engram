@@ -1,7 +1,7 @@
 """What the owner said in a session, as rows on his stories (.engram/README.md, "What he said in a session is a row on its
 story"). Each session's stitched summary already picks out the passages that count, every one tied to its line: symptom
-reports, other things he reported, his decisions, and changes of mind. Each becomes a record, quoted, dated the day it
-was said, and placed on the stories it bears on: a symptom report by its recurring symptom's stories, anything else by
+reports, other things he reported, his decisions, and the changes he stated himself. Each becomes a record, quoted,
+dated the day it was said, and placed on the stories it bears on: a symptom report by its recurring symptom's stories, anything else by
 the stories its words find. Only sessions the index already holds are used, so sessions kept out of it stay out."""
 import json
 
@@ -16,12 +16,15 @@ ACTS = {"report": "report", "analysis": "interpretation", "plan": "plan", "findi
 
 
 def _keep(kind: str, item: dict) -> bool:
-    """A chronology entry is a row when the owner said it, or when it's a clinician's word he passed on; Claude's own analysis
-    and advice stay in the summary."""
+    """A chronology entry is a row when the owner said it, or when it's a clinician's word he passed on, and an update
+    when its evidence is his own words; Claude's own analysis, advice and second thoughts stay in the summary. An
+    update whose speaker was never worked out (a summary whose session can't be read any more) stays a row, as it was."""
+    me = config.owner_id()
+    if kind == "updates":
+        return item.get("speaker", me) == me
     if kind != "chronology":
         return True
     rf = item.get("relayed_from") or ""
-    me = config.owner_id()
     return item.get("act") in ACTS and (item.get("speaker") == me and rf in ("own", me) or rf.startswith("clinician:"))
 SEEDS, SHARE = 10, 0.6  # a passage sits on the story its top 10 hits mostly sit on, and any other within 60% of its vote
 
@@ -45,6 +48,9 @@ def _text(kind: str, item: dict) -> str:
 
 
 def _date(data: dict, line: int) -> str | None:
+    """The day a turn was said; a summary that doesn't hold its turns' days gives the day the turn's segment began."""
+    if day := (data.get("days") or {}).get(str(line)):
+        return day
     for s in data.get("segments", []):
         if s.get("first_line", 0) <= line <= s.get("last_line", 10**9) and s.get("start"):
             return s["start"][:10]
@@ -88,6 +94,8 @@ def docs_for(domain: str) -> list[Doc]:
                 at[line] = at.get(line, 0) + 1
                 if kind == "chronology":
                     node, by = ACTS[item["act"]], item.get("by") or item["relayed_from"]
+                if kind == "updates":  # his own words are his; one never worked out is credited as it was
+                    by = "{owner_id}" if item.get("speaker") == config.owner_id() else KINDS[kind][1]
                 quote = item.get("evidence", "")
                 stories = _stories(db.db, domain, kind, item, f"{text} {quote}")
                 date = _date(data, line)

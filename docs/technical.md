@@ -20,10 +20,11 @@ The machinery calls, made without the owner (they read outcomes, not machinery),
 ## Said rows
 
 What the owner said in a session becomes rows on its threads, drawn from the stitched session summaries at ingest (`sources/said.py`), so a timeline shows what was only said beside what was filed.
-- **What:** symptom reports, other reports, decisions and changes of mind, and from the chronology the entries the owner said and outside sources' words passed on, credited to that source. Claude's own analysis and advice stay out, and so do records filed during the session and open questions.
+- **What:** symptom reports, other reports, decisions and the changes the owner stated (a summary's update whose evidence is in the owner's own words, `summarize.said_by`, credited to them), and from the chronology the entries the owner said and outside sources' words passed on, credited to that source. Claude's own analysis, advice and second thoughts stay out (a change Claude made to its own reading is the summary's, never a row on the owner's thread), and so do records filed during the session and open questions.
 - **Placement:** an occurrence sits on its recurring thread's threads; anything else on the threads its top 10 hits vote for, keeping any within 60% of the top vote. Placing is a search per passage, so it runs in the hourly job and `engram ingest`, never while a question waits ([when the index is read](#when-the-index-is-read)).
-- **Each row** is dated the day it was said, quoted, and points to the session line: `session:<id>:<line>@said-<section>-<n>`.
+- **Each row** is dated the day its turn was said (the summary keeps each turn's day, `days`), quoted, and points to the session line: `session:<id>:<line>@said-<section>-<n>`.
 - **Only indexed sessions:** a session kept out of the index (eval work) stays out.
+- **A summary made before days and speakers were kept** gets both from its session with no model call (`summarize.complete`), in its stitched summary and in the segments a later stitch is rebuilt from; a session cleaned up from the box is fetched from the mirror for it. While its session can't be read, its rows stay as they were: dated the day the turn's segment began, its updates all shown and credited as worked out with Claude.
 - **Unplaced analyses:** an open question or discovery file none of whose sections is on a thread is placed by the threads its opening 80 words find as a search (`sources/place.py`, source `placed`). Only the record's own analyses are placed: placing every unplaced document finds no more records, for more tokens.
 - **An entry with no thread** takes the threads of the other entries in its series, or on its thing's chain, most entries first (`events.inherited`); a pooled series gives none.
 

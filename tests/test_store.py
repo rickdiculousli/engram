@@ -458,17 +458,25 @@ def test_what_sam_said_in_a_session_is_a_row_on_its_story(repo, env):
     chron = [{"line": 9, "text": "Sam's ankle soreness came back after the first session.", "relayed_from": "own", "act": "report",
               "speaker": "sam", "by": "sam", "evidence": "sore again"},
              {"line": 9, "text": "Claude: likely guarding.", "relayed_from": "own", "act": "analysis", "speaker": "claude", "by": "with-claude"}]
+    changed = [{"line": 9, "what": "brace", "before": "nightly", "after": "days only", "evidence": "days only from now", "speaker": "sam"},
+               {"line": 9, "what": "cause", "before": "a sprain", "after": "guarding", "evidence": "I was wrong", "speaker": "claude"},
+               {"line": 12, "what": "plan", "before": "rest", "after": "walk", "evidence": "walk instead"}]  # its speaker never worked out
     (data_path("summaries") / "medical/s1.json").write_text(_json.dumps({"segments": [{"first_line": 1, "last_line": 20, "start": "2026-03-06T10:00:00-08:00"}],
-                                                                     "stitch": {"summary": {"chronology": chron, "complaints": [
+                                                                     "days": {"9": "2026-03-07", "12": "2026-03-08"},
+                                                                     "stitch": {"summary": {"chronology": chron, "updates": changed, "complaints": [
         {"tag": "new:complaint/ankle-ache", "course": [{"line": 4, "intensity": "dull", "direction": "worse"},
                                                          {"line": 12, "intensity": "gone by evening", "direction": "better"}]}]}}}))
     (data_path("summaries") / "medical/s2.json").write_text(_json.dumps({"stitch": {"summary": {"chronology": chron}}}))  # not indexed
     rows = said.docs_for("medical")
-    assert [d.ref for d in rows] == ["session:s1:4@said-complaints-1", "session:s1:12@said-complaints-1",
-                                     "session:s1:9@said-chronology-1"]  # each time he felt it; his report; not Claude's analysis
+    assert [d.ref for d in rows] == ["session:s1:4@said-complaints-1", "session:s1:12@said-complaints-1", "session:s1:9@said-updates-1",
+                                     "session:s1:12@said-updates-1", "session:s1:9@said-chronology-1"]  # each time he felt it; his changes; his report
     assert rows[1].kind == "symptom" and rows[1].body == "ankle ache: gone by evening, better"
-    d = rows[2]
-    assert d.author == "sam" and d.kind == "report" and d.date == "2026-03-06" and "“sore again”" in d.body
+    assert (rows[2].kind, rows[2].author) == ("change of mind", "sam")  # the change he stated is his
+    assert not any("guarding" in r.body for r in rows)  # never Claude's analysis, nor its own second thoughts
+    assert rows[3].author == "with-claude"  # one whose speaker was never worked out stays, credited as it was
+    assert [r.date for r in rows] == ["2026-03-06", "2026-03-08", "2026-03-07", "2026-03-08", "2026-03-07"]  # the day said; else its segment's first
+    d = rows[4]
+    assert d.author == "sam" and d.kind == "report" and "“sore again”" in d.body
     assert d.stories == "ankle"  # placed by the stories its words find
 
 

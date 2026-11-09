@@ -154,6 +154,9 @@ def test_who_said_it_comes_from_where_the_evidence_sits_and_record_notes_are_fil
     assert summarize.characterize(out, TURNS)["claims"][1]["by"] == "sam"
     assert out["filed"][-1]["what"] == "knee logged"
     assert out["open"] == [{"line": 20, "text": "is it inflamed?", "evidence": "it's probably inflamed"}]
+    out["updates"] = [{"line": 30, "what": "plan", "before": "rest", "after": "ice", "evidence": "I'll ice it tonight"},
+                      {"line": 20, "what": "cause", "before": "a strain", "after": "inflamed", "evidence": "it's probably inflamed"}]
+    assert [u["speaker"] for u in summarize.characterize(out, TURNS)["updates"]] == ["sam", "claude"]  # a change is whose words state it
 
 
 def test_a_session_is_summarized_stored_indexed_and_withdrawn_with_its_session(world, monkeypatch):
@@ -242,6 +245,19 @@ def test_a_long_session_is_stitched_in_groups_then_once_more(world, monkeypatch)
     assert summarize.run()["flagged"] == 0
     data = json.loads((summarize.store_dir("medical") / "long.json").read_text())
     assert len(data["segments"]) == 5 and data["stitch"]["parts"] == 2
+    assert len(data["days"]) == data["turns"] and set(data["days"].values()) == {data["first"][:10]}  # the day each turn was said
+    # a current summary made before those were kept gets them from its session, and each update's speaker, with no call:
+    # in the stitched summary and in the segments a later stitch is rebuilt from
+    days = data.pop("days")
+    line = int(next(iter(days)))
+    change = {"line": line, "what": "plan", "before": "rest", "after": "walk", "evidence": "a question about the"}
+    data["stitch"]["summary"]["updates"], data["segments"][0]["summary"]["updates"] = [dict(change)], [dict(change)]
+    (summarize.store_dir("medical") / "long.json").write_text(json.dumps(data))
+    monkeypatch.setattr(summarize, "_claude", lambda *a: pytest.fail("a call was made"))
+    assert summarize.run()["current"] == 1
+    data = json.loads((summarize.store_dir("medical") / "long.json").read_text())
+    assert data["days"] == days
+    assert data["stitch"]["summary"]["updates"][0]["speaker"] == data["segments"][0]["summary"]["updates"][0]["speaker"] == "sam"
     assert calls.count(summarize.STITCH_MODEL) == 3 and calls.count(summarize.SEGMENT_MODEL) == 10
     assert all(g["pass"] == "second" for g in data["segments"])
     second = [p for p in prompts if "this segment, first reading: " in p]
@@ -322,7 +338,7 @@ def test_a_session_cleaned_up_here_is_fetched_again_only_if_something_could_have
     sql.execute("CREATE TABLE IF NOT EXISTS file (path TEXT PRIMARY KEY, bytes INTEGER, mtime_ns INTEGER, head_sha TEXT, "
                 "domain TEXT, exchanges INTEGER, docs INTEGER, rewrites INTEGER DEFAULT 0, seen TEXT, gone TEXT)")
     gone = {n: root / folder / f"{n}.jsonl" for n, folder in
-            [("kept", "proj"), ("old", "proj"), ("lost", "proj"), ("seat", "x-T-desk-1")]}
+            [("kept", "proj"), ("old", "proj"), ("lost", "proj"), ("bare", "proj"), ("seat", "x-T-desk-1")]}
     for p in gone.values():
         sql.execute("INSERT OR REPLACE INTO file (path, domain, gone) VALUES (?, 'medical', 'now')", (str(p),))
     sql.commit()
@@ -330,7 +346,8 @@ def test_a_session_cleaned_up_here_is_fetched_again_only_if_something_could_have
     now = {"segment": summarize.segment_version("medical"), "stitch": summarize.STITCH_VERSION}
     d = summarize.store_dir("medical")
     d.mkdir(parents=True, exist_ok=True)
-    (d / "kept.json").write_text(json.dumps({"prompt_version": now}))
-    (d / "old.json").write_text(json.dumps({"prompt_version": {**now, "stitch": "older"}}))
-    assert sorted(p.stem for p, _ in summarize.known_sessions("medical")) == ["lost", "old"]
+    (d / "kept.json").write_text(json.dumps({"prompt_version": now, "days": {}}))
+    (d / "old.json").write_text(json.dumps({"prompt_version": {**now, "stitch": "older"}, "days": {}}))
+    (d / "bare.json").write_text(json.dumps({"prompt_version": now}))  # made before its turns' days were kept: fetched for them
+    assert sorted(p.stem for p, _ in summarize.known_sessions("medical")) == ["bare", "lost", "old"]
     assert [p.stem for p, _ in summarize.known_sessions("medical", ["kept"])] == ["kept"]  # asked for by name

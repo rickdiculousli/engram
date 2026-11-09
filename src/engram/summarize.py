@@ -204,14 +204,31 @@ def _asks(phrase: str, words: str) -> bool:
     return end < len(t) and t[end] == "?"
 
 
+def said_by(item: dict, turns: dict[int, str]) -> str | None:
+    """Whose words an item's evidence is, in the turn it cites: the owner's id, "claude", or None when it's in neither's."""
+    src = turns.get(item.get("line")) or ""
+    ev = str(item.get("evidence", "")).strip('"“” ')
+    return (config.owner_id() if ev and _within(ev, _owner_words(src)) else
+            "claude" if ev and _within(ev, _claude_words(src)) else None)
+
+
+def _speakers(summary, turns: dict[int, str]):
+    """Each update's speaker, by where its evidence sits: a change the owner stated is his; an analysis Claude
+    corrected is Claude's."""
+    for u in (summary.get("updates") or []) if isinstance(summary, dict) else []:
+        if isinstance(u, dict):
+            u["speaker"] = said_by(u, turns)
+
+
 def characterize(out, turns: dict[int, str], stitched: bool = False):
-    """Works out what the model is asked only to describe. Who said each claim comes from where its evidence sits;
-    whose claim it is follows from that and `relayed_from`; a record note goes to `filed` and an open question to
-    `open`, never standing as claims."""
+    """Works out what the model is asked only to describe. Who said each claim, and each update, comes from where its
+    evidence sits; whose claim it is follows from that and `relayed_from`; a record note goes to `filed` and an open
+    question to `open`, never standing as claims."""
     key = "chronology" if stitched else "claims"
     if not isinstance(out, dict) or not isinstance(out.get(key), list):
         return out
     me = config.owner_id()
+    _speakers(out, turns)
     keep = []
     for c in out[key]:
         if not isinstance(c, dict):
@@ -224,10 +241,7 @@ def characterize(out, turns: dict[int, str], stitched: bool = False):
         if act == "question" and isinstance(out.get("open"), list):
             out["open"].append({"line": c.get("line"), "text": c.get("text"), "evidence": c.get("evidence")})
             continue
-        src = turns.get(c.get("line")) or ""
-        ev = str(c.get("evidence", "")).strip('"“” ')
-        c["speaker"] = (me if ev and _within(ev, _owner_words(src)) else
-                        "claude" if ev and _within(ev, _claude_words(src)) else None)
+        c["speaker"] = said_by(c, turns)
         rel = str(c.get("relayed_from") or "own").strip()
         if rel.lower() == me:
             c["by"] = me
@@ -817,7 +831,8 @@ def _settled(path: Path, domain: str) -> bool:
     if any(m in path.parent.name for m in _launched()):
         return True
     p = store_dir(domain) / f"{path.stem}.json"
-    return p.exists() and _versions(json.loads(p.read_text())) == {"segment": segment_version(domain), "stitch": STITCH_VERSION}
+    return p.exists() and "days" in (stored := json.loads(p.read_text())) and \
+        _versions(stored) == {"segment": segment_version(domain), "stitch": STITCH_VERSION}
 
 
 def known_sessions(domain: str | None = None, stems: list[str] | None = None) -> list[tuple[Path, str]]:
@@ -860,6 +875,26 @@ def plan(path: Path, domain: str) -> dict | None:
                and [g["sha"] for g in stored["segments"]] == shas)
     return {"path": path, "domain": domain, "session": s, "turns": turns, "segs": segs, "texts": texts, "shas": shas,
             "stored": stored, "current": current, "chars": sum(len(t) for t in texts)}
+
+
+def _days(turns: list[Turn]) -> dict[str, str]:
+    """The day each turn was said, by its line."""
+    return {str(t.line): t.ts[:10] for t in turns}
+
+
+def complete(pl: dict) -> bool:
+    """A current summary made before each turn's day and each update's speaker were kept gets them from its session,
+    with no model call: in the stitched summary and in every segment's, which a later stitch is rebuilt from. One
+    cleaned up from this box is fetched from the mirror for it (`_settled`) until it has them; while it can't be read,
+    it stays as it was."""
+    data = pl["stored"]
+    if "days" in data:
+        return False
+    lines = {t.line: t.text for t in pl["turns"]}
+    for summary in [(data.get("stitch") or {}).get("summary"), *(g.get("summary") for g in data.get("segments") or [])]:
+        _speakers(summary, lines)
+    _write(store_dir(pl["domain"]) / f"{pl['path'].stem}.json", {**data, "days": _days(pl["turns"])})
+    return True
 
 
 def summarize_session(pl: dict, vocab: set[str]) -> tuple[dict, dict]:
@@ -914,7 +949,8 @@ def summarize_session(pl: dict, vocab: set[str]) -> tuple[dict, dict]:
         stitch_model = STITCH_MODEL
     data = {"stem": s.stem, "domain": domain, "path": str(pl["path"]), "title": s.title, "project": s.project,
             "prompt_version": {"segment": segment_version(domain), "stitch": STITCH_VERSION}, "models": {"segment": SEGMENT_MODEL, "stitch": stitch_model}, "made": now(),
-            "turns": len(turns), "first": turns[0].ts, "last": turns[-1].ts, "segments": out_segs, "stitch": stitch,
+            "turns": len(turns), "first": turns[0].ts, "last": turns[-1].ts, "days": _days(turns),
+            "segments": out_segs, "stitch": stitch,
             "flagged": [g["segment"] for g in out_segs if g["flagged"]] + (["stitch"] if stitch["flagged"] else []),
             "usage": _add(prev.get("usage", {}) if pl["stored"] else {}, used)}
     _write(store_dir(domain) / f"{s.stem}.json", data)
@@ -952,6 +988,7 @@ def run(domain: str | None = None, stems: list[str] | None = None, limit: int | 
             return
         with lock:
             if pl["current"]:
+                complete(pl)
                 counts["current"] += 1
                 return
             if cap and picked >= cap:

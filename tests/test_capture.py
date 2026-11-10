@@ -620,6 +620,15 @@ def test_relative_phrases():
     assert days("48 hours ago") == [("2026-09-23", False)] and days("half an hour ago") == [("2026-09-23", False)]  # hours: read as they always were
 
 
+def test_a_stretch_up_to_the_day_said_is_read_and_what_only_looks_like_one_is_not():
+    span = lambda w: [(a, b) for a, b, _ in capture.stretches(w, "2026-09-23")]
+    assert span("the past week and a half-ish") == [("2026-09-12", "2026-09-23")] and span("the last 3 months") == [("2026-06-23", "2026-09-23")]
+    assert span("past couple of weeks") == [("2026-09-09", "2026-09-23")] and span("for the past month or so") == [("2026-08-23", "2026-09-23")]
+    for not_one in ("the relief didn't last a week", "the last two weeks of September", "my last 3 months at the old job", "last week",
+                    "the past weeks", "the past day or two", "past week 3 of the plan", "the last week before the trip"):
+        assert span(not_one) == [], not_one  # the verb, a stretch of or beside something else, no length
+
+
 SAID = "2026-10-24"  # a Saturday
 
 
@@ -630,6 +639,43 @@ def filed(quote: str, date: str = "not-sure") -> dict:
 
 def when(fm: dict) -> tuple:
     return tuple(fm.get(k) for k in ("date", "approx", "range_from", "range_to", "as_said"))
+
+
+def test_a_fact_whose_own_when_is_a_stretch_is_filed_as_the_stretch_and_what_he_gave_stands():
+    def fm(date, words, quote="the knee ached after the stairs", said=SAID, **more):
+        return capture.entry({"text": "Knee ached after the stairs", "quote": quote, "date": date, **more}, said, "s1", ["observation"], [], "", words)[0]
+    rough = "a rough report of the past week and a half-ish. the knee ached after the stairs"
+    half = "the past week and a half-ish"
+    # the reply gives the fact's when as his stretch, and its day lies inside: his stretch, in his words
+    assert when(fm("2026-10-15", rough, as_said=half)) == ("2026-10-13", "true", "2026-10-13", SAID, half)
+    assert when(fm("2026-09", "the last 3 months were rough. the knee ached after the stairs", as_said="the last 3 months"))[:4] == \
+        ("2026-07-24", "true", "2026-07-24", SAID)
+    both = "the past 3 months, and worse these last 2 weeks"
+    assert when(fm("2026-10-22", both + ". the knee ached after the stairs", as_said=both))[2] == "2026-10-10"  # the shortest that holds it
+    # a stretch the message names that the reply doesn't give as this fact's when dates nothing: as before, never said
+    assert fm("2026-10-15", rough)["date"] == "not-sure" and fm("2026-10-15", rough, as_said="after the stairs")["date"] == "not-sure"
+    third = "The past week was rough. On the 3rd I fell"  # his own when, which code can't count, is never traded for the stretch
+    assert when(fm("2026-10-20", third, "On the 3rd I fell", as_said="On the 3rd"))[::4] == ("not-sure", "On the 3rd")
+    assert fm("2026-10-15", "how was the past week?\nbad, the knee ached after the stairs", as_said="the past week", answering="how was the past week?")["date"] == "not-sure"
+    # words that aren't his, a date only overlapping the stretch or outside it, or a year, isn't a point in it
+    assert fm("2026-10-15", rough, as_said="the past two weeks")["date"] == "not-sure"
+    for guess in ("2026-10", "2019-05-01", "2026"):
+        assert fm(guess, rough, as_said=half)["date"] == "not-sure", guess
+    assert fm("2025", "the past 3 years were hard. the knee ached after the stairs", as_said="the past 3 years")["date"] == "not-sure"
+    assert capture.stretches("the past 3000 years", SAID) == []
+    assert fm(SAID, rough, as_said=half)["date"] == SAID  # the day he said it stands
+    # a fact tied to a landmark keeps the landmark's date, whatever stretch it names
+    blur = "The past 3 months have been a blur. The move came and the knee ached after the stairs"
+    pinned = capture.entry({"text": "Knee ached", "quote": "The move came and the knee ached after the stairs", "date": "2026-09-20", "landmark": "move",
+                            "as_said": "The past 3 months"}, SAID, "s1", ["observation"], [], "", blur, marks={"move": "2026-09-20"})[0]
+    assert (pinned["date"], pinned.get("landmark"), pinned.get("range_from")) == ("2026-09-20", "move", None)
+    # a day, month or year he did give stands, even when the reply names the stretch beside it
+    sore = "my knee has been sore the past week and "
+    assert when(fm("2026-10-22", sore + "I fell on Thursday", sore + "I fell on Thursday", as_said="the past week"))[:3] == ("2026-10-22", None, None)
+    assert when(fm("2026-10-23", sore + "worst yesterday", sore + "worst yesterday", as_said="the past week"))[:3] == ("2026-10-23", None, None)
+    job = "The past two months have been rough. I started the new job in October"
+    assert fm("2026-10-01", job, "I started the new job in October", as_said="The past two months")["date"] == "2026-10"
+    assert fm("2019-06-01", "sore for the past 10 years, and had surgery in 2019", "had surgery in 2019", as_said="the past 10 years")["date"] == "2019"
 
 
 def test_his_date_words_are_kept_and_his_hedges_set_the_ends():
@@ -1065,6 +1111,9 @@ def test_a_later_occurrence_is_kept_unless_this_session_saved_the_document_that_
 
 def test_same_occurrence_dates():
     same = capture.same_occurrence
+    week = {"date": "2026-10-24", "approx": "true", "range_from": "2026-10-24", "range_to": "2026-11-04"}  # filed as a stretch
+    assert same(week, [("2026-11-03", False)]) and same(week, [("2026-11-07", False)]) and not same(week, [("2026-11-10", False)])
+    assert not same(week, [("2026-10-18", False)])  # any day of the stretch, give or take the allowance
     assert same({"date": "2026-11-05"}, [("2026-11-03", False)]) and not same({"date": "2026-11-05"}, [("2026-11-02", False)])
     assert same({"date": "2026-11-05", "approx": "true"}, [("2026-11-01", False)])
     assert same({"date": "2026-11-05"}, [("2026-11-01", True)]) and not same({"date": "2026-11-05"}, [("2026-10-31", True)])

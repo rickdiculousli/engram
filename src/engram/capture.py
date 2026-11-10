@@ -23,7 +23,7 @@ restatement, or the same detail with a date, is a repeat; a new value, date, cha
 A new occurrence of a known symptom is always filed; code honours a repeat only for the same occurrence. For an
 occurrence kind (symptom, observation, measurement, procedure, visit), the named record's own date, or a full date
 written in it (a complaint page listing past occurrences), must fall within 2 days of the candidate's (4 when either is
-approximate; a month-only date matches only that month); otherwise the candidate is kept as a new occurrence, whatever
+approximate; a month-only date matches only that month; a candidate filed with both ends, of any day between them); otherwise the candidate is kept as a new occurrence, whatever
 the model said, unless he gave it no date and the record named is in a document this same session saved that carries
 no written date anywhere (a form filled in from his answers). Interpretations, plans, decisions and beliefs stay repeats
 on any day.
@@ -378,6 +378,30 @@ def relative_days(words: str, said_on: str | None) -> list[tuple[str, str, bool,
     return out
 
 
+STRETCH = re.compile(r"\b(?P<the>(?:the|these|this)\s+)?(?P<w>past|last)\s+(?:(?:(?P<n>(?<![\d.,])\d+|a few|few|one|two|three|four|five|"
+                     r"six|seven|eight|nine|ten)|(?P<couple>(?:a\s+)?couple(?:\s+of)?))\s+(?P<unit>day|week|month|year)s?|"
+                     r"(?P<one>day|week|month|year))(?P<half>\s+and\s+a\s+half)?\b"
+                     r"(?!\s+(?:of|before|after)\b|\s+or\s+(?:two|three|\d))", re.I)
+
+
+def stretches(words: str, said_on: str | None) -> list[tuple[str, str, str]]:
+    """The stretches up to the day said that words name ("the past week and a half", "the last 3 months", "past 2 days"):
+    first day, last day, the phrase. "Last" needs its "the" (else it's mostly the verb: "didn't last a week"), and so
+    does a stretch with no count ("past week 3 of the plan"); a plural with no count has no length, and a stretch of or
+    beside something else ("the last two weeks of September", "the last week before the trip") isn't counted from today."""
+    if not said_on or len(said_on) != 10 or not dates.valid(said_on):
+        return []
+    day, out = datetime.fromisoformat(said_on).date(), []
+    for m in STRETCH.finditer(words):
+        if not m["the"] and (m["w"].lower() == "last" or m["one"]):
+            continue
+        unit = (m["unit"] or m["one"]).lower()
+        with contextlib.suppress(ValueError, OverflowError):  # "the past 3000 years" has no first day
+            start = _back(day, 2 if m["couple"] else _count(m["n"]) if m["n"] else 1, unit)
+            out.append(((_half(start, unit) if m["half"] else start).isoformat(), said_on, m[0]))
+    return out
+
+
 def dates_said(words: str, said_on: str | None) -> set[str]:
     """The days a message's date words can mean: the day it was sent, and the days "yesterday", "last night" or "3
     days ago" count back to, or a span's ends."""
@@ -476,7 +500,12 @@ def full_date(fact: dict, said_on: str, words: str | None = None, marks: dict | 
     text is read when the quote holds none, but only his quote gives `as_said`. Else,
     given what he said (`words`: his message and what he was answering), a date that doesn't rest on it narrows to the
     month or year that does, else "never-said": the model counted a day he never gave (a "last time" or an "ago" code
-    can't count placed on a date, on the day he said it, or left not sure). An age ("when I was 12") the model's date
+    can't count placed on a date, on the day he said it, or left not sure). Where the reply gives the fact's own when
+    as a stretch up to the day he said it (`as_said`, word for word in his message: "the past week and a half"), and its
+    date is a day or month he never gave that lies wholly inside that stretch, the fact is filed as the stretch
+    (`stretches`), the shortest that holds the date, never as the model's point in it. A day, month or year he did
+    give stands, a fact tied to a landmark keeps the landmark's rules, and a stretch his message names that the reply
+    doesn't give as this fact's when dates nothing. An age ("when I was 12") the model's date
     doesn't rest on runs from that birthday (`marks`, the landmarks' dates: its `birth`) to the day before the next one
     past it; without a birth date, or before that birthday, it's never-said, its words kept."""
     date, approx = str(fact.get("date") or "not-sure"), fact.get("approx") in (True, "true", "yes")
@@ -505,6 +534,13 @@ def full_date(fact: dict, said_on: str, words: str | None = None, marks: dict | 
         return a, True, {"as_said": m[0], "range_from": a, "range_to": b}
     if words is not None and date in (said_on, "not-sure") and PAST.search(quote) and not found:
         return "never-said", False, {}  # a "last time" never happened the day he said it
+    if words is not None and len(date) in (7, 10) and not fact.get("landmark") and \
+            not any(said_date(x, words, said_on) for x in {date, date[:7], date[:4]}):
+        his = str(fact.get("as_said") or "")  # the fact's own when, as the reply gives it: his words, or it dates nothing
+        if his and verbatim.found(his, words.removesuffix(str(fact.get("answering", "")))):
+            if holds := [x for x in stretches(his, said_on) if x[0] <= s[0].isoformat() and s[1].isoformat() <= x[1]]:
+                a, b, _ = max(holds)  # every stretch ends the day said, so the latest start is the shortest
+                return a, True, {"range_from": a, "range_to": b, "as_said": his}
     if words is None or date == "not-sure" or said_date(date, words, said_on):
         return date, approx, {}
     for part in (date[:7], date[:4]):
@@ -868,16 +904,21 @@ def record_dates(own: str, approx: bool, text: str) -> list[tuple[str, bool]]:
 
 def same_occurrence(fm: dict, held: list[tuple[str, bool]]) -> bool:
     """Whether a record with these dates can be about the candidate's own occurrence: a date within SAME_DAYS of the
-    candidate's (SAME_DAYS_APPROX when either is approximate). A month-only date matches only a date in that month."""
+    candidate's (SAME_DAYS_APPROX when either is approximate), or of any day of the stretch it's filed as (its
+    `range_from` to `range_to`: its first day is no nearer the occurrence than its last). A month-only date matches only
+    a date in that month."""
     when = str(fm.get("date") or "")
     if not dates.valid(when) or when == "not-sure":
         return False
+    ends = [str(fm.get(k) or "") for k in ("range_from", "range_to")]
+    a, b = (date.fromisoformat(x) for x in ends) if all(len(x) == 10 and dates.valid(x) for x in ends) else (None, None)
     for d, approx in held:
         if len(when) < 10 or len(d) < 10:
             if d.startswith(when) or (when.startswith(d) and len(d) >= 7):
                 return True
             continue
-        gap = abs((date.fromisoformat(when) - date.fromisoformat(d)).days)
+        day = date.fromisoformat(d)
+        gap = abs((date.fromisoformat(when) - day).days) if a is None else max((a - day).days, (day - b).days, 0)
         if gap <= (SAME_DAYS_APPROX if approx or _approx(fm) else SAME_DAYS):
             return True
     return False

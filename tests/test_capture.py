@@ -617,7 +617,15 @@ def test_relative_phrases():
     assert days("the night before last week's game") == [("2026-09-16", True)]  # "last week" is read as it always was
     assert days("1.5 years ago") == [("2025-03-23", True)] and days("half a year ago") == [("2026-03-23", True)]  # never "5 years", "a year"
     assert days("a year and a half ago") == [("2025-03-23", True)] and days("1.25 years ago") == []  # a count never starts inside a number
-    assert days("48 hours ago") == [("2026-09-23", False)] and days("half an hour ago") == [("2026-09-23", False)]  # hours: read as they always were
+    assert days("48 hours ago") == [("2026-09-21", True)] and days("it started 72 hours ago") == [("2026-09-20", True)]  # days back, an estimate
+    assert days("36 hours ago") == [("2026-09-21", True)] and days("30 hours ago") == [("2026-09-22", True)]  # the nearest day
+    assert days("approximately 48 hours ago") == [("2026-09-21", True)] and days("a good 48 hours ago") == [("2026-09-21", True)]  # never firm
+    today = [("2026-09-23", False)]  # anything but one plain count is read as it always was
+    for other in ("5 hours ago", "half an hour ago", "24 or 48 hours ago", "24–48 hours ago", "24 - 48 hours ago", "24/48 hours ago",
+                  "between 24 and 48 hours ago", "24 to 48 hours ago", "24 through 48 hours ago", "24, maybe 48 hours ago", "24 if not 48 hours ago",
+                  "less than 24 hours ago", "under 48 hours ago", "almost 48 hours ago", "more than 48 hours ago", "within 48 hours ago", "like 48 hours ago", "probably 48 hours ago",
+                  "48 hours ago or so", "at 3pm, 48 hours ago"):
+        assert [(a, est) for a, b, est, _ in capture.relative_days(other, "2026-09-23")] == today, other
 
 
 def test_a_stretch_up_to_the_day_said_is_read_and_what_only_looks_like_one_is_not():

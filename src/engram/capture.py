@@ -308,6 +308,18 @@ def _half(day: date, unit: str) -> date:
     return _back(day, 6, "month") if unit == "year" else day - timedelta(days={"day": 0, "week": 4, "month": 15}[unit])
 
 
+BOUND = re.compile(r"\d|\b(?:than|under|over|almost|nearly|within|least|most|between|through|thru|till|until|vs|versus|up to|if not|even|like|say|some|probably|perhaps)\b", re.I)
+
+
+def _hours(m: re.Match, d: date) -> date | None:
+    """N hours ago, a day or more back, when it's one plain count: the nearest day that many hours back, always an
+    estimate, since the hour he spoke isn't known and a qualifier may sit where code doesn't look. With another number
+    or a bound before it in its clause ("24 to 48", "less than 24", "24, maybe 48") it isn't one count, and is left to
+    the old reading."""
+    n, clause = int(m[1]), re.split(r"[.;:!?\n]", m.string[:m.start(1)])[-1]
+    return d - timedelta(days=(n + 12) // 24) if n >= 24 and not BOUND.search(clause) else None
+
+
 def _third(m: re.Match, day: date) -> tuple[date, date] | None:
     """Early, mid or late: days 1-10, 11-20 or 21 to the end of a month (the latest one begun by the day said, without
     its year); January to April, May to August or September to December of a year. A bare "late may" is mostly the verb:
@@ -344,6 +356,7 @@ RELATIVE = [
     (re.compile(_ABOUT + r"(?:" + _N + r"\s+" + _UNIT + r"\s+and\s+a\s+half|(?<![\d.,])(\d+)\.5\s+" + _UNIT + r")\s+ago\b", re.I),
      lambda m, d: _half(_back(d, _count(m[1] or m[3]), (m[2] or m[4]).lower()), (m[2] or m[4]).lower()), True),
     (re.compile(r"\bhalf\s+an?\s+" + _UNIT + r"\s+ago\b", re.I), lambda m, d: _half(d, m[1].lower()), True),
+    (re.compile(_ABOUT + r"(?<![\d.,])(\d+)\s+hours?\s+ago\b(?!\s+or\b)", re.I), _hours, True),
     (re.compile(r"\b(today|this morning|this afternoon|this evening|tonight|just now|\w+(?: or \w+)? (?:hour|minute)s?(?: or \w+)? ago)\b", re.I),
      lambda m, d: d, False),
     (re.compile(r"\b(day before yesterday)\b", re.I), lambda m, d: d - timedelta(days=2), False),

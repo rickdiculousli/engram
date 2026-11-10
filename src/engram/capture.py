@@ -126,18 +126,24 @@ def owners(s: sessions.Session, after: int = 0) -> dict[int, str]:
     return out
 
 
-def turn_before(s: sessions.Session) -> dict[int, str]:
+RECENT = 5  # how many of Claude's turns back a plan the owner agrees to may have been laid out
+AGREED = ("plan", "decision")  # the kinds an agreement to Claude's plan makes
+
+
+def turn_before(s: sessions.Session, back: int = 1) -> dict[int, str]:
     """line -> Claude's turn just before the owner's words there, where the question he answered must be: all Claude's
     text since his previous message (a skill's turn, a summary or another speaker in between isn't his, so Claude's text
-    after one still counts), and, as what he sent while Claude worked joins the line, this turn's text before the last of it."""
-    me, out, since = config.owner(), {}, []
+    after one still counts), and, as what he sent while Claude worked joins the line, this turn's text before the last of it.
+    With `back`, that many of Claude's turns up to his words, oldest first: where a plan he agrees to may have been laid out."""
+    me, out, since, past = config.owner(), {}, [], []
     for x in s.exchanges:
         said = _mine(s, x, me)
         if not said:
             since += x.replies
             continue
         k = said[-1][0]
-        out[x.line] = "\n".join(since + x.replies[:k])
+        past.append("\n".join(since + x.replies[:k]))
+        out[x.line] = "\n".join(past[-back:])
         since = x.replies[k:]
     return out
 
@@ -625,7 +631,8 @@ WHEN = {"early", "mid", "late", "pre", "post", "week", "day", "month", "year", "
 YEAR = re.compile(r"(?:19|20)\d\d")
 
 
-def check(fact: dict, later: dict[int, str], turns: dict[int, str], said_on: str | None = None, his: str = "") -> str | None:
+def check(fact: dict, later: dict[int, str], turns: dict[int, str], said_on: str | None = None, his: str = "",
+          recent: dict[int, str] | None = None) -> str | None:
     """Why a fact can't be filed as the owner's, or None. A fact is filed only from the owner's own words: its quote
     found word for word in his messages after the filed-up-to point, and every number in it in his words or the question
     he answered, found in Claude's turn just before his; a date may also be the day he said it or follow from his words
@@ -633,7 +640,11 @@ def check(fact: dict, later: dict[int, str], turns: dict[int, str], said_on: str
     letters before it (B12, CO2, US-1000) is part of a name: it counts when that whole name is in the question he
     answered or anywhere in his own messages of the session (`his`), since he names a thing once and says "it" after.
     A when or a how-often written that way (mid-2024, week-6, Q3, q6h, x2), or any year, is no name: said of one
-    thing earlier, it would date or dose another. At most 40 words."""
+    thing earlier, it would date or dose another. A plan or decision is his to adopt from Claude: given `recent`
+    (Claude's last few turns before his words, which the caller passes for those kinds only), its numbers may also be
+    ones Claude gave there, since "that's the plan" comes some turns after the plan was laid out and adopts its
+    amounts. Any other kind keeps to his words and the question: an "ok" after Claude's analysis doesn't make its
+    figures his. At most 40 words."""
     why = _his(fact, later, turns)
     if why:
         return why
@@ -644,6 +655,8 @@ def check(fact: dict, later: dict[int, str], turns: dict[int, str], said_on: str
         return "over 40 words"
     mine = "\n".join([words, asked])
     context, days, his = dates.numbers(mine) | spelled(mine), dates_said(words, said_on), f"{his}\n{asked}".lower()
+    if recent is not None:
+        context |= dates.numbers(recent.get(int(fact["line"]), ""))
     for m in dates.NUMBER.finditer(text):
         name = NAMED.search(text[:m.start()])
         named = name and not YEAR.fullmatch(m[0]) and not WHEN & set(name[0].lower().split("-")) and \
@@ -1163,14 +1176,17 @@ def file_session(domain: str, root: Path, path: Path, ask=None, dry_run: bool = 
                                               theory=th[3].replace("{upto}", str(upto)) if th else "", already="\n".join(already) or "nothing",
                                               record=record_context(domain, st, later, when, stands, p.prompts.get("record", ""))))
         parsed = reply_json(reply)
-        turns, his = turn_before(s), "\n".join(owners(s).values())
+        turns, recent, his = turn_before(s), turn_before(s, RECENT), "\n".join(owners(s).values())
         entries, lines, places = [], [], []
         for f in parsed.get("facts") or []:
             try:
                 line = int(f.get("line"))
             except (TypeError, ValueError):
                 line = -1
-            why = check(f, later, turns, when.get(line), his)
+            adopts = f.get("kind") in AGREED and f.get("kind") in kinds  # a plan or decision, where the record keeps them
+            if adopts and f.get("answering") and not verbatim.found(str(f["answering"]), turns.get(line, "")):
+                f = {k: v for k, v in f.items() if k != "answering"}  # a plan he adopts rests on no question: one not asked just before isn't kept
+            why = check(f, later, turns, when.get(line), his, recent if adopts else None)
             thing = now_mod.chain_for(st, str(f.get("entity") or "")) if cur.entity_kind and f.get("kind") == cur.entity_kind else None
             if not why and cur.entity_kind and f.get("kind") == cur.entity_kind:
                 why = entity_repeat(f, stands, cur, thing)

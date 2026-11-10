@@ -447,6 +447,14 @@ def test_the_question_he_answered_is_in_claudes_turn_just_before_his_words(env):
     assert why(3, "two", "How many tablets a day?", "Sam takes two tablets a day.") is None  # sent while Claude worked: same line
     assert why(9, "sure", "Shall I log the swelling as 4 mm?", "Sam's swelling was 4 mm.") is None  # asked after a skill's turn
     assert why(9, "sure", "Did you take 10mg of the tablets?", "Sam took 10mg.") == "question not in Claude's words"  # two turns back
+    # a plan he agrees to adopts amounts Claude gave in its last few turns; any other kind keeps to his words and the question
+    recent = capture.turn_before(s, capture.RECENT)
+    assert capture.turn_before(s, 1) == turns and all(recent[line].endswith(turn) for line, turn in turns.items())
+    adopts = lambda text, recent=recent: capture.check({"line": 9, "quote": "sure", "text": text}, later, turns, "2026-10-18", "", recent)
+    assert adopts("Sam will take 10mg of the tablets.") is None
+    assert adopts("Sam will take 30mg of the tablets.") == "number 30 not in the record"  # an amount Claude never gave
+    assert adopts("Sam will take 10mg of the tablets.", turns) == "number 10 not in the record"  # not in the turns handed in
+    assert adopts("Sam took 10mg of the tablets.", None) == "number 10 not in the record"  # any other kind: an "ok" doesn't make a figure his
 
 
 THEORY_TOML = TOML + """[links.theory]
@@ -1152,6 +1160,34 @@ def test_the_hourly_run_ends_with_the_index_read_and_a_domain_it_cant_read_isnt_
     with contextlib.closing(open_index(index_path("medical"), readonly=True)) as idx:
         mark = idx.db.execute("SELECT watermark FROM ingest_state WHERE source = 'repo-sections'").fetchone()[0]
     assert mark == ingest.state(config.load()["medical"])  # what it filed is in the index: no question has to read it first
+
+
+def test_a_plan_he_agrees_to_is_filed_with_claudes_amounts_and_any_other_kind_is_not(world):
+    repo = world["repo"]
+    agrees = lambda kind, **more: {"line": 3, "quote": "yes", "kind": kind, "date": "not-sure", "text": "Will take 10mg of the tablets.", **more}
+    filed = lambda *facts: run([], facts, dry_run=True)
+    assert [d["why"] for d in filed(agrees("plan"))["dropped"]] == ["number 10 not in the record"]  # a record that keeps no plans: as any kind
+    with store.Store(repo).transaction() as tx:  # the record keeps plans, so the filer may write one
+        tx.add({"title": "Rest the knee", "date": "2026-01-02", "kind": "plan", "about": ["series/_observations"]}, "- rest\n")
+    out = filed(agrees(["plan"]), ACHE[0])  # a kind that isn't a word is no plan, and never stops the session's other facts
+    assert [w["title"] for w in out["would_file"]] == ["The ache is better."] and [d["why"] for d in out["dropped"]] == ["number 10 not in the record"]
+    # Claude's last five turns before his words, and no further back
+    path = add_session(world, "s9", [x for n in range(1, 8) for x in (f"question {n}", f"Use {n}{n} units.")] + ["sure"], "2026-10-18T21:00:00Z")
+    s = capture._parse(path)
+    reach = lambda text: capture.check({"line": 15, "quote": "sure", "text": text}, capture.owners(s), capture.turn_before(s), "2026-10-18", "",
+                                       capture.turn_before(s, capture.RECENT))
+    assert reach("Will use 77 units.") is None and reach("Will use 33 units.") is None  # one turn back, and five
+    assert reach("Will use 22 units.") == "number 22 not in the record"  # six
+    path.unlink()
+    out = filed(agrees("plan"))
+    assert [w["title"] for w in out["would_file"]] == ["Will take 10mg of the tablets."] and not out["dropped"]
+    # what the reply says he answered is kept only when Claude asked it just before; a plan needs none
+    out = filed(agrees("plan", answering="Noted."))
+    assert len(out["would_file"]) == 1 and "answering" not in out["would_file"][0]["body"] and not out["dropped"]
+    assert "answering “Did you take 10mg" in filed(agrees("plan", answering="Did you take 10mg of the tablets yesterday?"))["would_file"][0]["body"]
+    assert [d["why"] for d in filed(agrees("plan", text="Will take 30mg of the tablets."))["dropped"]] == ["number 30 not in the record"]
+    assert [d["why"] for d in filed(agrees("observation"))["dropped"]] == ["number 10 not in the record"]
+    assert [d["why"] for d in filed(agrees("observation", answering="Noted."))["dropped"]] == ["question not in Claude's words"]
 
 
 def test_a_failed_commit_takes_back_its_entry_files(world):

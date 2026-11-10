@@ -1020,6 +1020,49 @@ def test_a_restart_or_a_changed_dose_is_not_a_repeat():
     assert dose("5 mg", "2.5 mg nightly") is None and dose("5 mg", "15 mg nightly") is None  # a new dose that reads inside the old one
 
 
+def test_a_later_occurrence_is_kept_unless_this_session_saved_the_document_that_states_it(tension):
+    from dataclasses import replace
+    from engram import ingest
+    repo = tension["repo"]
+    (repo / "reference").mkdir()
+    (repo / "reference/form.md").write_text("# Clinic form\n\n## Where is it stiff\n\nKnee stiffness, behind the kneecap.\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-qm", "form")
+    ingest.record("medical")
+    p = replace(pack.load("medical"), occurrence_kinds=frozenset({"symptom"}))
+    entries = [({"title": "Knee stiffness is back", "date": "2026-11-05", "kind": "symptom", "date_note": "reported"}, "- knee stiffness is back\n")]
+    judged = lambda where, saved=frozenset(): capture.verify("medical", store.Store(repo), entries, lambda prompt: (
+        json.dumps({"repeats": naming(where)(prompt)}), 0.0), p, saved)
+    for where in ("complaints/", "reference/form"):  # a page that lists another day, or says no day: a new occurrence is always filed
+        hit, kept, _ = judged(where)
+        assert not hit and list(kept) == [0], where
+    hit, kept, _ = judged("reference/form", {"reference/form.md"})  # the form this session filled in: the model's verdict stands
+    assert list(hit) == [0] and not kept
+    hit, kept, _ = judged("reference/form", {"reference/other.md"})  # it saved another file: this one is judged as any page
+    assert not hit and list(kept) == [0]
+    entries[0][0].pop("date_note")  # a day he gave: a new occurrence is filed, even written into the form this session saved
+    hit, kept, _ = judged("reference/form", {"reference/form.md"})
+    assert not hit and list(kept) == [0]
+    path = add_session(tension, "s5", ["fill in the clinic form"], "2026-11-05T21:00:00Z")
+    tool = lambda name, **inp: turn("assistant", [{"type": "tool_use", "name": name, "input": inp}], "2026-11-05T21:00:00Z")
+    with path.open("a") as f:
+        f.write("\n".join([tool("Write", file_path=f"{repo}/reference/form.md", content="x"), tool("Edit", file_path=f"{repo}/reference/form.md"),
+                           tool("Write", file_path="/tmp/elsewhere.md", content="x"), tool("Bash", command=f"cat {repo}/notes.md")]) + "\n")
+    assert capture.wrote(capture._parse(path), repo) == {"reference/form.md"}
+    # a form is a saved document with no written date anywhere in it; a brief dated only in its top section is no form
+    assert capture.forms(capture._parse(path), repo) == {"reference/form.md"}
+    brief = repo / "reference/planned.md"
+    brief.write_text("# Planned visit\n\n**Visit date:** 2026-11-12\n\n## What's active\n\nKnee stiffness is back.\n")
+    with path.open("a") as f:
+        f.write(tool("Write", file_path=str(brief), content="x") + "\n" + tool("Write", file_path=f"{repo}/reference/gone.md", content="x") + "\n")
+    assert capture.wrote(capture._parse(path), repo) == {"reference/form.md", "reference/planned.md", "reference/gone.md"}
+    assert capture.forms(capture._parse(path), repo) == {"reference/form.md"}  # nor is a file that isn't there any more
+    (repo / "reference/2026-11-form.md").write_text("# Form\n\nKnee stiffness.\n")
+    with path.open("a") as f:
+        f.write(tool("Edit", file_path=f"{repo}/reference/2026-11-form.md") + "\n")
+    assert capture.forms(capture._parse(path), repo) == {"reference/form.md"}  # a date in its name counts
+
+
 def test_same_occurrence_dates():
     same = capture.same_occurrence
     assert same({"date": "2026-11-05"}, [("2026-11-03", False)]) and not same({"date": "2026-11-05"}, [("2026-11-02", False)])

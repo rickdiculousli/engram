@@ -24,7 +24,9 @@ A new occurrence of a known symptom is always filed; code honours a repeat only 
 occurrence kind (symptom, observation, measurement, procedure, visit), the named record's own date, or a full date
 written in it (a complaint page listing past occurrences), must fall within 2 days of the candidate's (4 when either is
 approximate; a month-only date matches only that month); otherwise the candidate is kept as a new occurrence, whatever
-the model said. Interpretations, plans, decisions and beliefs stay repeats on any day.
+the model said, unless he gave it no date and the record named is in a document this same session saved that carries
+no written date anywhere (a form filled in from his answers). Interpretations, plans, decisions and beliefs stay repeats
+on any day.
 
 Theory changes: a theory's status changes, and a loop step or join becomes a theory link, only
 when the owner states it or agrees to it in conversation. The model is given the graph's ids and statuses; code files a
@@ -913,11 +915,39 @@ def repeat_hits(domain: str, st: store.Store, fm: dict, body: str) -> list[tuple
     return out
 
 
-def verify(domain: str, st: store.Store, entries: list[tuple[dict, str]], ask, p: pack.Pack = pack.NONE) -> tuple[dict[int, str], dict[int, str], float]:
+def wrote(s: sessions.Session, root: Path) -> set[str]:
+    """The record's files the session itself wrote or edited, by their path in the repo."""
+    out = set()
+    for x in s.exchanges:
+        for r in x.ran:
+            name, _, path = r.partition(": ")
+            if name in ("Write", "Edit", "MultiEdit") and Path(path).is_absolute() and Path(path).is_relative_to(root):
+                out.add(Path(path).relative_to(root).as_posix())
+    return out
+
+
+def forms(s: sessions.Session, root: Path) -> set[str]:
+    """The documents the session saved that carry no written date (YYYY-MM or YYYY-MM-DD) anywhere, in their name or
+    their text: a form filled in from his answers. Anything the advisor writes about a day (a visit brief, a log)
+    carries one somewhere, though not in every section."""
+    out = set()
+    for rel in wrote(s, root):
+        with contextlib.suppress(OSError):
+            if not dates.FIND.search(f"{rel}\n{(root / rel).read_text(errors='replace')}"):
+                out.add(rel)
+    return out
+
+
+def verify(domain: str, st: store.Store, entries: list[tuple[dict, str]], ask, p: pack.Pack = pack.NONE,
+           saved: set[str] = frozenset()) -> tuple[dict[int, str], dict[int, str], float]:
     """Which checked candidates (fm, body) the record already holds, in one call: {index: the ref that states it}; the
     ones the model called repeats that code keeps as new occurrences, {index: ref}; and the cost. A repeat must name a
     record that was shown under it, and for a dated occurrence kind a record about the same occurrence (same_occurrence);
-    with no date to tell occurrences apart, the model's verdict stands."""
+    with no date to tell occurrences apart, the model's verdict stands. It also stands for a candidate he gave no date
+    for (it's filed at the day he said it) against a form this same session saved (`saved`, from `forms`: a document
+    with no written date anywhere in it): an answer he gave into a form the advisor filled in. A dated candidate, or a
+    saved page that carries a date anywhere (a visit brief), is judged as any other, so a new occurrence written into
+    one is filed."""
     if not entries:
         return {}, {}, 0.0
     shown = [repeat_hits(domain, st, fm, body) for fm, body in entries]
@@ -938,7 +968,8 @@ def verify(domain: str, st: store.Store, entries: list[tuple[dict, str]], ask, p
         if ref not in held or n - 1 in hit:
             continue
         fm = entries[n - 1][0]
-        if fm.get("kind") in p.occurrence_kinds and fm.get("date") != "not-sure" and not same_occurrence(fm, held[ref]):
+        form = ref.split("#")[0] in saved and fm.get("date_note") == "reported"
+        if fm.get("kind") in p.occurrence_kinds and fm.get("date") != "not-sure" and not form and not same_occurrence(fm, held[ref]):
             kept.setdefault(n - 1, ref)
         else:
             hit[n - 1] = ref
@@ -1104,7 +1135,7 @@ def file_session(domain: str, root: Path, path: Path, ask=None, dry_run: bool = 
                 entries.append((placed(fm, where), body))
                 lines.append(line)
                 places.append((where, " ".join(str(f.get("quote", "")).split())))
-        repeats, kept, usd = verify(domain, st, entries, ask_verify, p)
+        repeats, kept, usd = verify(domain, st, entries, ask_verify, p, forms(s, root))
         res["usd"] += usd
         for i, ref in kept.items():
             if i not in repeats:

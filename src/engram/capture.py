@@ -942,6 +942,25 @@ def owned(item: dict, said_on: str, words: str, g, note: str) -> tuple[str, str]
     return g.things[tid].file, frontmatter.dump(fm) + f"# {name}\n\n{config.owner()}'s words, on {said_on}: “{' '.join(str(item['quote']).split())}”\n"
 
 
+SAYS = {"adopts": "provisional", "denies": "ruled out"}  # what he says of a suggestion -> its status; "agrees when
+# asked" is kept on it; "doubts" and "asks" change nothing
+
+
+def spoken(item: dict) -> tuple[dict | None, str]:
+    """A theory item in the form that reports what the owner says of a guide's suggestion (`on`, `says`) as the item
+    that does it: his own words for it adopt it, a denial rules it out, a yes when asked is kept on it (`agrees`); a
+    doubt or a question changes nothing, whatever status the reply also gives. Any other item as it is."""
+    if "says" not in item:
+        return item, ""
+    on, says = str(item.get("on") or ""), str(item.get("says") or "")
+    rest = {k: v for k, v in item.items() if k not in ("on", "says", "status", "agrees")}
+    if says in SAYS:
+        return {**rest, "status": {"id": on, "to": SAYS[says]}}, ""
+    if says == "agrees when asked":
+        return {**rest, "agrees": on}, ""
+    return None, f"{config.owner()} {says if says in ('doubts', 'asks') else 'says ' + repr(says)} of {on}: that changes nothing"
+
+
 def adopting(item: dict, g) -> bool:
     """A status that would make a guide's suggestion still proposed the owner's own."""
     st = item.get("status") if isinstance(item.get("status"), dict) else {}
@@ -1588,6 +1607,11 @@ def _file(domain: str, root: Path, path: Path, p: pack.Pack, s: sessions.Session
     for t in parsed.get("theory") or []:
         if not isinstance(t, dict):
             continue
+        said, why = spoken(t)
+        if why:
+            res["dropped"].append({"session": path.stem[:8], "line": t.get("line"), "why": why, "text": str(t.get("quote", ""))[:120]})
+            continue
+        t = said
         why = check_theory(t, later, turns, *th[:3], note=note["fm"]["id"] if note else "") if th else "the record has no theory graph"
         if why:
             res["dropped"].append({"session": path.stem[:8], "line": t.get("line"), "why": why, "text": str(t.get("quote", ""))[:120]})

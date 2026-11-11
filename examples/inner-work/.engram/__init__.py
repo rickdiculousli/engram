@@ -131,14 +131,15 @@ said again, give "suggestions": [{{"line": <Claude's line>, "quote": <Claude's w
 idea the theory above already holds as the guide's suggestion, offered again in any words, takes that thing's own id:
 it's the same suggestion, said again. A different idea about the same part or belief is a new one, with a new id.
 
-What {owner} says after line {upto} about one of the guide's suggestions above goes under "theory", with his line and
-his words:
-- he says the idea himself, as his own (in his words, with his own name for it, even grudgingly): "status":
-  {{"id": <its id>, "to": "provisional"}}, his words that say it as "quote";
-- he says no to it, or that it isn't him: "status": {{"id": <its id>, "to": "ruled out"}};
-- he says yes, maybe or could be when Claude asks about it ("yeah", "I guess", "could be"): "agrees": <its id>, with
-  "answering": Claude's question, copied exactly. That isn't his own words for it.
-Asking about one, wondering, being unsure, or planning to watch for it changes nothing: give nothing for it."""
+For each line after {upto} where {owner} speaks of one of the guide's suggestions above, give under "theory":
+{{"line": <his line>, "quote": <his words, copied exactly>, "on": <its id>, "says": what he does with it, one of:
+- "adopts": he says the idea himself, as his own: in his own words, with his own name for it, even grudgingly;
+- "denies": he says it isn't so: no, it isn't him, he doesn't have it;
+- "agrees when asked": yes, maybe or could be to Claude's question about it, with "answering": Claude's question, copied
+  exactly;
+- "doubts": he isn't sure, doesn't know, finds it odd or made up, will see or watch for it;
+- "asks": he asks what it is, whether it's real, where it came from.}}
+Doubting or asking is not denying. Only "adopts" makes it his, and only "denies" rules it out."""
 
 STATED = """When {owner} says something about himself ("I'm a burden"), give it as a fact of kind {kind} and, under
 "beliefs", every belief below it expresses, by meaning, not by shared words ("loose": true when the fit is partial). If

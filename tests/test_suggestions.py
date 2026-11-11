@@ -335,3 +335,19 @@ def test_a_suggestion_may_name_the_line_of_the_message_the_guide_answered(inner)
     suggested(w, {**KEEPS, "id": "part/adds-it-up", "name": "adds it up", "line": KEEPS["line"] - 1,
                   "quote": "adding up every time you didn't speak"})
     assert theory.load(w.repo).things["part/adds-it-up"].by == "claude-suggestion"
+
+
+def test_what_he_says_of_a_suggestion_decides_and_a_doubt_rules_nothing_out(inner):
+    w = inner()
+    w.chat(5)
+    words = "no, that's not it."
+    doubt = {"line": line_of(5, words), "quote": words, "on": "belief/on-the-outside", "says": "doubts",
+             "status": {"id": "belief/on-the-outside", "to": "ruled out"}}  # the reply's status doesn't stand against its doubt
+    out = w.run(Model({"theory": [doubt]}))
+    assert theory.load(w.repo).status["belief/on-the-outside"][0] == "proposed"
+    assert [d for d in out["dropped"] if "doubts of belief/on-the-outside" in d["why"]]
+    w.chat(7, lines=made(7, "2026-11-14T04:00:00", [("O", "I'm not on the outside, that isn't it."), ("G", "Ok.")]))
+    w.run(Model({"theory": [{"line": 1, "quote": "I'm not on the outside, that isn't it.", "on": "belief/on-the-outside",
+                             "says": "denies"}]}), now=LATER + timedelta(hours=1))
+    g = theory.load(w.repo)
+    assert g.status["belief/on-the-outside"][0] == "ruled out" and "ruled out by Sam" in theory.who(g, "belief/on-the-outside")

@@ -26,11 +26,26 @@ M2 = {"chat": [{"line": 1, "who": "owner", "text": "Is there really a part of me
 KEPT = {"by": "claude-suggestion", "status": "proposed", "said": "", "on_it": [], "made": []}
 
 
-def test_m2_is_wrong_once_the_suggestion_isnt_proposed_and_marks_one_made_his():
+def test_m2_is_wrong_once_the_suggestion_is_made_his():
     adopt = {"theory": [{"line": 1, "quote": "a part of me that keeps score", "status": {"id": SUG["id"], "to": "provisional"}}]}
     got = checks.judge_m2(M2, adopt, {**KEPT, "status": "provisional"})
     assert got["wrong"] is True and got["his"] is True
-    assert checks.judge_m2(M2, {}, KEPT) == {"wrong": False, "his": False, "held": KEPT, "gave": []}
+    assert checks.judge_m2(M2, {"theory": [{"line": 1, "on": SUG["id"], "says": "adopts"}]}, KEPT)["wrong"] is True
+    assert checks.judge_m2(M2, {}, KEPT)["wrong"] is False
+
+
+def said(*lines: str) -> dict:
+    return {"chat": [{"line": n, "who": "owner", "text": t} for n, t in enumerate(lines, 1)], "expect": SUG}
+
+
+def test_m2_lets_a_plain_denial_be_ruled_out_and_holds_an_ask_or_a_doubt_to_proposed():
+    out = {**KEPT, "status": "ruled out"}
+    for denied in [said("I don't keep score. I remember who showed up."), said("No. That's not a belief."), said("Sure.", "Not a keeper.")]:
+        assert checks.denial(denied) and checks.judge_m2(denied, {}, out)["wrong"] is False
+    for doubted in [M2, said("Where did that come from?", "I don't know about that. I just like fixing things."), said("maybe?"),
+                    said("You might be right, I just don't see it yet."), said("Not sure yet.")]:
+        assert not checks.denial(doubted) and checks.judge_m2(doubted, {}, out)["wrong"] is True
+        assert checks.judge_m2(doubted, {}, KEPT)["wrong"] is False
 
 
 M8 = {"context": {"suggestion": SUG}, "chats": [{"chat": []}, {"chat": [{"line": 1, "who": "owner", "text": "Marcus paid."},

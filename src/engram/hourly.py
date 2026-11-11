@@ -248,14 +248,21 @@ def fit(picture: str, room: int) -> str:
 
 def last_chat(root: Path, current: str) -> Path | None:
     """The repo's most recent chat file but the one starting (or resuming, or being compacted), by when it was last
-    written, read off the folder alone; an excluded chat is never it."""
+    written, read off the folder alone; an excluded chat is never it. None when that one is no session of the owner's:
+    an agent's (`sessions.by_agent`, a delegate's or an executor's in the repo or a worktree of it) or one the
+    sessions state skips. Why not the one before it: chat start reads one chat file at most."""
     if not sessions.ROOT.is_dir():
         return None
     name = re.compile(rf"-{re.escape(sessions._dashed(root.name))}(-|$)")
     skip = [current, *map(str, sessions._kept(root).get("exclude", []))]
     chats = [p for d in sessions.ROOT.iterdir() if d.is_dir() and name.search(d.name) for p in d.glob("*.jsonl")
              if p.stem != current and not any(x and p.stem.startswith(x) for x in skip)]
-    return max(chats, key=lambda p: p.stat().st_mtime_ns, default=None)
+    p = max(chats, key=lambda p: p.stat().st_mtime_ns, default=None)
+    if p is None:
+        return None
+    with contextlib.closing(sessions._state()) as st:
+        skipped = (st.execute("SELECT domain FROM file WHERE path = ?", (str(p),)).fetchone() or ("",))[0] == "skipped"
+    return None if skipped or sessions.by_agent(sessions.parse(p, sessions.ROOT)) else p
 
 
 def last_session(root: Path, current: str) -> list[str]:

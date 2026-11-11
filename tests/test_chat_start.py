@@ -120,6 +120,28 @@ def test_70_chat_start_calls_no_model_and_no_network_and_reads_only_the_latest_e
     assert set(read + parsed) == {str(w["chats"] / f"{chat_id(3)}.jsonl")}
 
 
+@pytest.mark.parametrize("opener", ["Act as the reviewer sub-agent for this task. Review the last commit.",
+                                    "You are executor inner-work/fix-1 in buildermesh. Build the piece."])
+def test_an_agents_chat_in_a_worktree_of_the_record_is_never_the_unsaved_last_session(inner, monkeypatch, opener):
+    """A delegate or an executor at work in the record, or in one of its worktrees, is no session of his."""
+    w = inner(3)
+    on_day(monkeypatch, datetime(2026, 11, 9, 16, 12, tzinfo=timezone.utc))
+    tree = w["tmp"] / "projects/-home-sam--bmesh-worktrees-inner-work-fix-1"
+    tree.mkdir()
+    (tree / f"{chat_id(20)}.jsonl").write_text("\n".join(made(20, "2026-11-09T16:05:00", [("O", opener), ("G", "Done.")])) + "\n")
+    assert not [l for l in start(w).splitlines() if UNSAVED.search(l)]
+
+
+def test_a_chat_marked_skipped_is_never_the_unsaved_last_session(inner, monkeypatch):
+    w = inner(3)
+    on_day(monkeypatch, datetime(2026, 11, 9, 16, 12, tzinfo=timezone.utc))
+    path = w["chats"] / f"{chat_id(3)}.jsonl"
+    with sessions._state() as st:
+        st.execute("INSERT INTO file (path, bytes, mtime_ns, domain, exchanges, docs, seen) VALUES (?, ?, ?, 'skipped', 0, 0, '')",
+                   (str(path), path.stat().st_size, path.stat().st_mtime_ns))
+    assert not [l for l in start(w).splitlines() if UNSAVED.search(l)]
+
+
 def test_71_in_a_repo_with_no_notes_the_start_text_is_unchanged(inner):
     """True today: chat start prints the Bash window's line and `engram now`."""
     w = inner()

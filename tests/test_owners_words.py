@@ -96,3 +96,11 @@ def test_stored_summaries_stay_current_with_no_call(world, monkeypatch, server):
     out = summarize.run()
     assert (out["current"], out["summarized"]) == (1, 0)
     assert made["shas"] == SHAS
+
+
+@pytest.mark.parametrize("quote, words, found", [("no", "I know", False), ("mm", "summer", False), ("I know", "well, I know.", True),
+                                                 ("chest. tight.", "chest. tight.", True), ("no", "no, not that", True)])
+def test_a_quote_of_his_words_is_whole_words(quote, words, found):
+    """The one quote check the filer and the summaries' lint share."""
+    assert capture.verbatim.found(quote, words) is found
+    assert summarize._within(quote, words) is found

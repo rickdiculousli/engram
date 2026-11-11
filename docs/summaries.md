@@ -51,7 +51,7 @@ They make what was said findable even when the owner's wording, the advisor's an
 - **Attribution is described, then derived.** The model never picks `by` for a claim. It gives `relayed_from` ("own", or the source being passed on) and `act` (report, finding, analysis, advice, plan, question, record); code works out who said it from where the evidence sits, moves record notes to `filed` and questions to `open`, and rejects Claude's suggestion where the owner raised the idea first (`raised_first_at`, with the words that raised it). The prompt carries paired examples, made up rather than taken from the owner's sessions, at each boundary where errors happened. An area's own rules come from its pack (`summary_rules`), under their own version.
 - **Lint** (code, not a model). A summary that fails is retried once with the errors; items that still fail are dropped and listed with the summary, and the rest stands. A summary that still fails (its shape or its tenor) is flagged: `engram health` lists it. The checks:
   - Every claim has `by`, `basis` and a source line; its `confidence` is a substring of the source or a record status.
-  - Every quote, intensity and `when_said` phrase is an exact substring of its source line; a paraphrase is never in quotation marks.
+  - Every quote, intensity and `when_said` phrase is in its source line exactly, as whole words; a paraphrase is never in quotation marks.
   - Every item cites a line inside its part, and carries an evidence phrase copied from that turn, in the words of the person it credits.
   - `start` and `end` equal the timestamps of the first and last source turns.
   - No date appears that isn't in the source.

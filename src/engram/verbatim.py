@@ -1,4 +1,5 @@
-"""The filer's word-for-word check: a quote counts when its text, read as a quote is matched, is inside what it cites."""
+"""The word-for-word check every quote of the owner's goes through: a quote counts when its text, read as a quote is
+matched, is inside what it cites as whole words."""
 import re
 
 DASHES = re.compile(r"\s*[-‐-―−]\s*")
@@ -15,4 +16,17 @@ def norm(s: str) -> str:
 
 def found(quote: str, text: str) -> bool:
     """The quote is in the text word for word, as `norm` reads both."""
-    return norm(quote) in norm(text)
+    return inside(norm(quote), norm(text))
+
+
+def inside(part: str, whole: str) -> bool:
+    """`part` is in `whole` as whole words: where it starts or ends with a letter or digit, the text beside it there
+    isn't one. Why: "no" is no quote of "I know", nor "mm" of "summer"."""
+    i = whole.find(part)
+    while i >= 0:
+        j = i + len(part)
+        if not (part[:1].isalnum() and i and whole[i - 1].isalnum()) and \
+                not (part[-1:].isalnum() and j < len(whole) and whole[j].isalnum()):
+            return True
+        i = whole.find(part, i + 1)
+    return False

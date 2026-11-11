@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from engram import config, daily, dates, llm, pack
+from engram import config, daily, dates, llm, pack, verbatim
 from engram.index import Doc, now, open_index
 from engram.paths import data_path, index_path
 from engram.sources import sessions
@@ -181,7 +181,7 @@ def _n(s: str) -> str:
 
 
 def _within(part: str, whole: str) -> bool:
-    return _n(part).lower() in _n(whole).lower()
+    return verbatim.inside(_n(part).lower(), _n(whole).lower())
 
 
 def _part_end() -> str:

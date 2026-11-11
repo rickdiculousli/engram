@@ -66,7 +66,7 @@ def test_61_a_practice_with_a_five_word_name_is_found_by_that_name(inner):
 def started(w, origin: str | None):
     w.chat(6, lines=made(6, "2026-11-13T04:00:00", [("O", "I started doing box breathing before work."), ("G", "Good.")]))
     fact = {"line": 1, "quote": "I started doing box breathing before work.", "text": "Sam started box breathing before work.",
-            "date": "not-sure", "kind": "practice", "entity": "box breathing", "status": "started", "note": "before work",
+            "date": "not-sure", "kind": "practice", "entity": "box breathing", "status": "started", "routine": "before work",
             **({"origin": origin} if origin else {})}
     return w.run(Model({"facts": [fact]}))
 

@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from engram import config
+from engram import config, store
 from engram.index import Doc  # a pack's reader gives the index's own records
 from engram.paths import DIR, HOOKS, PAGE, RECORD_TOML, SPECS, data_path
 
@@ -62,6 +62,11 @@ class Current:
     ahead_dir: str = ""  # a folder whose documents are named by a date ahead
     team: tuple[str, str] = ("", "")  # the `by:` prefix of the people the owner sees, and what the picture calls them
     name_forms: Callable[[str], list[set[str]]] | None = None  # an entity's name, its forms strictest first
+
+    def __post_init__(self):
+        """A detail named like a field engram writes is refused: engram's value would overwrite it, or it engram's."""
+        if self.detail in store.WRITTEN:
+            raise ValueError(f"the detail field “{self.detail}” is one engram writes on an entry: name it something else")
 
 
 @dataclass

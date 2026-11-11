@@ -178,6 +178,32 @@ def test_27_a_themes_history_shows_the_session_once_as_its_note_with_its_entries
     assert not [r for r in got if r is not shown[0] and practice.id in json.dumps(r)]
 
 
+def test_a_practice_filed_beside_a_note_keeps_its_own_detail(inner):
+    """The pack's detail field is the practice's own: the note it was filed beside goes in engram's field, never over it."""
+    from datetime import date
+    from engram import now as now_mod, pack, store
+    w = inner()
+    w.chat(1, upto=40)
+    detail = pack.load(D).current.detail
+    reply = chat1_note()
+    reply["facts"] = [fact(1, "yes, once a day.", "Sam will practise saying the sentence once a day.", kind="practice",
+                           entity="say the sentence at dinner", status="started", answering=answering(1, "yes, once a day."),
+                           origin="insight/quiet-kept-me-safe", **{detail: "once a day, before dinner"})]
+    w.run(Model(reply))
+    [practice] = w.mine()
+    assert practice.fm.get(detail) == "once a day, before dinner" and practice.fm.get("note") == one_note(w)["fm"]["id"]
+    assert set(practice.fm) - {detail} <= store.WRITTEN  # every other field is one engram writes: none a pack may name
+    line = next(l for l in now_mod.text(w.repo, date(2026, 11, 5)).splitlines() if "say the sentence at dinner" in l)
+    assert "once a day, before dinner" in line
+
+
+@pytest.mark.parametrize("name", ["note", "status", "title", "thing", "entity"])
+def test_a_pack_detail_named_like_a_field_engram_writes_is_refused(name):
+    from engram import pack
+    with pytest.raises(ValueError, match=name):
+        pack.Current(entity_kind="practice", detail=name)
+
+
 def test_28_a_correction_to_what_only_a_note_holds_shows_with_it(inner):
     w = inner()
     w.chat(1, upto=40)

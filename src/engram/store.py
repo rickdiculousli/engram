@@ -20,6 +20,10 @@ LINKS = "links.jsonl"  # every link, one per line (the owner: one file, not ~2,2
 DOCS = "docs.jsonl"  # documents' stable ids and their linked headings' anchors (engram.docreg), appended to only
 ORDER = ["id", "title", "heading", "date", "date_note", "reported", "approx", "recorded", "domain", "kind", "about", "by",
          "confidence", "section", "source", "author", "supersedes"]
+WRITTEN = frozenset(ORDER) | {  # every field engram itself writes on an entry, a link or a note: none a pack's to name
+    "entity", "status", "reason", "thing", "edits", "note", "corrects", "as_said", "landmark", "range_from", "range_to",
+    "aliases", "from", "to", "rel", "family", "strength", "since", "loop", "step", "chat", "start", "lines", "follows",
+    "continues"}
 
 
 def lock_file(root: Path) -> Path:

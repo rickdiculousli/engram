@@ -166,7 +166,7 @@ pack = Pack(
              "correct_confirm": CORRECT_CONFIRM,
              "note": NOTE, "suggest": SUGGEST, "stated": STATED, "regroup": REGROUP},
     kinds=("observation", "practice", "stated-belief", "plan"),
-    current=Current(entity_kind="practice", entity_prefix="practice", detail="note",
+    current=Current(entity_kind="practice", entity_prefix="practice", detail="routine",
                     statuses=("started", "carried", "paused", "retired"), group="practices", threads={"person": "people"},
                     sections=("practices", "people", "stopped")),
     read={"gym": read_gym},

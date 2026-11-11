@@ -12,7 +12,7 @@ from engram.config import Domain
 from engram.paths import record_toml
 from engram.store import Store
 
-FAMILIES = ("timeline", "evidence")
+FAMILIES = ("timeline", "evidence", "moment")  # moment: a record's own link kinds to its theory (relink.kinds)
 WITH_NOTE = "with-note"  # a note -> an entry filed beside it, read from the entry's `note`
 
 
@@ -104,6 +104,6 @@ def sync(idx, d: Domain) -> int:
         first.setdefault(r.split("#", 1)[0], r)
     rows = links(d, refs, first)
     with idx.db:
-        idx.db.execute("DELETE FROM link WHERE family IN ('timeline', 'evidence')")
+        idx.db.execute(f"DELETE FROM link WHERE family IN {FAMILIES}")
         idx.db.executemany("INSERT INTO link (from_ref, to_ref, family, rel, story, event, note) VALUES (?, ?, ?, ?, ?, ?, ?)", rows)
     return len(rows)

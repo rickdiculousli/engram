@@ -51,28 +51,42 @@ create = ["theme", "person", "event"]
 
 [theory.kinds.belief]  # the record's own theory kinds, beside node, state and loop
 folder = "theory/beliefs"
-links = ["showed-up", "set-off-by", "did-differently", "didnt-fit", "eased"]  # change 9, not yet read: the moment kinds that may point at it
 [theory.kinds.part]
 folder = "theory/parts"
-links = ["showed-up", "set-off-by", "did-differently", "eased"]  # change 9, not yet read
 [theory.kinds.insight]
 folder = "theory/insights"
-links = ["did-differently", "eased"]  # change 9, not yet read
 stages = ["noticed", "trying", "living it"]  # how far along the change is, beside how sure it is
 needs_note = true  # one is added only from a session with a note, which it names
 
 [suggestions]  # the guide's ideas, kept as the guide's where the pack has `suggest` words
 quiet_days = 30  # one the owner hasn't spoken of for this long leaves the picture a chat starts with
 
-# ---- Not yet read by engram: the inner-work settings ----
-
-[links.moment]  # change 9: how a moment links to the theory, in place of strengthens and weakens
-rels = ["showed-up", "set-off-by", "did-differently", "didnt-fit", "eased"]
-labels = {showed-up = "showed up", set-off-by = "set off by", did-differently = "did differently", didnt-fit = "didn't fit", eased = "eased"}
-owner_words = ["eased"]  # only on a passage of the owner's own words
-skip_by = ["claude-suggestion"]  # never sent to the linking job
-skip_kinds = ["status", "practice"]
+[links.moment]  # change 9: how a moment links to the theory, in place of strengthens and weakens; one way, the first that fits
+skip_kinds = ["practice"]  # never sent to the linking job; the guide's suggestions never are
 hourly = true  # the linking job runs in the hourly job, whatever [refine] says
+[links.moment.rels.showed-up]
+label = "showed up"
+means = "the belief, loop or part was active in this moment, whatever set it off"
+to = ["belief", "part", "loop"]
+[links.moment.rels.set-off-by]
+label = "set off by"
+means = "this moment set it off, and it isn't itself active here: what happened before it showed up"
+to = ["belief", "part", "loop"]
+[links.moment.rels.did-differently]
+label = "did differently"
+means = "Sam stepped out of the old pattern here"
+to = ["belief", "part", "loop", "insight"]
+[links.moment.rels.didnt-fit]
+label = "didn't fit"
+means = "what happened is not what the belief expects"
+to = ["belief"]
+[links.moment.rels.eased]
+label = "eased"
+means = "its grip loosened, as Sam says himself"
+to = ["belief", "part", "loop", "insight"]
+owner_words = true  # only on a passage of Sam's own words
+
+# ---- Not yet read by engram: the inner-work settings ----
 
 [app]  # change 10: what the pack's `gym` reader passes as the owner's own words
 kind = "practice-note"

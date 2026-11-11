@@ -400,10 +400,13 @@ def _theory(db, num: dict[str, int], domain: str | None = None, then: str | None
     a row strengthens or weakens, with its status, how many rows support it and which weaken it, most-cited first;
     `engram timeline <node>` gives a node's own history. A discovery or pattern file is one node; any other target
     section is its own. Then the loops the question touches, each with its path drawn (unrelated loops stay out), and
-    the joins among what's shown; `engram theory` prints the whole graph."""
-    from engram import config, theory as th
+    the joins among what's shown; `engram theory` prints the whole graph. In a record with its own link kinds
+    (`relink.kinds`), a thing shown carries its moments instead of for and against (`_moments`)."""
+    from engram import config, relink, theory as th
     repo = config.load()[domain].repo if domain else None
     g = th.load(repo) if repo and record_toml(repo).exists() else th.Graph({}, [], {})
+    kinds = relink.kinds(repo) if repo and record_toml(repo).exists() else relink.EVIDENCE
+    moments = (lambda t: {}) if kinds.family == relink.EVIDENCE.family else lambda t: _moments(db, g, t, kinds)
     by_file = {t.file: t for t in g.things.values() if t.file}
     nodes: dict[str, dict] = {}
     loop_ev: dict[str, dict[str, set]] = {}
@@ -464,8 +467,8 @@ def _theory(db, num: dict[str, int], domain: str | None = None, then: str | None
         nid = db.execute("SELECT nid FROM doc WHERE ref = ? OR parent = ? LIMIT 1", (doc, doc)).fetchone() if doc else None
         ev = loop_ev.get(l, {"for": set(), "against": set()})
         row = {"theory": g.things[l].short, "status": g.status.get(l, ("",))[0],
-               "what": f"{g.things[l].title.split(' — ', 1)[-1]}: {g.draw(l)}", "for": len(ev["for"]),
-               "against": sorted(ev["against"]) if len(ev["against"]) <= 10 else len(ev["against"]),
+               "what": f"{g.things[l].title.split(' — ', 1)[-1]}: {g.draw(l)}",
+               **(moments(l) or {"for": len(ev["for"]), "against": sorted(ev["against"]) if len(ev["against"]) <= 10 else len(ev["against"])}),
                "id": nid[0] if nid else "", "_refs": [doc] if doc else []}
         out.append({k: v for k, v in row.items() if v != [] or k == "_refs"})
         shown |= {l, *g.path(l)}
@@ -473,8 +476,8 @@ def _theory(db, num: dict[str, int], domain: str | None = None, then: str | None
         doc = th.node_doc(g, t, refs_of(t))                               # its status, its stage and whose it is
         nid = db.execute("SELECT nid FROM doc WHERE ref = ? OR parent = ? LIMIT 1", (doc, doc)).fetchone() if doc else None
         what = "; ".join(x for x in (g.stage.get(t, ("",))[0], th.who(g, t)) if x) or g.things[t].title
-        out.append({"theory": g.things[t].short, "status": g.status.get(t, ("",))[0], "what": what, "id": nid[0] if nid else "",
-                    "_refs": [doc] if doc else []})
+        out.append({"theory": g.things[t].short, "status": g.status.get(t, ("",))[0], "what": what, **moments(t),
+                    "id": nid[0] if nid else "", "_refs": [doc] if doc else []})
         shown.add(t)
     cited = [t for t in cited_order if t.startswith(("discovery/", "pattern/"))]
     focus = set(loops) | named | set(cited[:JOIN_FOCUS])  # the joins on what the answer leans on most
@@ -493,6 +496,25 @@ def _theory(db, num: dict[str, int], domain: str | None = None, then: str | None
         out.append({"theory": "join", "status": e.strength, "what": f"{g.label(e.a)} → {to}, {e.rel}: {e.note}",
                     "id": nid[0] if nid else "", "_refs": [e.entry] if e.entry else []})
     return out
+
+
+def _moments(db, g, thing: str, kinds) -> dict:
+    """A theory thing's linked moments, grouped by the record's link kinds in their order: a count per kind's label,
+    and each moment with its date, headline and record, oldest first. Never for or against: a moment says what
+    happened, not whether a belief is true. Empty when it has none."""
+    file = g.things[thing].file if thing in g.things else ""
+    got: dict[str, list] = {}
+    for frm, rel in db.execute("SELECT DISTINCT from_ref, rel FROM link WHERE family = ? AND (to_ref = ? OR to_ref = ? OR "
+                               "to_ref LIKE ?)", (kinds.family, thing, file, f"{file}#%" if file else thing)):
+        d = db.execute("SELECT title, date FROM doc WHERE ref = ? OR parent = ? ORDER BY rowid LIMIT 1", (frm, frm)).fetchone()
+        words = _what(d[0], frm, d[1]).split() if d else [frm]
+        got.setdefault(rel, []).append((d[1] if d and d[1] else "", " ".join(words[:HEADLINE]) + ("…" if len(words) > HEADLINE else ""), frm))
+    order = [r for r in kinds.rels if r in got]
+    if not order:
+        return {}
+    label = lambda r: kinds.rels[r].label
+    return {**{label(r): len(got[r]) for r in order},
+            "moments": [f"{label(r)} {day or 'undated'}: {what} [{frm.removesuffix('#')}]" for r in order for day, what, frm in sorted(got[r])]}
 
 
 def fit(header: dict, rows: list[dict], room: int, fmt: str = "jsonl") -> tuple[dict, list[dict]]:
@@ -545,7 +567,10 @@ def render(header: dict, rows: list[dict], fmt: str = "jsonl") -> str:
         lines = [json.dumps(header, ensure_ascii=False, separators=(",", ":"))] + (["\t".join(cols)] if rows else [])
         lines += ["\t".join(cell(r.get(c, "")) for c in cols) for r in rows]
         if theory:
-            tcols = ["theory", "status"] + (["then"] if any("then" in r for r in theory) else []) + ["what", "for", "against", "id"]
+            counts = [] if not any("moments" in r for r in theory) else list(dict.fromkeys(  # a record's own link kinds
+                k for r in theory for k, v in r.items() if isinstance(v, int) and k not in ("for", "against")))
+            tcols = ["theory", "status"] + (["then"] if any("then" in r for r in theory) else []) + ["what"] + \
+                (counts + ["moments"] if counts else ["for", "against"]) + ["id"]
             lines += ["", "\t".join(tcols)] + ["\t".join(cell(r.get(c, "")) for c in tcols) for r in theory]
         return "\n".join(lines)
     return "\n".join(json.dumps({k: v for k, v in x.items() if not k.startswith("_")}, ensure_ascii=False, separators=(",", ":"))

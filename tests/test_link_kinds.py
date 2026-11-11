@@ -2,14 +2,14 @@
 links are family `moment`, with the rels `[links.moment]` names; a history counts an item's moments by kind."""
 import json
 import re
+from datetime import timedelta
 
 import pytest
 
 from engram import ingest, relink, store, timeline
-from inner_work import D, Model, add, chat1_note, inner, said, zone  # noqa: F401  (fixtures)
+from inner_work import D, LATER, Model, add, chat1_note, inner, said, zone  # noqa: F401  (fixtures)
 from test_theorychange import rec  # noqa: F401  (a fixture: the made-up medical record)
 
-NOT_YET = "change 9: the linking job knows only strengthens and weakens, on loops and Discoveries"
 NOBODY = "nobody likes me, I know it."
 CLIMB = "they asked me to come again next week, the climbing group."
 
@@ -32,8 +32,6 @@ def history(item: str) -> str:
     return timeline.render(*timeline.chain(D, item))
 
 
-@pytest.mark.xfail(strict=True, reason="change 9: strengthens is refused only because a belief isn't a target, not because the "
-                                       "repo has no such kind")
 def test_72_strengthens_is_rejected_where_the_repo_has_no_such_kind(inner):
     w = inner()
     e = moment(w, NOBODY)
@@ -41,7 +39,6 @@ def test_72_strengthens_is_rejected_where_the_repo_has_no_such_kind(inner):
     assert [d for d in out["dropped"] if "strengthens" in d["why"]]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 def test_73_nobody_likes_me_is_linked_as_the_belief_showing_up_and_never_as_for_or_against(inner):
     w = inner()
     e = moment(w, NOBODY)
@@ -52,7 +49,6 @@ def test_73_nobody_likes_me_is_linked_as_the_belief_showing_up_and_never_as_for_
     assert '"for"' not in text and '"against"' not in text
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 def test_74_being_asked_back_is_linked_and_listed_as_not_fitting_the_belief(inner):
     w = inner()
     e = moment(w, CLIMB)
@@ -61,7 +57,6 @@ def test_74_being_asked_back_is_linked_and_listed_as_not_fitting_the_belief(inne
     assert "didn't fit" in history("belief/unlikable")
 
 
-@pytest.mark.xfail(strict=True, reason="change 9: no link kind needs the owner's own words behind it")
 def test_75_eased_on_a_line_that_isnt_his_is_rejected(inner):
     w = inner()
     e = add(w, {"title": "mm, to whether it felt lighter", "date": "2026-11-03", "kind": "observation", "about": [], "by": "sam"},
@@ -70,7 +65,6 @@ def test_75_eased_on_a_line_that_isnt_his_is_rejected(inner):
     assert [d for d in out["dropped"] if "Sam" in d["why"]]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 def test_76_a_kind_on_a_theory_kind_it_isnt_allowed_for_is_rejected(inner):
     w = inner()
     e = moment(w, CLIMB)
@@ -78,7 +72,6 @@ def test_76_a_kind_on_a_theory_kind_it_isnt_allowed_for_is_rejected(inner):
     assert [d for d in out["dropped"] if "didnt-fit" in d["why"] and "part" in d["why"]]
 
 
-@pytest.mark.xfail(strict=True, reason="change 9: a history counts only for and against")
 def test_77_a_beliefs_history_groups_its_moments_by_kind_each_dated_with_a_count_per_kind(inner):
     w = inner()
     links = [(moment(w, "nobody texted back", "2026-11-01"), "showed-up"), (moment(w, NOBODY, "2026-11-07"), "showed-up"),
@@ -86,13 +79,12 @@ def test_77_a_beliefs_history_groups_its_moments_by_kind_each_dated_with_a_count
     for e, rel in links:
         add(w, {"title": f"{rel} I'm unlikable", "date": "2026-11-09", "kind": "link", "family": "moment", "rel": rel, "from": e,
                 "to": "belief/unlikable", "about": ["belief/unlikable"], "by": "claude", "author": "engram-sweep"}, "")
-    text = history("belief/unlikable")
-    assert re.search(r'"showed up": 2\b', text) and re.search(r'"didn\'t fit": 1\b', text)
+    text = history("belief/unlikable")  # a history prints compact JSON: no space after a colon
+    assert re.search(r'"showed up": ?2\b', text) and re.search(r'"didn\'t fit": ?1\b', text)
     for day in ("2026-11-01", "2026-11-07", "2026-11-08"):
         assert day in text
 
 
-@pytest.mark.xfail(strict=True, reason="change 9: the linking job reads every entry, whoever said it")
 def test_78_an_entry_labelled_as_the_guides_suggestion_is_never_sent_to_the_linking_job(inner):
     w = inner()
     moment(w, NOBODY)
@@ -103,7 +95,6 @@ def test_78_an_entry_labelled_as_the_guides_suggestion_is_never_sent_to_the_link
     assert NOBODY in sent and "keeps score" not in sent
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET + "; it needs change 4's note")
 def test_79_inside_a_note_only_his_lines_can_be_the_passage_of_a_link(inner):
     w = inner()
     w.chat(1, upto=40)
@@ -117,7 +108,6 @@ def test_79_inside_a_note_only_his_lines_can_be_the_passage_of_a_link(inner):
     assert [d for d in out["dropped"] if "Sam" in d["why"]]
 
 
-@pytest.mark.xfail(strict=True, reason="change 9: the linking job runs only in the weekly pass, which is paused here")
 def test_80_the_linking_job_runs_hourly_while_the_weekly_pass_is_paused_and_a_look_back_relinks_one_item(inner):
     w = inner()
     e = moment(w, NOBODY)
@@ -202,3 +192,110 @@ def test_82_the_medical_record_sends_the_same_records_keeps_strengthens_and_weak
     _, rows = timeline.chain("medical", "loop/1")
     [loop] = [r for r in rows if r.get("theory") == "Loop 1"]
     assert "for" in loop
+
+
+# The rules change 9's code adds beside the spec's tests: each its own test.
+
+LOOSENS = "it loosens a bit. not all the way."
+
+
+def test_a_kind_that_needs_his_words_is_kept_on_his_own_words(inner):
+    w = inner()
+    e = moment(w, LOOSENS)
+    out, _ = sweep(w, [{"record": e, "to": "part/critic", "rel": "eased", "passage": LOOSENS}], dry_run=True)
+    assert [(x["from"], x["rel"]) for x in out["links"]] == [(e, "eased")]
+
+
+def test_a_notes_own_lines_can_be_a_links_passage(inner):
+    """Its link is dated the session's day, not undated."""
+    w = inner()
+    w.chat(1, upto=40)
+    w.run(Model(chat1_note()))
+    ref = w.notes()[0]["path"].relative_to(w.repo).as_posix()
+    out, _ = sweep(w, [{"record": ref, "to": "part/critic", "rel": "eased", "passage": LOOSENS}], dry_run=True)
+    assert [(x["from"], x["date"]) for x in out["links"]] == [(ref, "2026-11-03")]
+
+
+def test_the_confirming_call_is_given_what_the_kind_means(inner):
+    w = inner()
+    e = moment(w, CLIMB)
+    _, m = sweep(w, [{"record": e, "to": "belief/unlikable", "rel": "didnt-fit", "passage": CLIMB}], dry_run=True)
+    [asked] = m.of("sweep_confirm")
+    assert "didn't fit: what happened is not what the belief expects" in asked
+
+
+def test_the_read_is_given_the_kinds_and_what_each_may_point_at(inner):
+    w = inner()
+    moment(w, CLIMB)
+    _, m = sweep(w, [], dry_run=True)
+    assert "- didnt-fit (didn't fit): what happened is not what the belief expects; on a belief\n" in m.of("sweep")[0]
+
+
+def test_records_the_kinds_skip_by_who_said_them_or_by_kind_are_never_sent(inner):
+    w = inner()
+    toml = w.repo / ".engram/engram.toml"
+    toml.write_text(toml.read_text().replace('skip_kinds = ["practice"]', 'skip_kinds = ["practice"]\nskip_by = ["coach"]'))
+    add(w, {"title": "the coach's reminder", "date": "2026-11-03", "kind": "observation", "about": [], "by": "coach"},
+        "- coach: “ten minutes of walking before the meeting”\n")
+    _, m = sweep(w, [], dry_run=True)
+    sent = m.of("sweep")[0]
+    assert "ten minutes of walking" not in sent and "speaking first in the monday meeting" not in sent  # the practice
+    assert "my manager picked the plan apart" in sent
+
+
+def test_a_suggestions_page_is_never_read_as_a_moment(inner):
+    w = inner()
+    read = {r for r, _, _ in relink.records(w.repo)}
+    assert "theory/beliefs/unlikable.md" in read and "theory/beliefs/on-the-outside.md" not in read
+
+
+def test_one_record_links_to_one_thing_one_way(inner):
+    """As for and against: a record is one row of a thing's history, so a second kind on the same pair is a repeat."""
+    w = inner()
+    e = moment(w, NOBODY)
+    out, _ = sweep(w, [{"record": e, "to": "belief/unlikable", "rel": "showed-up", "passage": NOBODY},
+                       {"record": e, "to": "belief/unlikable", "rel": "set-off-by", "passage": NOBODY}], dry_run=True)
+    assert [x["rel"] for x in out["links"]] == ["showed-up"] and [d["why"] for d in out["dropped"] if d["record"] == e] == ["already linked"]
+
+
+def test_a_loops_history_shows_its_moments_not_for_and_against(inner):
+    w = inner()
+    e = moment(w, "I spoke first in the meeting", "2026-11-08")
+    add(w, {"title": "did differently the quiet loop", "date": "2026-11-08", "kind": "link", "family": "moment",
+            "rel": "did-differently", "from": e, "to": "loop/quiet", "about": ["loop/quiet"], "by": "claude",
+            "author": "engram-sweep"}, "")
+    text = history("loop/quiet")
+    [row] = [json.loads(l) for l in text.splitlines() if l.startswith('{"theory":"the quiet loop"')]
+    assert row["did differently"] == 1 and "for" not in row and "against" not in row
+    assert row["moments"] == [f"did differently 2026-11-08: observation › I spoke first in the meeting [{e}]"]
+
+
+def test_a_look_back_on_something_the_links_dont_point_at_is_refused(inner):
+    w = inner()
+    with pytest.raises(SystemExit, match="state/quiet"):
+        sweep(w, [], items=["state/quiet"], dry_run=True)
+
+
+def test_the_hourly_linking_job_runs_only_where_the_kinds_say_hourly(inner):
+    """True today: a record whose link kinds don't say `hourly` is linked only in the weekly pass."""
+    w = inner()
+    toml = w.repo / ".engram/engram.toml"
+    toml.write_text(toml.read_text().replace("hourly = true", "hourly = false"))
+    m = Model()
+    w.run(m)
+    assert not m.of("sweep")
+
+
+def test_a_run_that_stops_at_its_cap_waits_a_day_before_the_hourly_job_links_again(inner, monkeypatch):
+    w = inner()
+    moment(w, NOBODY)
+    monkeypatch.setattr(relink, "SWEEP_BUDGET", 1)  # each record a call of its own
+    calls = []
+
+    def dear(prompt):
+        calls.append(prompt)
+        return json.dumps({"links": []}), 11.0  # one call past the run's cap
+    first = relink.hourly(w.repo, dear, now=LATER)
+    assert first["stopped"] and len(calls) == 1
+    assert relink.hourly(w.repo, dear, now=LATER + timedelta(hours=23)) is None and len(calls) == 1
+    assert relink.hourly(w.repo, dear, now=LATER + timedelta(hours=25)) is not None and len(calls) == 2

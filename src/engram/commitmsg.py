@@ -15,6 +15,7 @@ TEMPLATES = {
     "relink": "engram: evidence re-checked after theory change {change}",
     "sweep": "engram: evidence swept, {n} {records} linked to the theory\n\n"
              "Refinement: the theory's loops and Discoveries gained evidence from {n} more {records}",
+    "moments": "engram: {n} {records} linked to the theory by what happened",  # a record's own link kinds, hourly
     "exclude": "engram: {path} stays out of the index",
     "nodes": "engram: the node list drops {n} rows for files that are gone",
     "ids": "engram: stable ids for {docs} documents and {headings} linked headings",
@@ -25,7 +26,7 @@ TEMPLATES = {
     "wiki_merge": "engram: the wiki's health check merged concepts ({n}), their links repointed",
     "wiki_moved": "engram: links repointed to moved posts ({n})",
 }
-HOURLY = {"write", "facts", "note", "renewals", "narrow", "theory", "relink", "wiki", "wiki_index", "wiki_merge", "wiki_moved"}  # what `engram capture run` commits, directly or through a theory change
+HOURLY = {"write", "facts", "note", "renewals", "narrow", "theory", "relink", "moments", "wiki", "wiki_index", "wiki_merge", "wiki_moved"}  # what `engram capture run` commits, directly or through a theory change
 
 
 class AmountInMessage(ValueError):

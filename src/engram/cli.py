@@ -136,7 +136,8 @@ def cmd_theory(a):
                 return
             if a.action == "sweep":
                 from engram import relink
-                r = relink.sweep(repo, dry_run=a.dry_run, replay=json.loads(Path(a.replay).read_text()) if a.replay else None)
+                r = relink.sweep(repo, dry_run=a.dry_run, replay=json.loads(Path(a.replay).read_text()) if a.replay else None,
+                                 items=[a.target] if a.target else None)
                 if a.out:
                     Path(a.out).write_text(json.dumps(r, ensure_ascii=False, indent=1))
                 print(json.dumps({k: len(v) if isinstance(v, list) else v for k, v in r.items()}))
@@ -809,10 +810,12 @@ def main(argv=None):
 
     s = sub.add_parser("theory", help="the whole theory graph (conditions, loops with their paths, joins, statuses); "
                        "`theory change` revises it when the owner agrees; `theory relink` re-checks the evidence after one; "
-                       "`theory sweep` links the whole record's evidence to the loops and Discoveries; `theory recheck <target>` reads "
+                       "`theory sweep [<thing>]` links the whole record's moments to the theory (its loops and Discoveries, or "
+                       "what its own link kinds point at), or to one thing, as a look-back asks; `theory recheck <target>` reads "
                        "again the links engram placed on one")
     s.add_argument("action", nargs="?", choices=["change", "relink", "sweep", "recheck"])
-    s.add_argument("target", nargs="?", help="for recheck: the loop or Discovery whose links engram placed are read again")
+    s.add_argument("target", nargs="?", help="for recheck: the loop or Discovery whose links engram placed are read again; "
+                   "for sweep: the one thing every record is read against")
     s.add_argument("--domain")
     s.add_argument("--mermaid", action="store_true", help="as a Mermaid diagram")
     s.add_argument("--as-of", help="the graph as it stood on YYYY-MM-DD")

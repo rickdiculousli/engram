@@ -6,6 +6,7 @@ it was a working session and, if so, gives its note; code checks every line agai
 writes the note once, never again: a session is known by its first message's id, so a chat rewritten by a rewind or a
 compaction keeps its sessions. A repo without `[notes]` sections, or whose pack has no `note` words, has no notes."""
 import hashlib
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -248,6 +249,16 @@ def render(fm: dict, sections: dict[str, list[Line]], cfg: Settings) -> str:
             body.append(NOT_SAID)
         body.append("")
     return store.render_event(fm, "\n".join(body))
+
+
+SPOKEN = re.compile(r"^- (?P<who>[^“(:\n]+?)(?: \(line \d+\))?(?:, answering “.*?”)?: “(?P<quote>.*)”\s*$", re.M)
+
+
+def spoken(body: str) -> list[tuple[str, str]]:
+    """(speaker, words) for each line that names its speaker, as `render` writes a note's and the filer an entry's
+    quote (`- <who>[ (line N)][, answering “<question>”]: “<words>”`): the question a reply answers is the guide's, never
+    his, and a headline is nobody's words."""
+    return [(m["who"], m["quote"]) for m in SPOKEN.finditer(body)]
 
 
 def _section(body: str, name: str) -> list[str]:

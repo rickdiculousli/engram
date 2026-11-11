@@ -24,7 +24,7 @@ import subprocess
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from engram import capture, config, daily, ingest, narrow, notes, pack, recsum, refine, review, setup, store, summarize
+from engram import capture, config, daily, ingest, narrow, notes, pack, recsum, refine, relink, review, setup, store, summarize
 from engram import now as now_mod
 from engram.paths import data_path, record_conf
 from engram.sources import sessions
@@ -118,6 +118,11 @@ def run(ask=None, dry_run: bool = False, summaries: bool = True, now: datetime |
                 out["narrowing"][d] = {k: n[k] for k in narrow.COUNTS if n[k]}
                 if n["error"]:
                     _error(out, f"narrow {d}: {n['error']}")
+            if not dry_run and relink.kinds(root).hourly:  # after filing: the moments it filed, linked to the theory
+                try:
+                    out["usd"] += (relink.hourly(root, ask, now) or {}).get("usd", 0.0)
+                except FAILED as e:
+                    _error(out, f"linking {d}: {type(e).__name__}: {e}")
             if not dry_run and pack.load(d).prompts.get("compile"):  # what was handed over or filed, onto the map
                 from engram import compile as compile_mod
                 try:
@@ -135,7 +140,6 @@ def run(ask=None, dry_run: bool = False, summaries: bool = True, now: datetime |
                 except FAILED as e:
                     _error(out, f"review {d}: {type(e).__name__}: {e}")
         if not dry_run:
-            from engram import relink
             for cid in relink.pending():  # a theory change whose background re-check never ran
                 try:
                     out["usd"] += relink.run(cid, force=True).get("usd", 0.0)

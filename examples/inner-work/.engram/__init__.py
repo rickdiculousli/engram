@@ -77,8 +77,12 @@ his words for it, copied exactly}}. A thing marked as the guide's suggestion is 
 SWEEP = """How things work underneath for {owner}:
 {targets}
 
-For each record that shows one of these at work, give the link: "record", "to", "rel" (what happened, never whether the
-belief is true) and "passage" (the record's own words that show it, copied exactly; inside a note, only {owner}'s lines).
+The ways a record links to one of these, each saying what happened, never whether a belief is true:
+{rels}
+
+For each record that shows one of these at work, give one link for each of them it bears on: "record", "to", "rel"
+(the first way above that says what happened to it there) and "passage" (the record's own words that show it, copied
+exactly; inside a note, only {owner}'s lines).
 Reply with JSON only: {{"links": [...]}}
 
 <records>
@@ -186,4 +190,5 @@ pack = Pack(
                     sections=("practices", "people", "stopped"), ongoing=frozenset({"started", "carried"}),
                     finished=frozenset({"retired"}), whole_names=True, origin="insight"),
     read={"gym": read_gym},
+    relink_skip=("theory/",),  # the theory's own pages: what a moment links to, never a moment
 )

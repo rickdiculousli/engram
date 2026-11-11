@@ -312,3 +312,23 @@ def test_an_entry_of_his_links_only_on_his_own_lines_never_on_the_question_he_an
                 "by": "sam"}, f"- Sam, answering “{asked}”: “yeah, I guess”\n")
     out, _ = sweep(w, [{"record": e, "to": "belief/unlikable", "rel": "didnt-fit", "passage": asked}], dry_run=True)
     assert not out["links"] and [d for d in out["dropped"] if "Sam" in d["why"]]
+
+
+def test_a_thing_added_after_a_full_read_is_read_against_alone_and_nothing_is_read_again_against_the_rest(inner):
+    """A new belief (a suggestion the filer adds, a belief a statement starts) costs a read of the record against it
+    alone, as a look-back's does, never a read of the whole record against every target again."""
+    w = inner()
+    moment(w, NOBODY)
+    first, _ = sweep(w, [])
+    assert first["batches"] and not first["left"]["unread"]
+    (w.repo / "theory/beliefs/too-much.md").write_text(
+        "---\nid: belief/too-much\nkind: belief\nshort: I'm too much\nby: sam\nsince: 2026-11-09\n---\n# I'm too much\n\nWhat Sam says after he talks a lot.\n")
+    _, m = sweep(w, [])
+    reads = m.of("sweep")
+    assert reads, "the new belief was never read against"
+    for prompt in reads:
+        shown = prompt.split("<records>")[0]
+        assert "I'm too much" in shown and "I'm unlikable" not in shown and "the critic" not in shown
+    assert NOBODY in "\n".join(reads)
+    _, again = sweep(w, [])
+    assert not again.of("sweep")

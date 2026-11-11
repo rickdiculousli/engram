@@ -480,8 +480,8 @@ def sweep(repo: Path, ask=None, confirm=None, dry_run: bool = False, limit: int 
     passage, the target and the kind with what it means, never the read's reasoning; only a yes is filed, by=claude.
 
     A run never starts a call that could take it past `cap`, and picks up where the last one stopped: it confirms the
-    links still waiting first, then reads only records not read at their present text (all of them when the targets
-    changed). Returns this run's counts and links, and what's left; a dry run files nothing. `items` (a look-back's
+    links still waiting first, then reads only records not read at their present text, against every target, and the
+    records read already against a target added since, against it alone (`adding`, merged once read). Returns this run's counts and links, and what's left; a dry run files nothing. `items` (a look-back's
     request) reads every record against those things alone, apart from the progress.
 
     `replay` lands an approved set with no model calls: its "proposals" (record, to, rel, passage) answer each read for
@@ -520,15 +520,23 @@ def sweep(repo: Path, ask=None, confirm=None, dry_run: bool = False, limit: int 
     his = his_lines(repo, k)
     approved = {(_norm(a), b, c) for a, b, c in (replay or {}).get("approved", [])}
     sig = lambda t: hashlib.sha1(t.encode()).hexdigest()[:16]
-    if state.get("targets") != sorted(tg):
+    if "targets" not in state:  # nothing read yet: every record against every target
         state = {"targets": sorted(tg), "read": {}, "pending": state.get("pending", []), "confirmed": state.get("confirmed", [])}
+    state["targets"] = sorted(set(state["targets"]) & set(tg))  # one that goes needs nothing read again
+    added = sorted(set(tg) - set(state["targets"]))  # one that's added: the records read already, against it alone
+    if (state.get("adding") or {}).get("targets") != added:
+        state["adding"] = {"targets": added, "read": {}}
+    adding = state["adding"]
     have |= {(x["from"], x["to"], rel) for x in state["pending"] + state["confirmed"] for rel in held_as(x["rel"])}
     unread = [r for r in recs if state["read"].get(r[0]) != sig(r[2])]
-    work = batches(unread, SWEEP_BUDGET)[:limit]
+    unread_added = [r for r in recs if added and state["read"].get(r[0]) == sig(r[2]) and adding["read"].get(r[0]) != sig(r[2])]
+    work = ([(b, list(tg)) for b in batches(unread, SWEEP_BUDGET)] +
+            [(b, [t for t in tg if t in added]) for b in batches(unread_added, SWEEP_BUDGET)])[:limit]
     # the record's own kinds are shown with the theory they belong to; links are made only to what the kinds point at
-    shown = tg.values() if items else {t.id: t for t in [*tg.values(), *(t for t in g.things.values() if t.kind in g.kinds)]}.values()
-    targets_text = "\n".join(about(t) for t in shown)
-    out = {"records": len(recs), "unread": len(unread), "targets": len(tg), "batches": 0, "proposed": 0, "links": [],
+    own = [] if items else [t for t in g.things.values() if t.kind in g.kinds and t.id not in tg]
+    targets_text = {tuple(a): "\n".join(about(t) for t in [*(tg[x] for x in a), *(own if len(a) == len(tg) else [])])
+                    for a in {tuple(a) for _, a in work}}
+    out = {"records": len(recs), "unread": len(unread) + len(unread_added), "targets": len(tg), "batches": 0, "proposed": 0, "links": [],
            "dropped": [], "moved": [], "confirmed": [], "rejected": [], "usd": 0.0, "read_usd": 0.0, "stopped": False}
     if recheck_out:
         out["recheck"], out["usd"], out["stopped"] = recheck_out, recheck_out["usd"], recheck_out["stopped"]
@@ -567,21 +575,26 @@ def sweep(repo: Path, ask=None, confirm=None, dry_run: bool = False, limit: int 
             if yes:
                 out["confirmed"].append(ln)
         else:
-            b = work.pop(0)
+            b, against = work.pop(0)
             text = "\n".join(f"[{i}] date {d or 'undated'}\n{t}\n" for i, d, t in b)
             ids = {i for i, _, _ in b}
             reply, usd = (json.dumps({"links": [x for x in replay["proposals"] if x["record"] in ids]}), 0.0) if replay else \
-                call(ask, config.voice(p.prompts["sweep"]).format(targets=targets_text, records=text, rels=k.text()))
+                call(ask, config.voice(p.prompts["sweep"]).format(targets=targets_text[tuple(against)], records=text, rels=k.text()))
             out["read_usd"] += usd
             out["batches"] += 1
             got = {"links": [], "dropped": out["dropped"], "moved": out["moved"]}
-            _check(reply, {i: d for i, d, _ in b}, set(tg), have, got, off="isn't a theory thing these links point at"
+            _check(reply, {i: d for i, d, _ in b}, set(against), have, got, off="isn't a theory thing these links point at"
                    if k is not EVIDENCE else "isn't a loop or Discovery", texts={i: t for i, _, t in b}, refused=refused,
-                   owner_of=owner_of, kinds_=k, kind_of={t: x.kind for t, x in tg.items()}, his=his)
+                   owner_of=owner_of, kinds_=k, kind_of={t: tg[t].kind for t in against}, his=his)
             out["links"] += got["links"]
             state["pending"] += got["links"]
-            state["read"].update({i: sig(t) for i, _, t in b})
+            if added:
+                adding["read"].update({i: sig(t) for i, _, t in b})
+            if len(against) == len(tg):
+                state["read"].update({i: sig(t) for i, _, t in b})
         save()
+    if added and all(adding["read"].get(i) == sig(t) for i, _, t in recs if state["read"].get(i) == sig(t)):
+        state["targets"], state["adding"] = sorted(tg), {"targets": [], "read": {}}  # read against it: one of the rest
     out["proposed"] = len(out["links"]) + len(out["dropped"])
     out["left"] = {"unread": sum(len(b) for b in work), "pending": len(state["pending"])}
     if state["confirmed"] and not dry_run:

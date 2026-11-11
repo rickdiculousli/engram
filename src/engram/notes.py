@@ -146,7 +146,10 @@ def recent(root: Path, n: int = 5) -> list[dict]:
 def prompt(cfg: Settings, part: Part, near: list[dict]) -> str:
     """The pack's `note` words for one session, asked in the filer's call."""
     shown = "; ".join(f"{x['fm']['id']} ({x['fm'].get('date', '')}: {_opening(x['body'])})" for x in near) or "none"
-    sections = "; ".join(f"“{name}” ({', '.join(sorted(by))})" for name, by in cfg.sections)
+    me = config.owner()
+    whose = {"owner": f"{me}'s words", "guide": "Claude's words", UNANSWERED: f"what Claude offered that {me} didn't answer"}
+    sections = "; ".join(f"“{name}” ({' and '.join(whose.get(b, b) for b in sorted(by, key=lambda b: b != 'owner'))})"
+                         for name, by in cfg.sections)
     return config.voice(cfg.words).format(first=part.first, last=part.exchanges[-1].line, sections=sections, recent=shown)
 
 

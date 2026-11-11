@@ -2,7 +2,7 @@
 things stand" follows (the practices), and a reader for the rows the person's gym app keeps. Every word is made up.
 
 The words under "Not yet read by engram" are the inner-work changes' (docs/technical.md, "The inner-work settings"):
-`note`, `suggest`, `stated` and `regroup`. Today engram reads only the rest."""
+`suggest`, `stated` and `regroup`. Today engram reads only the rest."""
 import json
 from datetime import datetime
 from pathlib import Path
@@ -87,13 +87,26 @@ word: slip when he misspoke or misremembered, learned when something new showed 
 What {owner} said:
 {said}"""
 
-# ---- Not yet read by engram: the inner-work changes' words ----
+NOTE = """The conversation above is one session, lines {first} to {last}. Say whether it was a working session: one
+where something was worked through with Claude, such as an exercise, however short. A check-in, small talk, making
+plans, or talk about the app, the notes or the tools is not one, even when feelings come up in passing.
 
-NOTE = """Say whether lines {first} to {last} were a working session: something worked through, such as an exercise. A
-check-in, small talk or talk about the tools is not one. If it was, give "note": for each of these sections, its lines
-({sections}), each with "line" and "quote", copied exactly from that line, and "by" ({owner} or the guide). Leave a
-section empty when nobody said anything for it; never fill one in. Name the earlier note it continues, if any
-({recent})."""
+Add to your JSON "working": true or false and, for a working session only, "note": {{"sections": {{<section>: [<line>,
+...]}}, "about": [<the abouts above it bears on>], "follows": <the id of an earlier note it carries on, if any>}}. Each
+line is {{"line": <its line number>, "quote": <words copied exactly from that line>, "by": "{owner}" or "guide"}}.
+The sections, and whose words go in each: {sections}.
+- what you brought: what {owner} came in with.
+- what was done: the exercise or the question as Claude gave it.
+- what you found: what {owner} noticed or realised.
+- what changed: only a change {owner} says himself, in his own words. Claude saying something seems lighter, calmer or
+  softer is never a change, and neither is {owner} going along with it ("yeah", "mm", "maybe"). Without his own words
+  for it, leave it empty.
+- where you stopped: where {owner} left it, and anything Claude offered that he didn't answer.
+Leave a section empty when nobody said anything for it; never fill one in.
+
+Earlier notes: {recent}"""
+
+# ---- Not yet read by engram: the inner-work changes' words ----
 
 SUGGEST = """The guide's ideas about {owner} that he hasn't agreed to are kept too, as the guide's: for each one the guide
 offered after line {upto}, give "suggestions": [{{"line": <the guide's line>, "quote": <the guide's words, copied

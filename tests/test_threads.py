@@ -6,11 +6,12 @@ from datetime import timedelta
 import pytest
 
 from engram import now as now_mod
-from engram import search, timeline
+from engram import ingest, search, timeline
 from inner_work import D, LATER, Model, add, fact, inner, made, zone  # noqa: F401  (fixtures)
 
 def history(name: str) -> str:
-    """Everything one request for a thread returns, as text."""
+    """Everything one request for a thread returns, as text, after the refresh `engram timeline` makes first."""
+    ingest.refresh_if_stale([D])
     return json.dumps(timeline.chain(D, name)[1])
 
 

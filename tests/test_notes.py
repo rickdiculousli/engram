@@ -192,6 +192,7 @@ def test_27_a_themes_history_shows_the_session_once_as_its_note_with_its_entries
     assert practice.fm.get("note") == n["fm"]["id"]
     plan = summarize.plan(path, D)
     assert not plan or plan.get("empty")  # no separate summary for those messages
+    ingest.refresh_if_stale([D])  # as `engram timeline` does first
     _, got = timeline.chain(D, "going quiet")
     shown = [r for r in got if n["fm"]["id"] in json.dumps(r)]
     assert len(shown) == 1 and practice.id in json.dumps(shown[0])

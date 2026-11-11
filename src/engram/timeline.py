@@ -88,8 +88,6 @@ def chain(domain: str, names: str | list[str], about: str | None = None) -> tupl
     """(header, rows) for stories and recurring symptoms merged into one timeline, rows in time order, undated standing
     sections after. Free text (`about`) adds the stories its search hits sit on, the hits themselves, and one step out:
     records a led-to link joins to a row from another story, so interleaving complaints arrive in the same call."""
-    from engram import ingest
-    ingest.refresh_if_stale([domain])  # what was just filed is on its thread
     names = [names] if isinstance(names, str) else list(names)
     asked = list(names)  # the chains the caller named, before the search adds its picks
     hits: list[str] = []

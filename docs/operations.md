@@ -74,6 +74,7 @@ How the pass behaves is each repo's rules section of `.engram/README.md` and `sk
 - re-ingests caused by changed file prefixes
 - while `[daily]` is set, the daily copy's last run, or that it has never run; a failed run, none in two days or none yet is also a line at session start, apart from capture's
 - this week's weekly pass on each repo: landed, running or stopped, or failed and why; a failure is told here and never at session start
+- the weekly page, when this box couldn't open it, and where it is
 - any push left failing, or a rebase left for the owner
 - each entry at the top of the data folder that `paths.DATA` doesn't list: a leftover to clear, or a writer missing from the table
 

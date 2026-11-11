@@ -507,3 +507,44 @@ def test_a_pass_whose_data_copy_fails_is_a_pass_that_never_started(served, monke
     monkeypatch.setattr(refine, "copy_data", broken)
     refine.run("med", runner=lambda cmd, **kw: None, attached=True)
     assert [(r["repo"], r["ok"], r["cost_usd"], r.get("running")) for r in refine.ledger()] == [("med", False, 0.0, None)]
+
+
+def _waiting(served):
+    git(served["med"], "commit", "-q", "--allow-empty", "-m", "Fold\n\nRefinement: two docs are one")
+    return served["data"] / f"refine/digests/{refine.week()}.html"
+
+
+def test_a_page_a_box_with_no_screen_cant_open_is_not_marked_shown_and_health_says_where_it_is(served, monkeypatch, capsys):  # test 90
+    monkeypatch.setattr(refine.sys, "platform", "linux")
+    page = _waiting(served)
+    run, calls = writer()
+    assert refine.digest({"med": served["med"]}, 3.0, run) == (1.5, str(page)) and page.exists()
+    assert [c for c in calls if not c[1]] == [] and not (served["data"] / "refine/seen.json").exists()
+    from engram import cli
+    cli.main(["health"])
+    assert str(page) in capsys.readouterr().out
+
+
+def test_no_second_page_is_written_for_the_items_of_one_that_wasnt_shown(served, monkeypatch):  # test 91
+    monkeypatch.setattr(refine.sys, "platform", "linux")
+    page = _waiting(served)
+    run, calls = writer()
+    refine.digest({"med": served["med"]}, 3.0, run)
+    monkeypatch.setattr(refine, "week", lambda now=None: "2099-W01")  # the following week, nothing new
+    cost, line = refine.digest({"med": served["med"]}, 3.0, run)
+    assert cost == 0.0 and str(page) in line and len(calls) == 1
+    assert not (served["data"] / "refine/digests/2099-W01.html").exists()
+    git(served["med"], "commit", "-q", "--allow-empty", "-m", "Trim\n\nRefinement: the log is shorter")  # something new: a page
+    refine.digest({"med": served["med"]}, 3.0, run)
+    assert len(calls) == 2 and "two docs are one" in calls[1][1] and "the log is shorter" in calls[1][1]
+
+
+def test_on_a_mac_the_page_opens_and_is_marked_shown(served, monkeypatch):  # test 92, true today
+    monkeypatch.setattr(refine.sys, "platform", "darwin")
+    page = _waiting(served)
+    run, calls = writer()
+    refine.digest({"med": served["med"]}, 3.0, run)
+    assert calls[1:] == [(["open", str(page)], None)]
+    assert len(json.loads((served["data"] / "refine/seen.json").read_text())) == 1
+    refine.digest({"med": served["med"]}, 3.0, run)
+    assert len(calls) == 2  # shown: nothing left for a page

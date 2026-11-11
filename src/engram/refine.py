@@ -5,6 +5,7 @@ one line for the owner, and each idea it can't land is a spec in the repo's .eng
 the week's one page of both across the repos, and `install` writes the timed job that runs the week's passes."""
 import contextlib
 import fcntl
+import hashlib
 import json
 import math
 import os
@@ -127,11 +128,13 @@ def _held() -> bool:
 
 
 def status() -> list[str]:
-    """This week's pass on each repo, for `engram health`: where a failure is told, never at session start."""
+    """This week's pass on each repo, for `engram health`: where a failure is told, never at session start. Then a page
+    for the owner that couldn't be opened here, and where it is."""
+    held = [f"the weekly page couldn't be opened on this box; it's at {p}"] if (p := _unshown().get("page")) else []
     try:
         rows = [r for r in ledger() if r["week"] == week() and not r["dry_run"]]
     except ValueError as e:
-        return [f"weekly pass: the ledger doesn't read ({e}); no pass runs until it's fixed"]
+        return [f"weekly pass: the ledger doesn't read ({e}); no pass runs until it's fixed", *held]
     out = [f"build on request on {r['repo']}: " + (("running" if _held() else "stopped mid-run") if r.get("running")
            else f"FAILED ({r.get('error', '')})" if not r["ok"] else "ok") + f", ${r['cost_usd']:.2f}" for r in rows if r.get("job") == BUILD]
     for r in [r for r in rows if r.get("job") == SWEEP]:
@@ -149,7 +152,7 @@ def status() -> list[str]:
         else:
             out.append(f"weekly pass on {name}: " + ("ok" if last[0]["ok"] else f"FAILED ({last[0].get('error', '')})")
                        + f", ${last[0]['cost_usd']:.2f}")
-    return out
+    return out + held
 
 
 def reviews() -> list[dict]:
@@ -549,7 +552,8 @@ def _failures(rows: list[dict], seen: set[str]) -> dict[str, tuple[str, str]]:
 def digest(targets: dict[str, Path], budget: float, runner=subprocess.run, rows: list[dict] | None = None) -> tuple[float, str]:
     """The week's one page for the owner, across the repos, when something there needs them: each pass that didn't
     finish, each spec waiting on them, each landed change not yet in a page, and their jobs while still proposed. One `claude -p` with no tools
-    writes it, the page goes in the data folder and opens in the browser, and only then are its changes marked shown.
+    writes it, the page goes in the data folder and opens in the browser, and only once it opens are its changes marked shown;
+    one that can't open waits for its items to change before another is written.
     Returns (cost, a line for the log, empty when nothing needed them: then nothing is written or opened)."""
     seen, items, changed = _seen(), [], set()
     failed = _failures(rows or [], seen)
@@ -567,6 +571,9 @@ def digest(targets: dict[str, Path], budget: float, runner=subprocess.run, rows:
         changed |= {sha for sha, _, _ in new} | ({failed[name][0]} if name in failed else set())
     if not items:
         return 0.0, ""
+    held = _unshown()
+    if held.get("items") == (key := hashlib.sha256("\n\n".join(items).encode()).hexdigest()):
+        return 0.0, f"none, nothing new since the page that wasn't opened, {held['page']}"
     if budget < 0.5:
         return 0.0, "none, the week's cap is spent; its items wait for the next"
     cmd = ["claude", "-p", "--output-format", "json", "--model", settings()["model"], "--max-budget-usd", f"{budget:.2f}",
@@ -585,12 +592,25 @@ def digest(targets: dict[str, Path], budget: float, runner=subprocess.run, rows:
     page = _dir() / "digests" / f"{week()}.html"
     page.parent.mkdir(exist_ok=True)
     page.write_text(html.group(0))
-    tmp = _dir() / "seen.tmp"  # written whole
-    tmp.write_text(json.dumps(sorted(seen | changed)))
-    tmp.replace(_dir() / "seen.json")
-    if sys.platform == "darwin":
-        runner(["open", str(page)])
+    opened = sys.platform == "darwin" and runner(["open", str(page)]).returncode == 0
+    _put("unshown.json", {} if opened else {"page": str(page), "items": key})
+    if opened:  # a page no one could see shows nothing: its items wait, and `engram health` says where it is
+        _put("seen.json", sorted(seen | changed))
     return cost, str(page)
+
+
+def _put(name: str, value):
+    tmp = _dir() / f"{name}.tmp"  # written whole
+    tmp.write_text(json.dumps(value))
+    tmp.replace(_dir() / name)
+
+
+def _unshown() -> dict:
+    """The last page written that couldn't be opened (a box with no screen), and the items it held; {} when there's none."""
+    try:
+        return json.loads((_dir() / "unshown.json").read_text())
+    except (OSError, ValueError):
+        return {}
 
 
 def install(agents: Path | None = None, load: bool = True) -> Path:

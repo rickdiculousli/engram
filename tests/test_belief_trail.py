@@ -35,7 +35,9 @@ def test_93_i_am_a_burden_is_a_stated_belief_with_his_words_its_date_the_guides_
 
 def test_94_a_statement_linked_to_four_beliefs_keeps_all_four(inner):
     w = inner()
-    w.chat(5)
+    add(w, {"title": "being on the outside: provisional", "date": "2026-10-30", "kind": "status", "about": ["belief/on-the-outside"],
+            "status": "provisional", "by": "sam", "said": "I am on the outside, mostly"}, "- Sam: “I am on the outside, mostly”")
+    w.chat(5)  # he took up the guide's "on the outside": four beliefs of his
     four = ["belief/burden", "belief/not-enough", "belief/on-the-outside", "belief/unlikable"]
     w.run(Model({"facts": [{"line": line_of(5, BURDEN), "quote": BURDEN, "text": f"Sam: {BURDEN}", "date": "not-sure",
                             "kind": "stated-belief", "beliefs": [{"id": b} for b in four]}]}))
@@ -254,3 +256,54 @@ def test_engram_theory_trail_prints_the_trail_and_its_cut_tells_the_command_for_
     cli.main(["theory", "trail", "belief/burden", "--domain", D, "--skip", str(len(rows))])
     _, *rest = [json.loads(l) for l in capsys.readouterr().out.splitlines()]
     assert [r["id"] for r in rows + rest] == ids
+
+
+def test_yeah_to_you_feel_like_a_burden_is_his_yeah_and_the_question_before_the_theory_holds_anything(inner):
+    """A new record's first sessions: no theory yet, and still no statement in his voice from a yes."""
+    import shutil
+    w = inner()
+    shutil.rmtree(w.repo / "theory")
+    w.chat(5)
+    question = "It sounds like you feel like a burden."
+    out = w.run(Model({"facts": [{"line": line_of(5, question) + 1, "quote": "yeah", "answering": question, "date": "not-sure",
+                            "text": "Feels like a burden.", "kind": "stated-belief", "beliefs": [{"id": "belief/burden"}]}]}))
+    assert not w.mine("stated-belief")
+    [e] = [e for e in w.mine() if "“yeah”" in e.body]
+    assert question in e.fm["title"] and "yeah" in e.fm["title"] and "Feels like a burden" not in e.body
+
+
+def test_the_filers_beliefs_label_a_broader_one_the_guide_named_and_an_under_the_guide_suggested(inner):
+    w = inner()
+    add(w, {"title": "I'm a burden under being on the outside", "date": "2026-10-27", "kind": "link", "family": "theory",
+            "rel": "under", "from": "belief/burden", "to": "belief/on-the-outside", "about": ["belief/on-the-outside"],
+            "by": "claude-suggestion"}, "the guide: “a lot of this is about feeling on the outside”")
+    stated(w, "x" * 500, "2026-10-01", ["belief/burden"])
+    w.chat(5)
+    m = Model(filed(BURDEN, beliefs=["belief/burden"]))
+    w.run(m)
+    prompt = m.of("file")[0]
+    head = next(l for l in prompt.splitlines() if l.startswith("belief/burden: "))
+    assert "belief/not-enough" in head and "belief/on-the-outside (the guide's suggestion" in head
+    assert "put under it by the guide's suggestion" in head
+    [shown] = [l for l in prompt.splitlines() if l.startswith("  - 2026-10-01: “x")]
+    assert "x" * 200 in shown and "x" * 201 not in shown  # a long statement is shown by its opening
+
+
+def test_a_statement_isnt_linked_to_a_belief_still_the_guides_nor_to_one_ruled_out(inner):
+    w = inner()
+    add(w, {"title": "I'm unlikable: ruled out", "date": "2026-10-28", "kind": "status", "about": ["belief/unlikable"],
+            "status": "ruled out", "by": "sam"}, "- Sam: “that's not it”")
+    w.chat(5)
+    out = w.run(Model(filed(BURDEN, beliefs=["belief/on-the-outside", "belief/unlikable", "belief/burden"])))
+    [e] = w.mine("stated-belief")
+    assert belief_links(w, e.id) == ["belief/burden"]
+    whys = [d["why"] for d in out["dropped"]]
+    assert any(x.startswith("belief/on-the-outside is still the guide's") for x in whys)
+    assert any(x.startswith("belief/unlikable is ruled out") for x in whys)
+
+
+def test_a_skip_past_the_end_leaves_none(inner):
+    w = inner()
+    stated(w, BURDEN, "2026-11-01", ["belief/burden"])
+    header, rows = trail("belief/burden", skip=5)
+    assert rows == [] and header["left"] == 0 and "more" not in header

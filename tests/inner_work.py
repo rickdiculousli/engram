@@ -292,6 +292,7 @@ def stated_all(world: Inner, items: list[tuple]) -> list[str]:
             for b in beliefs:
                 tx.add({"title": f"showed up {b}", "date": day, "kind": "link", "family": "moment", "rel": "showed-up",
                         "from": eid, "to": b, "about": [b], "by": "claude", "author": "engram-capture", "domain": D,
+                        "recorded": f"{day}T21:{k // 60:02d}:{k % 60:02d}-08:00",  # its own second: ids hash four characters
                         **({"loose": "true"} if b in loose else {})}, words)
             out.append(eid)
     return out

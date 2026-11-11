@@ -1501,7 +1501,8 @@ def _file(domain: str, root: Path, path: Path, p: pack.Pack, s: sessions.Session
     bel = beliefs.settings(root) if p.prompts.get("stated") else None  # what he says about himself, kept as a trail
     g = th[0] if th else theory_mod.load(root) if cur.origin or bel else None  # read again only for what needs it
     stating = config.voice(p.prompts["stated"]).format(kind=bel.kind, beliefs=beliefs.block(st, g, bel)) if bel else ""
-    asked = bool(th and th[5])  # where the guide's suggestions are kept, a short yes is kept as the question and the yes
+    asked = bool(p.prompts.get("suggest") or bel)  # where the guide's suggestions or his beliefs are kept, a short yes is
+    # kept as the question and the yes, whatever the theory holds yet
     mine = filed_from(st, path.stem)
     already = [f"{e.date} {e.fm.get('title', '')}: {' '.join(e.body.split())[:200]} (id {e.id})" for e in mine]
     already += [r[:300] for x in s.exchanges for r in x.ran if r.startswith("Bash:") and FILED.search(r)]
@@ -1622,7 +1623,7 @@ def _file(domain: str, root: Path, path: Path, p: pack.Pack, s: sessions.Session
     entries = [x for i, x in enumerate(entries) if i not in repeats]
     places = [x for i, x in enumerate(places) if i not in repeats]
     files, proposed, joins = [], {}, []  # what the guide suggested: its things' files, their "proposed", its joins
-    if asked:
+    if th and th[5]:  # the guide's suggestions, where they're kept and the theory holds something to read them against
         guides = {}  # a reply by its own line, and the replies to his message by its line, as the conversation shows them
         for x in shown.exchanges:
             new = [(ln, r) for ln, r in zip(x.reply_lines, x.replies) if ln > upto]

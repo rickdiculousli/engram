@@ -75,6 +75,17 @@ def his(g: theory.Graph, s: Settings, thing: str) -> bool:
     return bool(t) and t.kind == s.belief and (t.by != theory.SUGGESTION or g.status.get(thing, ("",))[0] in ("provisional", "confirmed"))
 
 
+SAID = 200  # characters of each statement the filer is shown
+
+
+def named(g: theory.Graph, s: Settings, b: str, over: list[str] | None = None) -> str:
+    """A belief as shown beside another: its name and id, whose it is when it's the guide's, and each `under` the guide
+    suggested from it (to the beliefs in `over`, else to any)."""
+    w = theory.who(g, b)
+    by = [e.b for e in g.edges if e.rel == s.under and e.a == b and e.by == theory.SUGGESTION and (over is None or e.b in over)]
+    return f"{g.label(b)} [{b}]" + (f" ({w})" if w else "") + "".join(f" (put under {g.label(x)} by {theory.SUGGESTED})" for x in by)
+
+
 def block(st: Store, g: theory.Graph, s: Settings) -> str:
     """Each belief of his as the filer is shown it, to decide by meaning: its id and name, whose it is when it was the
     guide's, what it sits under, and a few of his statements linked to it."""
@@ -90,9 +101,12 @@ def block(st: Store, g: theory.Graph, s: Settings) -> str:
             continue
         head = f"{t.id}: {t.short}" + (f" ({w})" if (w := theory.who(g, t.id)) else "")
         if up := broader(g, s, t.id):
-            head += f"; under {', '.join(up)}"
+            head += "; under " + ", ".join(
+                x + (f" ({w})" if (w := theory.who(g, x)) else "") + "".join(
+                    f" (put under it by {theory.SUGGESTED})" for e in g.edges
+                    if e.rel == s.under and e.a == t.id and e.b == x and e.by == theory.SUGGESTION) for x in up)
         mine = sorted({e.id: e for e in by.get(t.id, [])}.values(), key=lambda e: (str(e.date), e.id))[-SHOWN:]
-        out.append("\n".join([head, *(f"  - {e.date}: “{said(e)}”" for e in mine)]))
+        out.append("\n".join([head, *(f"  - {e.date}: “{said(e)[:SAID]}”" for e in mine)]))
     return "\n".join(out) or "none yet"
 
 
@@ -128,6 +142,12 @@ def check(fact: dict, g: theory.Graph, s: Settings, quote: str, day: str, root: 
         if not t or t.kind != s.belief:
             whys.append(f"{tid or 'no id'} isn't a {s.belief} the theory holds")
             continue
+        if not his(g, s, tid):
+            whys.append(f"{tid} is still the guide's suggestion, not a group of {config.owner()}'s statements")
+            continue
+        if (status := g.status.get(tid, ("",))[0]) in theory.GONE:
+            whys.append(f"{tid} is {status}")
+            continue
         out.append((tid, bool(isinstance(b, dict) and b.get("loose") in (True, "true"))))
     return list({t: (t, l) for t, l in out}.values()), whys
 
@@ -153,11 +173,8 @@ def trail(domain: str, item: str, limit: int | None = None, skip: int = 0) -> tu
     stmts = {e.id: e for e in st.events(kind=s.kind)}
     header = {"trail": item, "name": g.label(item), **({"who": w} if (w := theory.who(g, item)) else {})}
 
-    def named(b: str) -> str:  # a belief under it: whose it is, and an `under` the guide suggested
-        w, by = theory.who(g, b), [e.b for e in g.edges if e.rel == s.under and e.a == b and e.b in under and e.by == theory.SUGGESTION]
-        return f"{g.label(b)} [{b}]" + (f" ({w})" if w else "") + "".join(f" (put under {g.label(x)} by {theory.SUGGESTED})" for x in by)
     if len(under) > 1:
-        header["under it"] = [named(b) for b in under[1:]]
+        header["under it"] = [named(g, s, b, under) for b in under[1:]]
     rows = []
     for frm, lns in linked(st, s).items():
         here = [ln for ln in lns if ln.fm.get("to") in under]
@@ -177,7 +194,7 @@ def trail(domain: str, item: str, limit: int | None = None, skip: int = 0) -> tu
     rows = [r for *_, r in sorted(rows, key=lambda x: x[:3])]
     header["statements"] = len(rows)
     shown = rows[skip:skip + limit] if limit is not None else rows[skip:]
-    header["left"] = len(rows) - skip - len(shown)
+    header["left"] = max(0, len(rows) - skip - len(shown))
     if header["left"] > 0:
         header["more"] = f"engram theory trail {item} --skip {skip + len(shown)} gives the {header['left']} after these"
     return header, shown

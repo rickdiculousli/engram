@@ -249,13 +249,15 @@ def test_a_suggestions_page_is_never_read_as_a_moment(inner):
     assert "theory/beliefs/unlikable.md" in read and "theory/beliefs/on-the-outside.md" not in read
 
 
-def test_one_record_links_to_one_thing_one_way(inner):
-    """As for and against: a record is one row of a thing's history, so a second kind on the same pair is a repeat."""
+def test_one_record_can_link_to_one_thing_in_two_ways(inner):
+    """Unlike for and against, the record's own kinds don't exclude each other: the critic can show up and be
+    answered in one moment."""
     w = inner()
-    e = moment(w, NOBODY)
-    out, _ = sweep(w, [{"record": e, "to": "belief/unlikable", "rel": "showed-up", "passage": NOBODY},
-                       {"record": e, "to": "belief/unlikable", "rel": "set-off-by", "passage": NOBODY}], dry_run=True)
-    assert [x["rel"] for x in out["links"]] == ["showed-up"] and [d["why"] for d in out["dropped"] if d["record"] == e] == ["already linked"]
+    words = "the critic started on me and I answered it back"
+    e = moment(w, words)
+    out, _ = sweep(w, [{"record": e, "to": "part/critic", "rel": "showed-up", "passage": words},
+                       {"record": e, "to": "part/critic", "rel": "did-differently", "passage": words}], dry_run=True)
+    assert sorted(x["rel"] for x in out["links"]) == ["did-differently", "showed-up"]
 
 
 def test_a_loops_history_shows_its_moments_not_for_and_against(inner):
@@ -299,3 +301,4 @@ def test_a_run_that_stops_at_its_cap_waits_a_day_before_the_hourly_job_links_aga
     assert first["stopped"] and len(calls) == 1
     assert relink.hourly(w.repo, dear, now=LATER + timedelta(hours=23)) is None and len(calls) == 1
     assert relink.hourly(w.repo, dear, now=LATER + timedelta(hours=25)) is not None and len(calls) == 2
+

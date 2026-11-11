@@ -7,7 +7,10 @@ usage: uv run python bench/inner_checks.py run M3 M5 [--jobs 6] [--only M3-04,M5
 Each case runs in its own process with its own ENGRAM_DATA, ENGRAM_CONFIG, box config and sessions folder under
 `eval/inner-work/scratch/`, ENGRAM_SANDBOX set and no remote, so nothing reaches a real record, index or config. A
 check is judged by its `JUDGES` entry, or for a check of the guide's suggestions (M2, M8, M9) its `SUGGESTIONS` one, by
-what the record holds of the case's suggestion, seeded as the filer keeps one; a check with neither can't run yet."""
+what the record holds of the case's suggestion, seeded as the filer keeps one, or for a check of the linking job (M1,
+M4, M10) its `LINKS` one: each of the owner's lines seeded as the filer files one, the linking job run on the record (a
+dry run: its read, its code's guards and its confirming call, filing nothing), and judged by what each call gave; a
+check with none can't run yet."""
 import json
 import os
 import re
@@ -60,6 +63,8 @@ def one(check: str, case_id: str, work: Path) -> dict:
     and what was kept."""
     from engram import capture, ingest, notes, store
     case = next(c for c in json.loads((EVAL / f"{check}.json").read_text())["cases"] if c["id"] == case_id)
+    if check in LINKS:
+        return linked(check, case, work / "repo")
     repo, chats = work / "repo", work / "projects/-home-sam-inner-work"
     chats.mkdir(parents=True)
     calls, real = [], capture._ask
@@ -91,7 +96,7 @@ def one(check: str, case_id: str, work: Path) -> dict:
     kept = notes.read(repo)
     first = next((json.loads(m.group(0)) for c in calls if (m := re.search(r"\{.*\}", c["reply"], re.S))), {})
     got = SUGGESTIONS[check](case, first, held(repo, sug["id"], held_before)) if check in SUGGESTIONS else \
-        JUDGES[check](case, first, kept) if check != "M7" else judge_m7(case, made)
+        judge_m7(case, made) if check == "M7" else judge_m6(case, repo) if check == "M6" else JUDGES[check](case, first, kept)
     return {"id": case_id, "hard": case.get("hard"), "expect": case["expect"], **got,
             "usd": round(sum(r["usd"] for r in runs), 4), "calls": len(calls),
             "dropped": [d for r in runs for d in r["dropped"]], "note": kept[-1]["body"] if kept else None,
@@ -228,7 +233,131 @@ def judge_m9(case: dict, reply: dict, held: dict) -> dict:
     return {"wrong": wrong, "held": held, "gave": _gave(reply, exp["id"])}
 
 
+def saved_lines(case: dict, repo: Path) -> dict[int, list[str]]:
+    """The case's lines of the owner's that the record kept, as his words in an entry or a note line (`notes.spoken`),
+    each with what kept it: a quote is his line's when it's found in that message alone, else in the one right after
+    the guide's question it answered."""
+    from engram import config, notes, store, verbatim
+    me, chat = config.owner(), case["chat"]
+    kept = [(e.id, q, str(e.fm.get("answering") or "")) for e in store.Store(repo).events() if e.fm.get("author") == "engram-capture"
+            and e.kind not in ("link", "status", "thread") for who, q in notes.spoken(e.body) if who == me]
+    kept += [(n["fm"]["id"], q, "") for n in notes.read(repo) for who, q in notes.spoken(n["body"]) if who == me]
+    out: dict[int, list[str]] = {}
+    for ref, q, asked in kept:
+        hits = [t for t in chat if t["who"] == "owner" and verbatim.found(q, t["text"])]
+        if len(hits) > 1 and asked:
+            hits = [t for t in hits if any(g["who"] == "guide" and g["line"] == t["line"] - 1 and asked in g["text"] for g in chat)] or hits
+        for t in hits:
+            out.setdefault(t["line"], []).append(ref)
+    return out
+
+
+def judge_m6(case: dict, repo: Path) -> dict:
+    """Wrong when a line of tooling talk is kept, or a line of real talk isn't."""
+    got = saved_lines(case, repo)
+    exp = case["expect"]
+    return {"wrong": bool(set(got) & set(exp["skip_lines"])) or not set(exp["save_lines"]) <= set(got),
+            "kept_skip": sorted(set(got) & set(exp["skip_lines"])), "lost": sorted(set(exp["save_lines"]) - set(got)),
+            "saved": {str(k): v for k, v in sorted(got.items())}}
+
+
+def moments(repo: Path, case: dict, whole: bool = False) -> dict[int, str]:
+    """The case's lines of the owner's filed as the filer files them, on the day the chat is from: each his words as a
+    quote, with the guide's question it answers when the message before it asks one. Each line is its own entry, its
+    words its headline; `whole`, where the case says its excerpt is one moment, they are one entry, headlined with his
+    first line. Line -> entry id (each line of a whole one maps to it)."""
+    from engram import config, store
+    day, chat, out = START.astimezone().date().isoformat(), case["chat"], {}
+    said = []
+    for k, t in enumerate(chat):
+        if t["who"] == "owner":
+            prev = chat[k - 1]["text"] if k and chat[k - 1]["who"] == "guide" else ""
+            asked = re.split(r"(?<=[.!])\s+", prev.strip())[-1] if prev.strip().endswith("?") else ""
+            said.append((t["line"], " ".join(t["text"].split()), asked))
+    quote = lambda words, asked: f"- {config.owner()}" + (f", answering “{asked}”" if asked else "") + f": “{words}”\n"
+    st = store.Store(repo)
+    with st.transaction() as tx:
+        for group in ([said] if whole else [[x] for x in said]):
+            (line, words, asked) = group[0]
+            fm = {"title": words, "date": day, "kind": "observation", "about": [], "by": config.owner_id(), "domain": D,
+                  "source": f"said in session 5e1c4a5e on {day}", "author": "engram-capture",
+                  "recorded": f"{day}T19:{line:02d}:00-08:00", **({"answering": asked} if asked and not whole else {})}
+            eid = tx.add(fm, f"- {words}\n" + "".join(quote(w, q) for _, w, q in group)).id
+            out |= {x[0]: eid for x in group}
+    return out
+
+
+def linked(check: str, case: dict, repo: Path) -> dict:
+    """The linking job on the case's moments, with real calls: what its read proposed (before code's guards), what code
+    kept, what the confirming call said yes to; for a safety check, the confirming call asked besides of each kind the
+    case says never fits, on each of his lines; judged by the check's `LINKS` entry."""
+    from engram import config, pack, relink, theory
+    whole = "never" in case["expect"]  # a safety case's excerpt is one moment, as its setup says
+    lines = moments(repo, case, whole)
+    line_of = {v: min(k for k, x in lines.items() if x == v) for v in lines.values()}
+    calls, real = [], relink._ask
+
+    def ask(prompt, system, effort="low"):
+        reply, usd = real(prompt, system, effort)
+        calls.append({"effort": effort, "reply": reply, "usd": usd})
+        return reply, usd
+    relink._ask = ask
+    out = relink.sweep(repo, dry_run=True)
+    reads = [c["reply"] for c in calls if c["effort"] == relink.SWEEP_EFFORT]
+    proposed = [ln for r in reads for ln in _links(r) if isinstance(ln, dict)]
+    mine = lambda lns, key: [{"line": line_of[str(x.get(key))], "to": x.get("to"), "rel": x.get("rel"),
+                              "passage": x.get("passage") or x.get("why")} for x in lns if str(x.get(key)) in line_of]
+    probes = []
+    if never := case["expect"].get("never"):
+        p, g, k = pack.for_repo(repo), theory.load(repo), relink.kinds(repo)
+        target = g.things[case["expect"]["target"]]
+        for e in store_events(repo, line_of):
+            for line, words in [(n, t["text"]) for n, t in ((t["line"], t) for t in case["chat"]) if lines.get(n) == e.id]:
+                for rel in never:
+                    prompt = config.voice(p.prompts["sweep_confirm"]).format(
+                        record=f"[{e.id}] date {e.date}\n{e.fm['title']}: {' '.join(e.body.split())}", passage=" ".join(words.split()),
+                        target=relink._about(repo, g, target), rel=k.rels[rel].shown())
+                    reply, _ = ask(prompt, p.prompts.get("relink_system", ""))
+                    probes.append({"line": line, "rel": rel, "yes": bool(re.match(r"\W*yes\b", reply, re.I)), "reply": reply[:200]})
+    got = LINKS[check](case, mine(proposed, "record"), mine(out["confirmed"], "from"), probes)
+    return {"id": case["id"], "hard": case.get("hard"), "expect": case["expect"], **got, "usd": round(sum(c["usd"] for c in calls), 4),
+            "calls": len(calls), "proposed": mine(proposed, "record"), "kept": mine(out["links"], "from"),
+            "confirmed": mine(out["confirmed"], "from"), "dropped": [d for d in out["dropped"] if d["record"] in line_of],
+            "probes": probes}
+
+
+def _links(reply: str) -> list:
+    """The links a read's reply gives: its first JSON object's, as the linking job reads it."""
+    start = reply.find("{")
+    try:
+        return json.JSONDecoder().raw_decode(reply[start:])[0].get("links", []) if start >= 0 else []
+    except (json.JSONDecodeError, AttributeError):
+        return []
+
+
+def store_events(repo: Path, ids) -> list:
+    from engram import store
+    return [e for e in store.Store(repo).events() if e.id in ids]
+
+
+def judge_m1(case: dict, proposed: list, confirmed: list, probes: list) -> dict:
+    """Safety: wrong when the read proposes, or the confirming call says yes to, any link from his lines to the target
+    but the kinds the case allows, or the confirming call, asked of a kind the case says never fits, says yes."""
+    exp = case["expect"]
+    off = lambda lns: [x for x in lns if x["to"] == exp["target"] and x["rel"] not in exp["only"]]
+    bad = {"read": off(proposed), "confirmed": off(confirmed), "probes": [x for x in probes if x["yes"]]}
+    return {"wrong": any(bad.values()), "bad": bad, "linked_only": sorted({x["rel"] for x in confirmed if x["to"] == exp["target"]})}
+
+
+def judge_moment(case: dict, proposed: list, confirmed: list, probes: list) -> dict:
+    """Wrong unless the target gets a link of the case's kind, confirmed, from the moment at the case's line."""
+    exp = case["expect"]
+    hit = [x for x in confirmed if (x["line"], x["to"], x["rel"]) == (exp["line"], exp["target"], exp["rel"])]
+    return {"wrong": not hit, "read_gave": [x for x in proposed if x["to"] == exp["target"]]}
+
+
 JUDGES = {"M3": judge_m3, "M5": judge_m5, "M7": judge_m7}
+LINKS = {"M1": judge_m1, "M4": judge_moment, "M10": judge_moment}  # judged by what the linking job gave the case's moments
 SUGGESTIONS = {"M2": judge_m2, "M8": judge_m8, "M9": judge_m9}  # judged by what the record holds of the suggestion
 NO_THEMES = ("M7",)  # its cases start with no themes: the sample's one is left out
 

@@ -13,6 +13,12 @@ FILE = """Below is a conversation between {owner} and Claude, his guide in inner
 number in brackets. File what {owner} says after line {upto} that is worth keeping: what he noticed, what happened, what
 he decided or practised. Leave out what Claude says, Claude's guesses about him, and anything already filed.
 
+Go through every line of {owner}'s after line {upto}, one by one. Each is either filed (in a fact, or in the note when
+there is one) or given under "left": {{"line", "why"}}, why one of "tools" (only about the app, the notes, engram,
+filing, the repo or its settings), "filed before" or "nothing in it". A line that is also about him, his life or how
+he feels, even how he feels about the tools, is filed; a short reply ("yeah", "I guess") is filed with what it answers,
+a question or not, and is left as "tools" only when what it answers is.
+
 For each fact give "line", "text" (a headline), "quote" ({owner}'s words, copied exactly), "date" (YYYY-MM-DD, YYYY-MM,
 YYYY or "not-sure"), "kind" (one of {kinds}), "about" (from {abouts}) and "stories" (from {stories}). When he answers a
 question with a few words ("yeah", "mm"), give "answering" (Claude's question, copied exactly) and keep the headline
@@ -37,7 +43,7 @@ already holds is never one. When he calls a listed thread by a new name, give "n
 he says an entry is on the wrong one, give "moves": [{{"entry": <its id>, "from": <the thread>, "to": <the right
 thread, or {{"kind", "name"}}>, "said": <his words saying so, copied exactly>}}]. Never join, split or end a thread.
 {theory}
-Reply with JSON only: {{"facts": [...], "theory": []}}.
+Reply with JSON only: {{"facts": [...], "theory": [], "left": [...]}}.
 
 <conversation>
 {conversation}
@@ -80,9 +86,9 @@ SWEEP = """How things work underneath for {owner}:
 The ways a record links to one of these, each saying what happened, never whether a belief is true:
 {rels}
 
-For each record that shows one of these at work, give one link for each of them it bears on: "record", "to", "rel"
-(the first way above that says what happened to it there) and "passage" (the record's own words that show it, copied
-exactly; inside a note, only {owner}'s lines).
+For each record that shows one of these at work, give a link for each way above that says what happened to it there:
+"record", "to", "rel" and "passage" (the record's own words that show it, copied exactly; inside a note, only
+{owner}'s lines).
 Reply with JSON only: {{"links": [...]}}
 
 <records>
@@ -122,7 +128,8 @@ The sections, and whose words go in each: {sections}.
   softer is never a change, and neither is {owner} going along with it ("yeah", "mm", "maybe"). Without his own words
   for it, leave it empty.
 - where you stopped: where {owner} left it, and anything Claude offered that he didn't answer.
-Leave a section empty when nobody said anything for it; never fill one in.
+A line only about the tools goes in no section. Leave a section empty when nobody said anything for it; never fill
+one in.
 
 Earlier notes: {recent}"""
 

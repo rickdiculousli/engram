@@ -45,18 +45,17 @@ class Rel:
 
 @dataclass(frozen=True)
 class Kinds:
-    """A record's link kinds between its moments and its theory: the links' family and rels, in the order a record that
-    fits two is linked by the first, the theory kinds the linking job reads against, the records it never reads (by who
-    said them, by kind), whether it runs in the hourly job, and its commit's template. A record links to a thing one
-    way, being one row of that thing's history: a pair linked already holds it by any rel, and with `one_way` so does
-    one kept earlier in the same read (for and against keep their own rule, a read giving both keeping both)."""
+    """A record's link kinds between its moments and its theory: the links' family and rels, the theory kinds the
+    linking job reads against, the records it never reads (by who said them, by kind), whether it runs in the hourly
+    job, whether a record bears on a thing one way only (for and against exclude each other), and its commit's
+    template."""
     family: str
     rels: dict[str, Rel]
     targets: frozenset[str]
     skip_by: frozenset[str] = frozenset()
     skip_kinds: frozenset[str] = frozenset()
     hourly: bool = False
-    one_way: bool = True
+    one_way: bool = False
     template: str = "moments"
 
     def text(self) -> str:
@@ -66,7 +65,7 @@ class Kinds:
 
 
 EVIDENCE = Kinds("evidence", {r: Rel(r, r) for r in ("strengthens", "weakens")}, frozenset({"loop", "discovery"}),
-                 one_way=False, template="sweep")  # a record that names no link kinds of its own
+                 one_way=True, template="sweep")  # a record that names no link kinds of its own
 
 
 def kinds(repo: Path | None) -> Kinds:
@@ -305,7 +304,7 @@ def _check(reply: str, ids: dict[str, str], allowed: set[str], have: set, out: d
         elif (rec, to, rel) in have:
             drop("already linked")
         else:
-            have.update((rec, to, r) for r in (kinds_.rels if kinds_.one_way else (rel,)))
+            have.add((rec, to, rel))
             out["links"].append({"from": rec, "to": to, "rel": rel, "why": why_ if texts is not None else why_[:200],
                                  "moved_from": moved, "date": date})
 
@@ -474,7 +473,7 @@ def sweep(repo: Path, ask=None, confirm=None, dry_run: bool = False, limit: int 
     """The linking job: every entry but journals and every document the re-check reads, against the theory things the
     record's link kinds point at (`kinds`: loops and Discoveries, strengthens or weakens, unless it names its own), with
     the pack's `sweep` words and the kinds listed (`{rels}`). The re-check's guards hold, with a pair already linked
-    by any rel counting as held, and the read must cite
+    counting as held (by any rel where for and against exclude each other, else by that rel), and the read must cite
     the record's own words that bear on it (its `passage`, checked word for word; his own, inside a note or for a kind
     that needs them). Each surviving link then goes to a second call (`sweep_confirm`), which sees only the record, that
     passage, the target and the kind with what it means, never the read's reasoning; only a yes is filed, by=claude.
@@ -509,8 +508,9 @@ def sweep(repo: Path, ask=None, confirm=None, dry_run: bool = False, limit: int 
     if items:
         tg = {t: tg[t] for t in items}
     about = lambda t: _about(repo, g, t)
+    held_as = lambda rel: k.rels if k.one_way else (rel,)
     have = {(rec_of(e.fm.get("from")), t, rel) for e in st.events(kind="link")
-            if e.fm.get("family") == k.family and (t := thing_of(e.fm.get("to"))) for rel in k.rels}
+            if e.fm.get("family") == k.family and (t := thing_of(e.fm.get("to"))) for rel in held_as(e.fm.get("rel"))}
     refused = _refused(st, repo, g, reg, k)
     journal = {e.id for e in st.events(kind="journal")}
     recs = [r for r in records(repo, p.relink_skip, k) if r[0] not in journal]
@@ -521,7 +521,7 @@ def sweep(repo: Path, ask=None, confirm=None, dry_run: bool = False, limit: int 
     sig = lambda t: hashlib.sha1(t.encode()).hexdigest()[:16]
     if state.get("targets") != sorted(tg):
         state = {"targets": sorted(tg), "read": {}, "pending": state.get("pending", []), "confirmed": state.get("confirmed", [])}
-    have |= {(x["from"], x["to"], rel) for x in state["pending"] + state["confirmed"] for rel in k.rels}
+    have |= {(x["from"], x["to"], rel) for x in state["pending"] + state["confirmed"] for rel in held_as(x["rel"])}
     unread = [r for r in recs if state["read"].get(r[0]) != sig(r[2])]
     work = batches(unread, SWEEP_BUDGET)[:limit]
     # the record's own kinds are shown with the theory they belong to; links are made only to what the kinds point at

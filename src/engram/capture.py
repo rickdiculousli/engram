@@ -1526,6 +1526,10 @@ def _file(domain: str, root: Path, path: Path, p: pack.Pack, s: sessions.Session
         kind = str(op.get("op") if isinstance(op, dict) else op)
         res["dropped"].append({"session": path.stem[:8], "line": None, "text": json.dumps(op)[:120],
                                "why": f"a thread {kind if kind in THREAD_OPS else 'change'} is made in conversation, never by the filer"})
+    for x in parsed.get("left") or []:  # a line of his the reply accounts for as left out, and why: the run says so
+        if isinstance(x, dict):
+            res["dropped"].append({"session": path.stem[:8], "line": x.get("line"), "text": "a line of his",
+                                   "why": f"left out by the filer: {str(x.get('why') or 'no reason given')[:80]}"})
     for f in parsed.get("facts") or []:
         try:
             line = int(f.get("line"))

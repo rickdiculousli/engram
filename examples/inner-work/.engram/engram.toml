@@ -61,7 +61,7 @@ needs_note = true  # one is added only from a session with a note, which it name
 [suggestions]  # the guide's ideas, kept as the guide's where the pack has `suggest` words
 quiet_days = 30  # one the owner hasn't spoken of for this long leaves the picture a chat starts with
 
-[links.moment]  # change 9: how a moment links to the theory, in place of strengthens and weakens; one way, the first that fits
+[links.moment]  # change 9: how a moment links to the theory, in place of strengthens and weakens
 skip_kinds = ["practice"]  # never sent to the linking job; the guide's suggestions never are
 hourly = true  # the linking job runs in the hourly job, whatever [refine] says
 [links.moment.rels.showed-up]

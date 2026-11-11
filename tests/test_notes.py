@@ -318,3 +318,12 @@ def test_a_committed_note_is_never_rewritten(inner):
     n["path"].write_text(n["text"].replace("chest. tight.", "chest. loose."))
     subprocess.run(["git", "-C", str(w.repo), "add", "-A"], check=True)
     assert [b.split("\t")[0] for b in lint.staged_event_violations(w.repo)] == ["M"]
+
+
+def test_a_line_the_filer_leaves_out_is_told_in_the_run_with_its_reason(inner):
+    """Where the pack asks the filer to account for each of his lines (M6: talk about the tools isn't his record),
+    what it leaves out is a row of the run's `dropped`."""
+    w = inner()
+    w.chat(1, upto=4)
+    out = w.run(Model({"working": False, "left": [{"line": 1, "why": "tools"}]}))
+    assert [d for d in out["dropped"] if d["line"] == 1 and d["why"] == "left out by the filer: tools"]

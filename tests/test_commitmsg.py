@@ -62,7 +62,8 @@ WIKI = [("wiki", dict(item="doc-k7f2qa", n=3), "engram: the wiki from doc-k7f2qa
 RENEWALS = [("renewals", dict(n=2, session="ab12cd34"), "engram: Sam still on 2 things, said in session ab12cd34"),
             ("narrow", dict(n=2), "engram: 2 dates narrowed by dated documents"),
             ("note", dict(n=1, session="ab12cd34"), "engram: the note of Sam's session ab12cd34, and 1 facts"),
-            ("moments", dict(n=2, records="records"), "engram: 2 records linked to the theory by what happened")]
+            ("moments", dict(n=2, records="records"), "engram: 2 records linked to the theory by what happened"),
+            ("regroup", dict(n=3), "engram: Sam's stated beliefs regrouped, 3 suggestions")]
 
 
 def test_each_template_writes_medicals_message_byte_for_byte():

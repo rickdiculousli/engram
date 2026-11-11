@@ -48,7 +48,7 @@ from collections import Counter
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-from engram import commitmsg, config, dates, fix, frontmatter, llm, notes, pack, periods, recsum, store, summarize, threads, units, verbatim
+from engram import beliefs, commitmsg, config, dates, fix, frontmatter, llm, notes, pack, periods, recsum, store, summarize, threads, units, verbatim
 from engram import now as now_mod
 from engram import theory as theory_mod
 from engram.paths import data_path, record_conf, record_toml
@@ -1091,6 +1091,8 @@ def links_for(eid: str, fm: dict, where: dict, quote: str, source: str, st: stor
             except docreg.MoveError:  # a page without the section: filed as named, the rename check guards it
                 return lfm
         out = [(ided(lfm), note) for lfm, note in out]
+    if where.get("beliefs"):  # a stated belief: each belief it expresses
+        out += beliefs.links(eid, fm, where["beliefs"], beliefs.settings(st.root), st.root)
     if fixes := where.get("corrects"):  # a note it corrects: shown with the note, which stays as it was
         out.append(({"title": f"{eid} corrects {fixes}", "date": fm.get("reported"), "kind": "link", "about": fm.get("about"),
                      "from": eid, "to": fixes, "family": "evidence", "rel": "corrects", "by": "claude",
@@ -1496,7 +1498,9 @@ def _file(domain: str, root: Path, path: Path, p: pack.Pack, s: sessions.Session
     if tt:
         home = ""  # its entries render into no page: a remark on no thread stays on none
     th = theory_shape(st, p.prompts.get("theory", ""), p.prompts.get("suggest", ""))
-    g = th[0] if th else theory_mod.load(root) if cur.origin else None  # read again only for what a practice names
+    bel = beliefs.settings(root) if p.prompts.get("stated") else None  # what he says about himself, kept as a trail
+    g = th[0] if th else theory_mod.load(root) if cur.origin or bel else None  # read again only for what needs it
+    stating = config.voice(p.prompts["stated"]).format(kind=bel.kind, beliefs=beliefs.block(st, g, bel)) if bel else ""
     asked = bool(th and th[5])  # where the guide's suggestions are kept, a short yes is kept as the question and the yes
     mine = filed_from(st, path.stem)
     already = [f"{e.date} {e.fm.get('title', '')}: {' '.join(e.body.split())[:200]} (id {e.id})" for e in mine]
@@ -1514,14 +1518,15 @@ def _file(domain: str, root: Path, path: Path, p: pack.Pack, s: sessions.Session
                                           complaints="; ".join(f"{k} ({v[0]})" for k, v in complaints.items()) or "none",
                                           conversation=conversation(shown, upto), window=WINDOW,
                                           landmarks=", ".join(f"{k} ({v})" for k, v in marks.items()) or "none",
-                                          theory=th[3].replace("{upto}", str(upto)) if th else "", already="\n".join(already) or "nothing",
+                                          theory=(th[3].replace("{upto}", str(upto)) if th else "") + (f"\n{stating}\n" if stating else ""),
+                                          already="\n".join(already) or "nothing",
                                           record=record)
                          + (f"\n\n{notes.prompt(cfg, part, notes.recent(root))}" if part else ""))
     res["usd"] += usd
     parsed = reply_json(reply)
     turns, recent, his = turn_before(s), turn_before(s, RECENT), "\n".join(owners(s).values())
     entries, lines, places, fixable = [], [], [], notes.refs(root)
-    made, threaded_writes, held = {}, [], {e.id: e for e in st.events() if e.kind != "link"}
+    made, threaded_writes, held, made_beliefs = {}, [], {e.id: e for e in st.events() if e.kind != "link"}, []
     for op in parsed.get("thread_ops") or [] if tt else []:  # a join, a split or an end is the owner's, in conversation
         kind = str(op.get("op") if isinstance(op, dict) else op)
         res["dropped"].append({"session": path.stem[:8], "line": None, "text": json.dumps(op)[:120],
@@ -1545,6 +1550,17 @@ def _file(domain: str, root: Path, path: Path, p: pack.Pack, s: sessions.Session
             f = {**f, "kind": p.kinds[0] if p.kinds else "observation"}  # what he said is still his entry
         if not why and cur.entity_kind and f.get("kind") == cur.entity_kind:
             why = entity_repeat(f, stands, cur, thing)
+        believed, context = [], " ".join(turns.get(line, "").split())
+        if not why and bel and f.get("kind") == bel.kind:
+            if len(" ".join(str(f.get("quote", "")).split()).split()) < SHORT and context:  # a short reply: the guide's words
+                res["dropped"].append({"session": path.stem[:8], "line": line, "text": str(f.get("text", ""))[:120],
+                                       "why": f"a reply of under {SHORT} words is kept as the question and the reply, never as a "
+                                              f"{bel.kind} in {config.owner()}'s voice"})
+                f = {**f, "kind": p.kinds[0] if p.kinds else "observation"}
+            else:
+                believed, whys = beliefs.check(f, g, bel, verbatim.span(" ".join(str(f["quote"]).split()), later[line]), when[line],
+                                               root, made_beliefs)
+                res["dropped"] += [{"session": path.stem[:8], "line": line, "why": w, "text": str(f.get("text", ""))[:120]} for w in whys]
         if why:
             res["dropped"].append({"session": path.stem[:8], "line": f.get("line"), "why": why, "text": str(f.get("text", ""))[:120],
                                    "quote": str(f.get("quote", ""))[:200]})
@@ -1559,9 +1575,13 @@ def _file(domain: str, root: Path, path: Path, p: pack.Pack, s: sessions.Session
                 res["dropped"] += [{"session": path.stem[:8], "line": line, "why": w, "text": str(f.get("text", ""))[:120]} for w in whys]
             if thing and fm["kind"] == cur.entity_kind:  # an existing chain: "Pataday" joins "Pataday 0.7%"
                 fm["thing"] = thing
+            if bel and fm["kind"] == bel.kind:  # his words as he typed them, the guide's message before, the chat
+                fm |= {"said": verbatim.span(" ".join(str(f["quote"]).split()), later[line]), "context": context, "chat": path.stem}
             if target := correction_target(f, st):
                 fm["supersedes"] = target
             where = place(f, fm, st, stories, complaints, rels, p.occurrence_kinds)
+            if believed and fm["kind"] == bel.kind:
+                where["beliefs"] = believed
             if not target and (fixes := str(f.get("corrects") or "")) in fixable:
                 where["corrects"] = fixes  # a note isn't replaced by a correction of it: the correction shows with it
             entries.append((placed(fm, where), body))
@@ -1572,17 +1592,19 @@ def _file(domain: str, root: Path, path: Path, p: pack.Pack, s: sessions.Session
         return True
     if note:  # what the note states isn't filed again; what's filed beside it is shown under it
         cited = {l.at for ls in note["sections"].values() for l in ls if l.who == "owner"}
-        for i in [i for i, (fm, _) in enumerate(entries) if fm["kind"] != cur.entity_kind and lines[i] in cited]:
+        own = {cur.entity_kind, bel.kind if bel else None} - {None, ""}  # a practice's change, a stated belief: kept beside it
+        for i in [i for i, (fm, _) in enumerate(entries) if fm["kind"] not in own and lines[i] in cited]:
             res["dropped"].append({"session": path.stem[:8], "line": lines[i], "why": f"in the note {note['fm']['id']}",
                                    "text": entries[i][0]["title"]})
-        keep = [i for i, (fm, _) in enumerate(entries) if not (fm["kind"] != cur.entity_kind and lines[i] in cited)]
+        keep = [i for i, (fm, _) in enumerate(entries) if not (fm["kind"] not in own and lines[i] in cited)]
         stated = [a for i, (fm, _) in enumerate(entries) if i not in keep for a in fm["about"]]
         note["fm"]["about"] = list(dict.fromkeys(note["fm"]["about"] + stated))  # on the threads of what it states
         note["text"] = notes.render(note["fm"], note["sections"], cfg)
         entries, lines, places = [entries[i] for i in keep], [lines[i] for i in keep], [places[i] for i in keep]
         for fm, _ in entries:
             fm["note"] = note["fm"]["id"]
-    repeats, kept, usd = verify(domain, st, entries, ask_verify, p, forms(s, root))
+    occurs = dataclasses.replace(p, occurrence_kinds=p.occurrence_kinds | {bel.kind}) if bel else p  # each statement is one more time he said it
+    repeats, kept, usd = verify(domain, st, entries, ask_verify, occurs, forms(s, root))
     res["usd"] += usd
     for i, ref in kept.items():
         if i not in repeats:
@@ -1643,6 +1665,7 @@ def _file(domain: str, root: Path, path: Path, p: pack.Pack, s: sessions.Session
         spoke.add(t["status"]["id"] if isinstance(t.get("status"), dict) else "")
         entries.append(theory_entry(t, when[line], path.stem, g))
     entries += [x for tid, x in proposed.items() if tid not in spoke] + joins
+    files += made_beliefs  # a belief a statement of his named
     revision = None
     try:
         line = int(parsed.get("structural"))

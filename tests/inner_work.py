@@ -287,7 +287,7 @@ def stated_all(world: Inner, items: list[tuple]) -> list[str]:
         for k, (words, day, beliefs, *more) in enumerate(items, n):
             context, loose = (more[0] if more else ""), (more[1] if len(more) > 1 else ())
             eid = tx.add({"title": words, "date": day, "kind": "stated-belief", "about": [], "by": "sam", "domain": D,
-                          "recorded": f"{day}T21:{k // 60:02d}:{k % 60:02d}-08:00", "context": context,
+                          "recorded": f"{day}T21:{k // 60:02d}:{k % 60:02d}-08:00", "said": words, "context": context,
                           "source": f"said in session 5e110000 on {day}"}, f"- Sam: “{words}”\n").id
             for b in beliefs:
                 tx.add({"title": f"showed up {b}", "date": day, "kind": "link", "family": "moment", "rel": "showed-up",

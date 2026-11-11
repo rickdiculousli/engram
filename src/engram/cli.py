@@ -142,6 +142,16 @@ def cmd_theory(a):
                     Path(a.out).write_text(json.dumps(r, ensure_ascii=False, indent=1))
                 print(json.dumps({k: len(v) if isinstance(v, list) else v for k, v in r.items()}))
                 return
+            if a.action in ("trail", "regroup"):
+                from engram import beliefs
+                if a.action == "regroup":
+                    print(json.dumps(beliefs.regroup(d, repo, dry_run=a.dry_run), ensure_ascii=False))
+                    return
+                if not a.target:
+                    sys.exit("engram: theory trail needs a belief, as belief/<name>")
+                from engram import timeline
+                print(timeline.render(*beliefs.fit(d, a.target, int(_window() * 0.95), skip=a.skip or 0)))
+                return
             if a.action == "change":
                 from engram import theorychange
                 try:
@@ -812,10 +822,13 @@ def main(argv=None):
                        "`theory change` revises it when the owner agrees; `theory relink` re-checks the evidence after one; "
                        "`theory sweep [<thing>]` links the whole record's moments to the theory (its loops and Discoveries, or "
                        "what its own link kinds point at), or to one thing, as a look-back asks; `theory recheck <target>` reads "
-                       "again the links engram placed on one")
-    s.add_argument("action", nargs="?", choices=["change", "relink", "sweep", "recheck"])
+                       "again the links engram placed on one; `theory trail <belief>` gives every statement of the owner's "
+                       "about himself linked to it or to a belief under it, oldest first; `theory regroup` reads them all "
+                       "and adds the guide's suggested groupings")
+    s.add_argument("action", nargs="?", choices=["change", "relink", "sweep", "recheck", "trail", "regroup"])
     s.add_argument("target", nargs="?", help="for recheck: the loop or Discovery whose links engram placed are read again; "
-                   "for sweep: the one thing every record is read against")
+                   "for sweep: the one thing every record is read against; for trail: the belief")
+    s.add_argument("--skip", type=int, help="for trail: start after this many statements, as a cut trail's header says")
     s.add_argument("--domain")
     s.add_argument("--mermaid", action="store_true", help="as a Mermaid diagram")
     s.add_argument("--as-of", help="the graph as it stood on YYYY-MM-DD")

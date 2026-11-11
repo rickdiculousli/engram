@@ -1,8 +1,5 @@
 """The inner-work area's pack: the words engram's model calls use for one person's sessions with a guide, what "where
-things stand" follows (the practices), and a reader for the rows the person's gym app keeps. Every word is made up.
-
-The words under "Not yet read by engram" are the inner-work changes' (docs/technical.md, "The inner-work settings"):
-`stated` and `regroup`. Today engram reads only the rest."""
+things stand" follows (the practices), and a reader for the rows the person's gym app keeps. Every word is made up."""
 import json
 from datetime import datetime
 from pathlib import Path
@@ -133,8 +130,6 @@ one in.
 
 Earlier notes: {recent}"""
 
-# ---- Not yet read by engram: the inner-work changes' words ----
-
 SUGGEST = """Claude's ideas about {owner} that he hasn't taken up (a hunch, "maybe there's a part of you that...", a belief or a
 pattern Claude names in him) are kept too, as Claude's. For each such idea Claude offers after line {upto}, new or
 said again, give "suggestions": [{{"line": <Claude's line>, "quote": <Claude's words for the idea, copied exactly>,
@@ -152,17 +147,39 @@ For each line after {upto} where {owner} speaks of one of the guide's suggestion
 - "asks": he asks what it is, whether it's real, where it came from.}}
 Doubting or asking is not denying. Only "adopts" makes it his, and only "denies" rules it out."""
 
-STATED = """When {owner} says something about himself ("I'm a burden"), give it as a fact of kind {kind} and, under
-"beliefs", every belief below it expresses, by meaning, not by shared words ("loose": true when the fit is partial). If
-none fits, give "new_belief" with his statement, copied exactly. Never give one said only by the guide, or one he
-only agreed to.
+STATED = """What {owner} says he believes about himself, about who or what he is or how he is with people, is kept as a
+trail. Give each such statement as a fact of kind {kind}, its quote his words that say it, copied exactly, and under
+"beliefs" every belief below that it expresses: [{{"id": <its id>}}], with "loose": true where it fits only in part.
+Judge by what the statement says about him, never by the words it shares with a belief or with his other statements:
+two statements with no word in common can say the same thing about him, and two that share words can say different
+things, or one of them nothing about him at all. Give the narrowest belief that fits, and every one that does; a
+broader belief already holds what sits under it. When none below fits, give "new_belief": {{"name": his statement, or
+the words of it that say the belief, copied exactly}}, and nothing for it under "theory".
 
+A statement is his own, about himself. Not one: what he says about another person, a group, people or the world, even
+when it echoes a belief of his; what someone else thinks of him, or of themselves, which he reports; a remark about a
+day, a thing or a task that happens to share a belief's words; what only Claude said, or what he only agreed to. Keep
+those, if they're worth keeping, as facts of another kind.
+
+The beliefs, each with what it sits under and a few of his statements:
 {beliefs}"""
 
-REGROUP = """Here is every statement {owner} has made about himself, with the beliefs each is linked to. Propose new
-beliefs, new links and broader groupings. Never remove a link.
+REGROUP = """Below is every statement {owner} has made about himself, each with the beliefs it is linked to, and the beliefs,
+each with what it sits under. Read them all at once and propose, by what each statement means, not by shared words:
+- "links": a statement to a belief it expresses that it isn't linked to yet, {{"from": <the statement's id>, "to": <a
+  belief's id>, "loose": true where it fits only in part}};
+- "beliefs": a new belief for statements that say the same thing and fit none below, {{"id": "belief/<a few words,
+  lower case, joined by dashes>", "name": <one of his statements, or the words of it that say the belief, copied
+  exactly>, "from": <that statement's id>}}, with a link from each statement that expresses it;
+- "under": a belief that sits under a broader one, {{"from": <the narrower>, "to": <the broader>}}; a broader one may
+  be new, named in your words.
+Never remove a link or a belief. Reply with JSON only: {{"beliefs": [...], "links": [...], "under": [...]}}.
 
-{statements}"""
+Statements:
+{statements}
+
+Beliefs:
+{beliefs}"""
 
 
 def read_gym(repo: Path) -> Source:

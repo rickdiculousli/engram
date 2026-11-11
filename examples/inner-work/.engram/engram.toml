@@ -86,10 +86,13 @@ means = "its grip loosened, as Sam says himself"
 to = ["belief", "part", "loop", "insight"]
 owner_words = true  # only on a passage of Sam's own words
 
+[beliefs]  # what Sam says about himself, kept as a trail
+kind = "stated-belief"  # the entry kind it's saved as
+belief = "belief"  # the theory kind a statement links to: a group of statements that say nearly the same thing
+rel = "showed-up"  # the moment link kind it links by
+under = "under"  # the theory link that puts a belief under a broader one
+
 # ---- Not yet read by engram: the inner-work settings ----
 
 [app]  # change 10: what the pack's `gym` reader passes as the owner's own words
 kind = "practice-note"
-
-[beliefs]  # change 12: what the owner says about himself, kept as a trail
-kind = "stated-belief"

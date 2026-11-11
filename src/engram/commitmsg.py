@@ -16,6 +16,7 @@ TEMPLATES = {
     "sweep": "engram: evidence swept, {n} {records} linked to the theory\n\n"
              "Refinement: the theory's loops and Discoveries gained evidence from {n} more {records}",
     "moments": "engram: {n} {records} linked to the theory by what happened",  # a record's own link kinds, hourly
+    "regroup": "engram: {owner}'s stated beliefs regrouped, {n} suggestions",  # a look-back's, on request
     "exclude": "engram: {path} stays out of the index",
     "nodes": "engram: the node list drops {n} rows for files that are gone",
     "ids": "engram: stable ids for {docs} documents and {headings} linked headings",

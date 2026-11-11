@@ -257,3 +257,12 @@ def test_a_thread_is_named_as_he_typed_it(inner):
     w.run(Model({"facts": [fact(4, "I go quiet around my dad again.", "Sam goes quiet around his dad.",
                                 create=[{"kind": "person", "name": "My Dad"}])]}))
     assert [e.fm["name"] for e in w.events(kind="thread")] == ["my dad"]
+
+
+def test_a_record_that_creates_no_threads_reads_no_thread_links():
+    """Off by default: a join or a move in a record without `[threads] create` changes no history."""
+    from engram import store, threads
+    link = lambda rel, a, b: store.Event(f"l-{rel}", "", {"kind": "link", "rel": rel, "from": a, "to": b, "date": "2026-11-01"}, "")
+    events = [link("joined-into", "story/ankle", "story/knee"), link("split-into", "story/ankle", "story/heel"),
+              link("placed-on", "e1", "story/knee")]
+    assert threads.Threads(events, ()).on("e1", ["story/ankle"], "2026-10-01") == ["story/ankle"]

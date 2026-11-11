@@ -7,7 +7,8 @@ entry gives each of its names, in the owner's words: two names for one person ar
 people he calls by one word are two ids that word finds. What changes a thread is a dated link, never an edit:
 `joined-into` puts two threads' entries on both, `split-into` puts what the old one held up to that day on the new
 one too, `ended` closes one, and `placed-on` puts an entry on a thread, taking it off another when it names one (a
-correction that moves it). Only a conversation makes a join, a split or an end; the filer never does."""
+correction that moves it), read only in a record that creates threads. Only a conversation makes a join, a split or an
+end; the filer never does."""
 import re
 
 from engram import dates, verbatim
@@ -55,7 +56,7 @@ class Threads:
                         names = self.names.setdefault(a, [])
                         if str(e.fm["name"]) not in names:
                             names.append(str(e.fm["name"]))
-            elif e.kind == "link":
+            elif e.kind == "link" and made:  # off where the record creates no threads
                 rel, a, b = e.fm.get("rel"), str(e.fm.get("from") or ""), str(e.fm.get("to") or "")
                 if rel == JOIN and self.thread(a) and self.thread(b):
                     self.joined.setdefault(a, set()).add(b)

@@ -14,7 +14,6 @@ from engram import now as now_mod
 from engram.sources import sessions
 from inner_work import Model, add, chat1_note, chat_id, inner, made, on_day, zone  # noqa: F401  (fixtures)
 
-NOT_YET = "change 8: chat start prints only `engram now`, nothing from a session"
 STOPPED = ["I want to try saying it at sunday dinner.", "Next time we can start from the sentence and the ten-year-old."]
 UNSAVED = re.compile(r"(isn't|not been|not) saved yet")
 
@@ -32,7 +31,6 @@ def noted(w, monkeypatch):
     on_day(monkeypatch, datetime(2026, 11, 5, 3, tzinfo=timezone.utc))
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 def test_65_the_next_day_a_chat_opens_with_the_notes_where_you_stopped_and_nothing_else_of_it(inner, monkeypatch):
     w = inner()
     noted(w, monkeypatch)
@@ -42,7 +40,6 @@ def test_65_the_next_day_a_chat_opens_with_the_notes_where_you_stopped_and_nothi
     assert "chest. tight." not in out and "my hands stopped shaking" not in out
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 def test_66_each_thing_saved_since_the_note_is_one_line_and_nothing_older_is(inner, monkeypatch):
     w = inner()
     noted(w, monkeypatch)
@@ -54,7 +51,6 @@ def test_66_each_thing_saved_since_the_note_is_one_line_and_nothing_older_is(inn
     assert not [l for l in lines if "Went quiet when his manager criticised the plan" in l]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 def test_67_a_picture_too_long_to_print_is_cut_and_where_you_stopped_is_kept(inner, monkeypatch):
     w = inner()
     noted(w, monkeypatch)
@@ -78,7 +74,6 @@ def with_a_tool_call(lines: list[str]) -> list[str]:
     return [json.dumps(r) for r in out]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 def test_68_ten_minutes_after_the_last_chat_one_line_says_it_isnt_saved_and_a_command_prints_it(inner, monkeypatch, capsys):
     w = inner()
     w.chat(3, lines=with_a_tool_call(w.chat(3).read_text().splitlines()))
@@ -93,7 +88,6 @@ def test_68_ten_minutes_after_the_last_chat_one_line_says_it_isnt_saved_and_a_co
     assert "secret-call" not in printed and "TOOL OUTPUT" not in printed
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 @pytest.mark.parametrize("source", ["resume", "compact"])
 def test_69_the_chat_being_resumed_or_compacted_is_never_the_unsaved_last_session(inner, monkeypatch, source):
     w = inner(2, 3)
@@ -102,7 +96,6 @@ def test_69_the_chat_being_resumed_or_compacted_is_never_the_unsaved_last_sessio
     assert len(said) == 1 and chat_id(2) in said[0] and chat_id(3) not in said[0]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 def test_70_chat_start_calls_no_model_and_no_network_and_reads_only_the_latest_earlier_chat(inner, monkeypatch):
     w = inner(2, 3)
     on_day(monkeypatch, datetime(2026, 11, 9, 16, 12, tzinfo=timezone.utc))

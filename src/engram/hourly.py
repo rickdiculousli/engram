@@ -11,13 +11,14 @@ waits for that.
 
 The install's health: the SessionStart hook checks the install and repairs it (it's the only thing that notices a dead
 job), printing one line if a repair fails; then, where setup widened Claude's Bash window, that engram's output is read
-whole; then where things stand (`engram now`), cut from its end to fit what Claude Code shows whole; then the weekly
+whole; then, in a repo with notes, where the last session stopped and whether the latest chat is saved yet; then where things stand (`engram now`), cut from its end to fit what Claude Code shows whole; then the weekly
 refinement's files that won't parse. `engram capture status` shows the record's side of it (`record_state`). State
 lives in the data folder, never in the repo.
 """
 import contextlib
 import fcntl
 import os
+import re
 import sqlite3
 import subprocess
 from datetime import datetime, timedelta
@@ -245,6 +246,35 @@ def fit(picture: str, room: int) -> str:
     return cut[:cut.rfind("\n") + 1] + MORE
 
 
+def last_chat(root: Path, current: str) -> Path | None:
+    """The repo's most recent chat file but the one starting (or resuming, or being compacted), by when it was last
+    written, read off the folder alone; an excluded chat is never it."""
+    if not sessions.ROOT.is_dir():
+        return None
+    name = re.compile(rf"-{re.escape(sessions._dashed(root.name))}(-|$)")
+    skip = [current, *map(str, sessions._kept(root).get("exclude", []))]
+    chats = [p for d in sessions.ROOT.iterdir() if d.is_dir() and name.search(d.name) for p in d.glob("*.jsonl")
+             if p.stem != current and not any(x and p.stem.startswith(x) for x in skip)]
+    return max(chats, key=lambda p: p.stat().st_mtime_ns, default=None)
+
+
+def last_session(root: Path, current: str) -> list[str]:
+    """What a chat starts with in a repo with notes: where the last session stopped (`notes.stopped`), and, when the
+    latest chat isn't filed yet, one line saying so with the command that prints it. Only data on this box is read, and
+    of the chat files only that latest one."""
+    if not notes.stopping(root):
+        return []
+    out = [t] if (t := notes.stopped(root, store.Store(root).events())) else []
+    if (p := last_chat(root, current)) is not None:
+        with contextlib.closing(capture.db()) as c:
+            filed = (c.execute("SELECT bytes FROM filed WHERE session = ?", (p.stem,)).fetchone() or (0,))[0]
+        if p.stat().st_size > filed:
+            at = capture.last_message(p)
+            out.append(f"The last session ({p.stem}, last message {at:%Y-%m-%d %H:%M}) isn't saved yet: "
+                       f"`engram session {p.stem}` prints it.")
+    return out
+
+
 def session_start(payload: dict) -> str:
     """The SessionStart hook: check the install and repair it, saying one line only if something couldn't be fixed;
     then, where setup's Bash window is in place, that engram's output fits it whole; then, for a record whose entries
@@ -261,6 +291,8 @@ def session_start(payload: dict) -> str:
         out.append(f"engram's daily copy {copy}: run `engram health` and tell {config.owner()} in one line.")
     if isinstance(w := setup.settings(found[1]).get(setup.WINDOW_KEY), int) and w >= setup.BASH_BUDGET:  # only a window that wide holds a long timeline whole
         out.append(READ_WHOLE)
+    with contextlib.suppress(Exception):  # where the last session stopped is a help too, never a block
+        out += last_session(found[1], str(payload.get("session_id") or ""))
     picture, after = "", []
     if (record_conf(found[1]).get("index") or {}).get("events"):
         with contextlib.suppress(Exception):  # the picture is a help; a broken record mustn't block the session

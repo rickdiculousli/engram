@@ -39,6 +39,11 @@ def folder(root: Path | None) -> str:
     return str(_conf(root).get("folder", "")).strip("/")
 
 
+def stopping(root: Path | None) -> str:
+    """The section a chat starts with (`[notes] stopped`), or "" when the repo keeps no notes."""
+    return str(_conf(root).get("stopped") or "")
+
+
 def settings(root: Path, words: str) -> Settings | None:
     """The repo's note settings, or None: notes need a folder, sections and the pack's `note` words."""
     conf = _conf(root)
@@ -257,8 +262,7 @@ def _themes(fm: dict) -> str:
 def stopped(root: Path, events: list) -> str:
     """What a chat starts with in a repo with notes: the latest note's "where you stopped" lines with its date and
     themes, its last lines when they're too long, then one line for each entry saved since. Empty with no notes."""
-    conf, notes = _conf(root), read(root)
-    name = str(conf.get("stopped") or "")
+    name, notes = stopping(root), read(root)
     if not name or not notes:
         return ""
     last = notes[-1]

@@ -107,6 +107,15 @@ def cmd_now(a):
     sys.exit("engram: no record here keeps its entries as events; `engram now` needs one")
 
 
+def cmd_session(a):
+    """A chat's messages, the owner's and Claude's written replies, without tool calls or their output: for a session
+    the filer hasn't saved yet."""
+    found = sorted(sessions.ROOT.glob(f"*/{a.id}*.jsonl")) if sessions.ROOT.is_dir() else []
+    if len(found) != 1:
+        sys.exit(f"engram: {len(found) or 'no'} chats here have an id starting {a.id}")
+    print(summarize.render_turns(summarize.clean(sessions.parse(found[0]))))
+
+
 def cmd_theory(a):
     from engram import theory
     if a.action == "relink":
@@ -793,6 +802,10 @@ def main(argv=None):
                        "record")
     s.add_argument("--domain")
     s.set_defaults(fn=cmd_now)
+
+    s = sub.add_parser("session", help="a chat's messages without tool calls or their output, for one not saved yet")
+    s.add_argument("id", help="the chat's id, or the start of it")
+    s.set_defaults(fn=cmd_session)
 
     s = sub.add_parser("theory", help="the whole theory graph (conditions, loops with their paths, joins, statuses); "
                        "`theory change` revises it when the owner agrees; `theory relink` re-checks the evidence after one; "

@@ -1868,6 +1868,41 @@ def renew(domain: str, root: Path, path: Path, upto: int, ask=None, dry_run: boo
     return res
 
 
+def app_rows(domain: str, root: Path) -> int:
+    """What the owner typed in an app of his, saved as his entries, where the record names the kind they're saved as
+    (`[app] kind`): each record a pack's reader passes of class `said`, by him, with words and a date, is one entry,
+    quoted whole, on the threads it names (`stories`), saved once by the reader's ref (its `source`). A row whose words
+    changed since is saved again, superseding the entry its last words were saved in. Returns how many were saved."""
+    st = store.Store(root)
+    kind = str(st.config.get("app", {}).get("kind") or "")
+    if not kind:
+        return 0
+    me, saved, last, new = config.owner_id(), {}, {}, []
+    for e in st.events():
+        saved.setdefault(str(e.fm.get("source", "")), []).append(e)
+    for source, es in saved.items():  # each row's latest words: its entry none of its others supersedes
+        gone = {e.fm.get("supersedes") for e in es}
+        last[source] = next((e for e in es if e.id not in gone), None)
+    for name, read in pack.load(domain).read.items():
+        for d in read(root).docs:
+            source, said = f"typed in {name}, {d.ref}", " ".join(d.body.split())
+            if d.cls != "said" or config.voice(d.author) != me or not said or not d.date:
+                continue
+            if last.get(source) and last[source].fm.get("said") == said:
+                continue
+            new.append({"title": cut_title(said), "date": d.date, "reported": d.date, "kind": kind,
+                        "about": [s.strip() for s in d.stories.split(",") if s.strip()], "by": me, "source": source,
+                        "author": "engram-capture", "said": said, **({"supersedes": last[source].id} if last.get(source) else {})})
+    if new:
+        dom = st.config.get("domain", {}).get("name", "")
+        with st.transaction(message=commitmsg.message("rows", n=len(new))) as tx:
+            for fm in new:
+                eid = tx.add({**fm, "domain": dom}, f"- {config.owner()}: “{fm['said']}”\n").id
+                for lfm, why in links_for(eid, fm, {"stories": [], "occurrence": None, "led_from": None}, fm["said"], "", st):
+                    tx.add({**lfm, "domain": dom}, why)
+    return len(new)
+
+
 def refile(prefixes: list[str]) -> dict[str, list[str]]:
     """Clear the filed mark of the sessions whose ids start with each prefix, so the next run reads them whole again.
     Nothing is deleted: the entries already filed from them are shown to the model as already filed."""

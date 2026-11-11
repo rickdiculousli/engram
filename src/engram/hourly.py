@@ -3,7 +3,7 @@
 The hourly job (`engram capture run`, `engram.jobs`), one run at a time: it indexes changed sessions (under "DO NOT
 STORE GARBAGE" that means their checked summaries, kept current for the repos set up and any domain whose config says
 `summaries = true`, which files nothing; raw transcripts are never indexed); files each session started in a repo set up that has grown since it was last filed and has been idle an hour
-(`capture.file_session`, then `capture.renew`); for the areas that have them, narrows hedged dates by new dated
+(`capture.file_session`, then `capture.renew`); saves what the owner typed in his own apps (`capture.app_rows`); for the areas that have them, narrows hedged dates by new dated
 documents (`narrow.run`), compiles onto the map, summarizes long records and runs the value review; re-checks theory
 changes whose re-check never ran, syncs each repo's document ids, repairs the install, retries a failed push, and
 re-reads every domain's record into its index, what's built by searching it included (`ingest.record`), so no question
@@ -112,6 +112,11 @@ def run(ask=None, dry_run: bool = False, summaries: bool = True, now: datetime |
                 out["kept"] += r["kept"]
                 out["would_file"] += r["would_file"]
                 out["usd"] += r["usd"]
+            if not dry_run:  # what he typed in his own apps, before the linking job reads it
+                try:
+                    out["filed"] += capture.app_rows(d, root)
+                except FAILED as e:
+                    _error(out, f"app rows {d}: {type(e).__name__}: {e}")
             if not dry_run and pack.load(d).prompts.get("narrow"):  # after filing: a dated document narrows a hedged date
                 n = narrow.run(d, root, ask)
                 out["usd"] += n["usd"]

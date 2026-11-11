@@ -1,6 +1,5 @@
 # A made-up inner-work record: one person's sessions with a guide, on how he goes quiet. Engram's tests for an
-# inner-work area run against it; every line of it is invented. The tables after the line below are the settings the
-# inner-work changes build to (docs/technical.md, "The inner-work settings"): engram doesn't read them yet.
+# inner-work area run against it; every line of it is invented.
 [domain]
 name = "inner-work"
 events_dir = "events"
@@ -92,7 +91,5 @@ belief = "belief"  # the theory kind a statement links to: a group of statements
 rel = "showed-up"  # the moment link kind it links by
 under = "under"  # the theory link that puts a belief under a broader one
 
-# ---- Not yet read by engram: the inner-work settings ----
-
-[app]  # change 10: what the pack's `gym` reader passes as the owner's own words
-kind = "practice-note"
+[app]  # what the pack's `gym` reader passes as the owner's own words, saved as his entries
+kind = "practice-note"  # the entry kind they're saved as

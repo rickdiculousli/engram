@@ -164,8 +164,9 @@ class Inner(dict):
         return store.Store(self.repo).events(**kw)
 
     def mine(self, kind: str | None = None) -> list:
-        """What the filer saved."""
-        return [e for e in self.events(kind=kind) if e.fm.get("author") == "engram-capture"]
+        """What the filer saved from the chats: not the rows he typed in his app, which it saves too."""
+        return [e for e in self.events(kind=kind) if e.fm.get("author") == "engram-capture"
+                and not str(e.fm.get("source", "")).startswith("typed in ")]
 
     def notes(self) -> list[dict]:
         """The notes in the repo's notes folder, oldest first: each its front matter, text, path and sections."""

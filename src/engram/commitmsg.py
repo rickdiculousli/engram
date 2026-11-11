@@ -10,6 +10,7 @@ TEMPLATES = {
     "facts": "engram: {n} facts {owner} said in session {session}",
     "note": "engram: the note of {owner}'s session {session}, and {n} facts",
     "renewals": "engram: {owner} still on {n} things, said in session {session}",
+    "rows": "engram: {n} rows {owner} typed in an app",
     "narrow": "engram: {n} dates narrowed by dated documents",
     "theory": "engram: theory revision {day}",
     "relink": "engram: evidence re-checked after theory change {change}",
@@ -27,7 +28,7 @@ TEMPLATES = {
     "wiki_merge": "engram: the wiki's health check merged concepts ({n}), their links repointed",
     "wiki_moved": "engram: links repointed to moved posts ({n})",
 }
-HOURLY = {"write", "facts", "note", "renewals", "narrow", "theory", "relink", "moments", "wiki", "wiki_index", "wiki_merge", "wiki_moved"}  # what `engram capture run` commits, directly or through a theory change
+HOURLY = {"write", "facts", "note", "renewals", "rows", "narrow", "theory", "relink", "moments", "wiki", "wiki_index", "wiki_merge", "wiki_moved"}  # what `engram capture run` commits, directly or through a theory change
 
 
 class AmountInMessage(ValueError):

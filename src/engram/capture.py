@@ -1494,12 +1494,13 @@ def _note(root: Path, path: Path, s: sessions.Session, parsed: dict, part: "note
                                "why": f"note refused: {refused[1]}; " + ("asked for again next run" if again else "summarized instead")})
         return None, again
     same = [n for n in notes.read(root) if n["fm"].get("chat") == path.stem and notes.first_line(n) < part.first]
-    named = str(given.get("follows") or "")
-    follows = named if named in {n["fm"]["id"] for n in notes.recent(root)} else same[-1]["fm"]["id"] if same else ""
+    follows, named = same[-1]["fm"]["id"] if same else "", str(given.get("follows") or "")
+    continues = named if named != follows and named in {n["fm"]["id"] for n in notes.recent(root)} else ""
     known = {a for e in st.events() for a in e.about} | made  # and the threads this session started
     nid, day = notes.note_id(path.stem, part), when.get(part.exchanges[0].line) or _now().date().isoformat()
     fm = {"id": nid, "title": f"{config.owner()}'s session on {day}", "date": day, "kind": "note", "chat": path.stem,
           "start": part.start, "lines": [part.first, part.last], "follows": follows,
+          **({"continues": continues} if continues else {}),
           "about": [a for a in given.get("about") or [] if isinstance(a, str) and a in known],
           "source": f"said in session {path.stem[:8]} on {day}", "author": "engram-capture",
           "recorded": _now().isoformat(timespec="seconds")}

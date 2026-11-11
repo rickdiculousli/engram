@@ -99,6 +99,26 @@ def test_22_a_return_two_days_later_is_a_second_note_linked_to_the_first_which_n
     assert first["path"].read_bytes() == was
 
 
+def test_a_session_carrying_on_another_chats_note_links_both(inner):
+    """It follows the previous note of its own chat, and continues the recent note of another chat it carries on."""
+    w = inner()
+    w.chat(1, upto=40)
+    w.run(Model(chat1_note()))
+    first = one_note(w)
+    w.chat(7, lines=made(7, "2026-11-05T04:00:00", [("O", "can we pick up the dinner thing from the other chat?"),
+                                                      ("G", "Yes. What comes up when you think of sunday?")]))
+    w.run(Model(note(what_you_brought=[{"line": 1, "quote": "can we pick up the dinner thing from the other chat?", "by": "owner"}],
+                     what_was_done=[{"line": 2, "quote": "What comes up when you think of sunday?", "by": "guide"}],
+                     what_you_found=[], what_changed=[], where_you_stopped=[])), now=LATER + timedelta(days=1))
+    [other] = w.notes_of(7)
+    w.chat(1)
+    second = chat1_second_note()
+    second["note"]["follows"] = other["fm"]["id"]
+    w.run(Model(second), now=LATER + timedelta(days=2))
+    got = w.notes_of(1)[1]["fm"]
+    assert got.get("follows") == first["fm"]["id"] and got.get("continues") == other["fm"]["id"]
+
+
 def test_23_a_forty_minute_silence_mid_exercise_makes_two_linked_notes_holding_every_message_once(inner):
     w = inner(2)
     before = note(what_you_brought=[said(2, "can we do the breathing exercise from last time?")],

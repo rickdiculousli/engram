@@ -30,6 +30,9 @@ from engram.sources import sessions
 
 IDLE = timedelta(hours=1)  # a session is filed once its last message is this old
 STALE = timedelta(hours=3)  # the job runs hourly; three missed runs is a dead job
+# How one of the run's jobs fails: an error, or an exit, as a job written for the command line refuses (a pack with no
+# words for it). Either is that job's, recorded; the run goes on, and logs itself.
+FAILED = (Exception, SystemExit)
 
 
 def due(domain: str, now: datetime | None = None) -> list[Path]:
@@ -80,7 +83,7 @@ def run(ask=None, dry_run: bool = False, summaries: bool = True, now: datetime |
                     if stopped := summarize.run(d)["stopped"]:
                         _error(out, f"summaries {d} stopped: {stopped}")
             summarize.index_all()
-        except Exception as e:
+        except FAILED as e:
             _error(out, f"indexing: {type(e).__name__}: {e}")
         for d, root in repos.items():
             idle = due(d, now)
@@ -89,14 +92,14 @@ def run(ask=None, dry_run: bool = False, summaries: bool = True, now: datetime |
                     upto = (c.execute("SELECT upto FROM filed WHERE session = ?", (p.stem,)).fetchone() or (0,))[0]
                 try:
                     r = capture.file_session(d, root, p, ask, dry_run)
-                except Exception as e:  # recorded; the session's mark stays, so the next run tries again
+                except FAILED as e:  # recorded; the session's mark stays, so the next run tries again
                     _error(out, f"{p.stem[:8]}: {type(e).__name__}: {e}")
                     continue
                 try:  # after the filer and apart from it
                     rn = capture.renew(d, root, p, upto, ask, dry_run)
                     out["renewed"] += rn["renewed"]
                     out["usd"] += rn["usd"]
-                except Exception as e:  # recorded; the mark stays, so the next run reads the session again
+                except FAILED as e:  # recorded; the mark stays, so the next run reads the session again
                     _error(out, f"renew {p.stem[:8]}: {type(e).__name__}: {e}")
                 else:
                     if not dry_run:
@@ -117,37 +120,37 @@ def run(ask=None, dry_run: bool = False, summaries: bool = True, now: datetime |
                 from engram import compile as compile_mod
                 try:
                     out["usd"] += compile_mod.run(d)["usd"]
-                except Exception as e:
+                except FAILED as e:
                     _error(out, f"compile {d}: {type(e).__name__}: {e}")
             if not dry_run and pack.load(d).prompts.get("file"):  # an area engram files for: its long records summarized
                 try:  # a failed call stops it, as it stops the session summaries; what's summarized before it is kept
                     out["usd"] += recsum.run(d)["usd"]
-                except Exception as e:
+                except FAILED as e:
                     _error(out, f"record summaries {d}: {type(e).__name__}: {e}")
             if not dry_run and review.on(root):  # the value review, behind its switch; off leaves the job as it was
                 try:
                     out["usd"] += (review.hourly(d, root, idle, now) or {}).get("usd", 0.0)
-                except Exception as e:
+                except FAILED as e:
                     _error(out, f"review {d}: {type(e).__name__}: {e}")
         if not dry_run:
             from engram import relink
             for cid in relink.pending():  # a theory change whose background re-check never ran
                 try:
                     out["usd"] += relink.run(cid, force=True).get("usd", 0.0)
-                except Exception as e:
+                except FAILED as e:
                     _error(out, f"relink {cid}: {type(e).__name__}: {e}")
             from engram import docreg
             for d, root in repos.items():
                 try:  # a document gets its stable id when first indexed; a new link's heading its anchor
                     if docreg.load(root):
                         docreg.sync(root)
-                except Exception as e:
+                except FAILED as e:
                     _error(out, f"docs sync {d}: {type(e).__name__}: {e}")
                 out["repairs"] += setup.repair(d)
                 retry_push(root, out)
             for d, dom in config.load().items():  # the index takes in what this run filed and summarized, and what's
                 if dom.repo and dom.repo.exists():  # built by searching it; a read that fails is the index's to say
-                    with contextlib.suppress(Exception):  # (`engram health`, every search header), never this run's
+                    with contextlib.suppress(*FAILED):  # (`engram health`, every search header), never this run's
                         ingest.record(d)
             with contextlib.closing(capture.db()) as c, c:
                 c.execute("INSERT INTO run VALUES (?, ?, ?, ?, ?, ?, ?)", (capture._now().isoformat(timespec="seconds"),

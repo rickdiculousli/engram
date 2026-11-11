@@ -1589,3 +1589,15 @@ def test_the_hourly_job_installs_on_a_box_with_no_repo_set_up(env, monkeypatch):
     monkeypatch.setattr(setup, "timed_job", lambda agents, label, args, log, load, **when: got.update(label=label, args=args, load=load, **when))
     setup.install_hourly()
     assert got["label"] == setup.LABEL and got["args"][-2:] == ["capture", "run"] and got["load"] and got["every"] == 3600
+
+
+def test_a_job_that_exits_doesnt_end_the_hourly_run_which_still_finishes_and_logs_itself(world, env):  # test 45, second half
+    from engram import theorychange
+    elsewhere = env["tmp"] / "repos/no-pack-words"  # no domain's record, so no pack: its re-check has no `relink` words
+    with contextlib.closing(theorychange.db()) as c, c:
+        c.execute("INSERT INTO change (id, domain, repo, at, summary, state) VALUES ('c1', 'other', ?, ?, '{}', 'queued')",
+                  (str(elsewhere), "2026-01-01T00:00:00+00:00"))
+    out = run([], ACHE)
+    assert out["filed"] == 1 and "relink c1" in out["error"] and "no `relink` words" in out["error"]
+    with contextlib.closing(capture.db()) as c:
+        assert c.execute("SELECT ok, filed, error FROM run ORDER BY rowid DESC LIMIT 1").fetchone()[:2] == (0, 1)

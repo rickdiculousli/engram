@@ -47,6 +47,8 @@ To release:
 5. Check `engram health` and capture after the next hourly run.
 6. When the release changes what setup writes into a record repo's tracked `.claude/settings.json`, the next repair writes it there: check the diff is only that, and commit it on its own in each set-up repo, so one revert undoes it. Where setup widened the Bash window, a Bash result over 30,000 characters in that repo's next sessions arrives inline, not as a preview and a file; if it still comes back as a preview, Claude Code is overriding the setting.
 
+A box whose config names no `[review] gate` has no frozen gate of its own: it runs a tag the box with the gate released, and `engram review --release <tag>`, run from its release clone or a checkout holding the tag, moves the clone and logs the tag with its pins, checking no pin against a gate.
+
 To roll back, take the previous line of `releases.jsonl`: set its pins in the config and run `engram review --release <its tag>`.
 
 In engram's config, `[review]` sets `gate` (the domain whose frozen gate a release passes), `gate_sets` (its question sets, read when it's frozen), `gate_base` (its baseline), and optionally `release` (the clone's folder).

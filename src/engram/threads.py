@@ -15,8 +15,7 @@ from engram import dates, verbatim
 KIND = "thread"  # the entry that names a thread
 JOIN, SPLIT, END, PLACE = "joined-into", "split-into", "ended", "placed-on"
 PAST = "event"  # the kind that is a past event: it has happened, and a rough age dates it
-THEME = "theme"  # the kind that is what he keeps coming back to: it gathers the earlier tellings, named in words they share
-WORD = re.compile(r"[\w']+")
+THEME = "theme"  # the kind that is what he keeps coming back to: it gathers the earlier tellings
 
 
 def creatable(conf: dict) -> tuple[str, ...]:
@@ -26,12 +25,6 @@ def creatable(conf: dict) -> tuple[str, ...]:
 
 def tid(kind: str, name: str) -> str:
     return f"{kind}/" + re.sub(r"[^\w]+", "-", name.lower()).strip("-")
-
-
-def shares(name: str, told: list[str]) -> bool:
-    """Whether a name has a word of substance (four letters or more, or a number) in what was told before."""
-    said = {w for t in told for w in WORD.findall(verbatim.norm(t))}
-    return any(w in said for w in WORD.findall(verbatim.norm(name)) if len(w) >= 4 or any(c.isdigit() for c in w))
 
 
 def key(about: str) -> str:

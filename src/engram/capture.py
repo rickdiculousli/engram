@@ -971,10 +971,6 @@ def threaded(f: dict, msg: str, tt: "threads.Threads", day: str, stem: str, made
         if kind == threads.PAST and (dates.key(str(f.get("date") or "")) or "") > day:
             whys.append(f"“{words}” hasn't happened yet: not a past {kind}")
             return None
-        if kind == threads.THEME and (told := [entries[x].body for x in again if x in entries]) and \
-                not threads.shares(words, told):
-            whys.append(f"the {kind} name “{words}” shares no word with how {owner} told it before")
-            return None  # a theme is what he comes back to, so its name is in both tellings
         t = threads.tid(kind, words)
         if not known(t):
             name(t, words)

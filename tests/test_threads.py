@@ -89,7 +89,7 @@ def test_36_a_remark_on_the_wrong_sam_moves_when_he_says_different_sam_and_nothi
     w.chat(4)
     w.run(Model({"facts": [fact(4, "no, different Sam.", "The meeting was Sam from work's idea, not his brother's.",
                                 moves=[{"entry": meeting.id, "from": "person/my-brother-sam",
-                                        "to": {"kind": "person", "name": "Sam from work"}}])]}),
+                                        "to": {"kind": "person", "name": "Sam from work"}, "said": "no, different Sam"}])]}),
           now=LATER + timedelta(hours=1))
     assert brother.id in history("my brother Sam") and meeting.id not in history("my brother Sam")
     assert meeting.id in history("Sam from work") and brother.id not in history("Sam from work")
@@ -205,3 +205,55 @@ def test_now_shows_his_words_on_a_thread_never_the_question_he_answered(inner):
                                 answering="When did you notice it this time?", create=[{"kind": "person", "name": "my father"}])]}))
     [line] = [l for l in now_mod.text(w.repo).splitlines() if "my father" in l]
     assert "on the phone with my father yesterday" in line and "notice it this time" not in line
+
+
+@pytest.mark.parametrize("name", ["quiet around my dad", "going quiet"])
+def test_a_theme_gathers_earlier_tellings_only_when_it_starts_and_only_those_on_no_theme(inner, name):
+    """A new theme gathers the earlier tellings on no theme; one he already has (`going quiet`) gathers none, since
+    putting what's on one thread onto another is a join, and joins are made in conversation."""
+    w = inner()
+    loose = add(w, {"title": "quiet with dad at lunch", "date": "2026-10-02", "kind": "observation", "about": [], "by": "sam"},
+                "- Sam: “I went quiet with dad at lunch”\n")
+    elsewhere = add(w, {"title": "quiet in standup", "date": "2026-10-03", "kind": "observation", "about": ["theme/quiet-at-work"],
+                        "by": "sam"}, "- Sam: “quiet in standup again”\n")
+    w.chat(4, upto=2)
+    w.run(Model({"facts": [fact(4, "I go quiet around my dad again.", "Sam goes quiet around his dad again.",
+                                create=[{"kind": "theme", "name": name}], again=[loose, elsewhere])]}))
+    gathered = {e.fm["from"] for e in w.events(kind="link") if e.fm.get("rel") == "placed-on"}
+    assert gathered == ({loose} if name == "quiet around my dad" else set())
+
+
+def test_a_past_event_is_refused_when_the_date_his_words_give_is_after_the_day_he_said_it(inner):
+    w = inner(record=False)
+    said = "the Leeds trip on 2026-11-28 is all I can think about."
+    w.chat(6, lines=made(6, "2026-11-13T04:00:00", [("O", said), ("G", "What about it?")]))
+    out = w.run(Model({"facts": [{"line": 1, "quote": said, "text": "Sam keeps thinking about the Leeds trip.", "date": "2026-11",
+                                  "kind": "observation", "create": [{"kind": "event", "name": "the Leeds trip"}]}]}))
+    assert not [e for e in w.events() if any(a.startswith("event/") for a in e.about)]
+    assert [d for d in out["dropped"] if "hasn't happened" in d["why"]]
+
+
+def test_a_move_without_his_words_saying_it_was_wrong_is_refused(inner):
+    w = inner(record=False)
+    w.chat(4, upto=8)
+    w.run(Model({"facts": [
+        fact(4, "I called my brother Sam after", "Sam called his brother Sam.", create=[{"kind": "person", "name": "my brother Sam"}]),
+        fact(4, "Sam asked me to lead the friday meeting", "Sam was asked to lead the friday meeting.",
+             about=["person/my-brother-sam"])]}))
+    meeting = remark(w, "lead the friday meeting")
+    w.chat(4)
+    out = w.run(Model({"facts": [fact(4, "the friday meeting went ok.", "The friday meeting went ok.",
+                                      moves=[{"entry": meeting.id, "from": "person/my-brother-sam", "to": "person/my-brother-sam"},
+                                             {"entry": meeting.id, "from": "person/my-brother-sam",
+                                              "to": {"kind": "person", "name": "the friday meeting"}}])]}),
+                now=LATER + timedelta(hours=1))
+    assert meeting.id in history("my brother Sam") and not [e for e in w.events(kind="link") if e.fm.get("rel") == "placed-on"]
+    assert [d for d in out["dropped"] if "wrong" in d["why"]]
+
+
+def test_a_thread_is_named_as_he_typed_it(inner):
+    w = inner(record=False)
+    w.chat(4, upto=2)
+    w.run(Model({"facts": [fact(4, "I go quiet around my dad again.", "Sam goes quiet around his dad.",
+                                create=[{"kind": "person", "name": "My Dad"}])]}))
+    assert [e.fm["name"] for e in w.events(kind="thread")] == ["my dad"]

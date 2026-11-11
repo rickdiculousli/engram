@@ -35,7 +35,7 @@ events: a listed theme/... one, or a new one, given as "create" with "kind": "th
 message, in words he also used for it before. Facts here about one situation share one theme. A fact with no "again" never starts a theme, and what the theory below
 already holds is never one. When he calls a listed thread by a new name, give "names": {{<thread>: <his words>}}. When
 he says an entry is on the wrong one, give "moves": [{{"entry": <its id>, "from": <the thread>, "to": <the right
-thread, or {{"kind", "name"}}>}}]. Never join, split or end a thread.
+thread, or {{"kind", "name"}}>, "said": <his words saying so, copied exactly>}}]. Never join, split or end a thread.
 {theory}
 Reply with JSON only: {{"facts": [...], "theory": []}}.
 

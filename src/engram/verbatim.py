@@ -36,3 +36,13 @@ def inside(part: str, whole: str) -> bool:
             return True
         i = whole.find(part, i + 1)
     return False
+
+
+def span(quote: str, text: str) -> str:
+    """The words of `text` a quote `found` there matches, as they were typed there (its capitals, its spacing); the
+    quote itself where only `norm` tells them apart."""
+    words = quote.split()
+    pat = (r"(?<!\w)" if words and words[0][0].isalnum() else "") + r"\s+".join(map(re.escape, words)) + \
+        (r"(?!\w)" if words and words[-1][-1].isalnum() else "")
+    m = re.search(pat, text, re.I) if words else None
+    return m[0] if m else quote

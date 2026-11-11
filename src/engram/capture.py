@@ -936,13 +936,15 @@ def thread_list(tt: "threads.Threads", st: store.Store, words: str, days: set[st
     return out
 
 
-def threaded(f: dict, msg: str, tt: "threads.Threads", day: str, stem: str, made: dict[str, list[str]],
+def threaded(f: dict, msg: str, tt: "threads.Threads", day: str, on: str, stem: str, made: dict[str, list[str]],
              entries: dict[str, store.Event]) -> tuple[list[str], list[tuple[dict, str]], list[str]]:
     """What a checked fact does to the record's threads: the threads it starts (`create`: a kind the record creates and
-    a name in whole words of his message), which gathers the earlier entries the fact tells again (`again`), a thread's second name
-    (`names`), and an entry moved off the wrong thread (`moves`: entry, from, to). A thread already going by that name
-    is the one meant, and one this run made (`made`: id -> names) isn't made twice. Returns the threads the fact
-    starts or finds, the entries and links to write, and why each refused part was refused."""
+    a name in whole words of his message, kept as he typed it), a new theme gathering the earlier entries on no theme
+    that the fact tells again (`again`), a thread's second name (`names`), and an entry moved off the wrong thread
+    (`moves`: entry, from, to, and `said`, his words in that message saying it was wrong). A thread already going by
+    that name is the one meant, and one this run made (`made`: id -> names) isn't made twice; a past event must be on
+    or before the day said, by the date the entry takes (`on`). Returns the threads the fact starts or finds, the
+    entries and links to write, and why each refused part was refused."""
     ids, out, whys, owner = [], [], [], config.owner()
     base = {"date": day, "reported": day, "by": config.owner_id(), "author": "engram-capture",
             "source": f"said in session {stem[:8]} on {day}"}
@@ -957,24 +959,26 @@ def threaded(f: dict, msg: str, tt: "threads.Threads", day: str, stem: str, made
         out.append(({**base, "kind": threads.KIND, "title": f"{t.split('/')[0]}: {words}", "about": [t], "name": words},
                     f"- {owner}: “{words}”\n"))
 
-    def start(c) -> str | None:
+    def start(c) -> tuple[str | None, bool]:
+        """The thread a create names, and whether this fact starts it."""
         kind, words = str(c.get("kind") or ""), " ".join(str(c.get("name") or "").split())
         if kind not in tt.made:
             whys.append(f"can't create a {kind or 'thread'}: the record creates {', '.join(tt.made)}")
-            return None
+            return None, False
         if t := next((x for x in tt.named(words) if x.startswith(kind + "/")), None) or \
                 next((x for x, ns in made.items() if x.startswith(kind + "/") and words in ns), None):
-            return t  # a name it already goes by names nothing new
+            return t, False  # a name it already goes by names nothing new
         if not words or not verbatim.found(words, msg):
             whys.append(f"the {kind} name “{words}” isn't in {owner}'s words")
-            return None
-        if kind == threads.PAST and (dates.key(str(f.get("date") or "")) or "") > day:
+            return None, False
+        if kind == threads.PAST and (dates.key(on) or "") > day:
             whys.append(f"“{words}” hasn't happened yet: not a past {kind}")
-            return None
-        t = threads.tid(kind, words)
-        if not known(t):
-            name(t, words)
-        return t
+            return None, False
+        t, words = threads.tid(kind, words), verbatim.span(words, msg)
+        if known(t):
+            return t, False
+        name(t, words)
+        return t, True
 
     def place(e: str, t: str, off: str = ""):
         out.append(({**base, "kind": "link", "family": "timeline", "rel": threads.PLACE, "from": e, "to": t,
@@ -982,11 +986,12 @@ def threaded(f: dict, msg: str, tt: "threads.Threads", day: str, stem: str, made
                      "title": f"{e} moved from {off} to {t}" if off else f"{e} on {t}"}, " ".join(str(f.get("quote", "")).split())[:120]))
     again = [str(x) for x in f.get("again") or []] if isinstance(f.get("again"), list) else []
     for c in [c for c in f.get("create") or [] if isinstance(c, dict)]:
-        if t := start(c):
+        t, new = start(c)
+        if t:
             ids.append(t)
-            for x in again if t.startswith(threads.THEME + "/") else ():
-                if x in entries and t not in tt.of(entries[x]):
-                    place(x, t)
+        for x in again if new and t.startswith(threads.THEME + "/") else ():  # joining what's on another is his to do
+            if x in entries and not [a for a in tt.of(entries[x]) if a.startswith(threads.THEME + "/")]:
+                place(x, t)
     for t, words in (f.get("names") or {}).items() if isinstance(f.get("names"), dict) else ():
         words = " ".join(str(words).split())
         if not (tt.created(t) and known(t)):
@@ -994,13 +999,16 @@ def threaded(f: dict, msg: str, tt: "threads.Threads", day: str, stem: str, made
         elif not verbatim.found(words, msg):
             whys.append(f"the name “{words}” isn't in {owner}'s words")
         else:
-            name(t, words)
+            name(t, verbatim.span(words, msg))
     for m in [m for m in f.get("moves") or [] if isinstance(m, dict)]:
-        e, off, to = str(m.get("entry") or ""), str(m.get("from") or ""), m.get("to")
+        e, off, to, said = str(m.get("entry") or ""), str(m.get("from") or ""), m.get("to"), str(m.get("said") or "")
         if e not in entries or off not in tt.of(entries[e]):
             whys.append(f"can't move {e or 'an entry'}: it isn't on {off or 'that thread'}")
             continue
-        t = start(to) if isinstance(to, dict) else str(to or "") if known(str(to or "")) else None
+        if not said.strip() or not verbatim.found(said, msg):
+            whys.append(f"can't move {e}: no words of {owner}'s there say it's on the wrong thread")
+            continue  # a move rewrites where he put it: only his saying so moves it
+        t = start(to)[0] if isinstance(to, dict) else str(to or "") if known(str(to or "")) else None
         if t is None and not isinstance(to, dict):
             whys.append(f"can't move {e} to {to}: no such thread")
         if t and t != off:
@@ -1349,14 +1357,14 @@ def _file(domain: str, root: Path, path: Path, p: pack.Pack, s: sessions.Session
             res["dropped"].append({"session": path.stem[:8], "line": f.get("line"), "why": why, "text": str(f.get("text", ""))[:120],
                                    "quote": str(f.get("quote", ""))[:200]})
         else:
-            if tt:
-                ids, writes, whys = threaded(f, later[line], tt, when[line], path.stem, made, held)
-                f = {**f, "about": ids + [a for a in f.get("about") or [] if a not in ids]}
-                threaded_writes += writes
-                res["dropped"] += [{"session": path.stem[:8], "line": line, "why": w, "text": str(f.get("text", ""))[:120]} for w in whys]
             fm, body = entry(f, when[int(f["line"])], path.stem, kinds, known | set(made) if tt else abouts, home,
                              "\n".join([later[line], str(f.get("answering", ""))]), cur,
                              p.kinds[0] if p.kinds else "observation", marks, threads.PAST in (tt.made if tt else ()))
+            if tt:
+                ids, writes, whys = threaded(f, later[line], tt, when[line], fm["date"], path.stem, made, held)
+                fm["about"] = (ids + [a for a in fm["about"] if a not in ids])[:3]
+                threaded_writes += writes
+                res["dropped"] += [{"session": path.stem[:8], "line": line, "why": w, "text": str(f.get("text", ""))[:120]} for w in whys]
             if thing and fm["kind"] == cur.entity_kind:  # an existing chain: "Pataday" joins "Pataday 0.7%"
                 fm["thing"] = thing
             if target := correction_target(f, st):

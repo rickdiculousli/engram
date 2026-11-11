@@ -143,3 +143,40 @@ def test_a_reader_that_fails_is_the_runs_error(inner):
     w = inner(pack_tail="def _broken(repo):\n    raise OSError('the app is away')\npack.read['notes'] = _broken")
     out = w.run(Model())
     assert "app rows inner-work: OSError: the app is away" in out["error"] and not from_app(w)
+
+
+def test_a_row_saved_as_his_entry_is_found_as_the_entry_alone(inner):
+    """Where the record saves his rows, the index holds each as its entry, never the row as well; the rows it doesn't
+    save (the coach's, the counts) are still found through the reader."""
+    import contextlib
+    from engram import ingest
+    from engram.index import open_index
+    from engram.paths import index_path
+    w = inner()
+    w.run(Model())
+    ingest.record(D)
+    with contextlib.closing(open_index(index_path(D), readonly=True)) as idx:
+        rows = [r for (r,) in idx.db.execute("SELECT ref FROM doc WHERE source = 'gym'")]
+        bodies = [b for (b,) in idx.db.execute("SELECT body FROM doc")]
+    assert sorted(rows) == ["gym/rows.jsonl#count-practice/speak-first-in-meetings", "gym/rows.jsonl#g2"]
+    assert sum(SPOKE in b for b in bodies) == 1
+
+
+def test_a_source_read_only_on_request_is_never_read_for_his_rows(inner):
+    """It's too big to read before each search, so too big to read hourly: `engram ingest --source` reads it."""
+    w = inner(pack_tail=reader() + "\npack.on_request = frozenset({'notes'})")
+    w.run(Model())
+    assert from_app(w) and not [e for e in w.events() if "notes" in str(e.fm.get("source", ""))]
+
+
+def test_his_rows_in_a_source_read_only_on_request_stay_in_its_index(inner):
+    """Never saved as entries, they're found through the source when it's read."""
+    import contextlib
+    from engram import ingest
+    from engram.index import open_index
+    from engram.paths import index_path
+    w = inner(pack_tail=reader() + "\npack.on_request = frozenset({'notes'})")
+    w.run(Model())
+    ingest.asked(D, ["notes"])
+    with contextlib.closing(open_index(index_path(D), readonly=True)) as idx:
+        assert [r for (r,) in idx.db.execute("SELECT ref FROM doc WHERE source = 'notes'")] == ["notes#n1"]

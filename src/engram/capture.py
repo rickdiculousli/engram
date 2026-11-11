@@ -1873,8 +1873,7 @@ def app_rows(domain: str, root: Path) -> int:
     (`[app] kind`): each record a pack's reader passes of class `said`, by him, with words and a date, is one entry,
     quoted whole, on the threads it names (`stories`), saved once by the reader's ref (its `source`). A row whose words
     changed since is saved again, superseding the entry its last words were saved in. Returns how many were saved."""
-    st = store.Store(root)
-    kind = str(st.config.get("app", {}).get("kind") or "")
+    st, kind, p = store.Store(root), pack.app_kind(root), pack.load(domain)
     if not kind:
         return 0
     me, saved, last, new = config.owner_id(), {}, {}, []
@@ -1883,10 +1882,10 @@ def app_rows(domain: str, root: Path) -> int:
     for source, es in saved.items():  # each row's latest words: its entry none of its others supersedes
         gone = {e.fm.get("supersedes") for e in es}
         last[source] = next((e for e in es if e.id not in gone), None)
-    for name, read in pack.load(domain).read.items():
-        for d in read(root).docs:
+    for name, read in p.read.items():
+        for d in read(root).docs if name not in p.on_request else []:
             source, said = f"typed in {name}, {d.ref}", " ".join(d.body.split())
-            if d.cls != "said" or config.voice(d.author) != me or not said or not d.date:
+            if not pack.typed(p, name, d):
                 continue
             if last.get(source) and last[source].fm.get("said") == said:
                 continue

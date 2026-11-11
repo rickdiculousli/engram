@@ -51,6 +51,20 @@ def test_66_each_thing_saved_since_the_note_is_one_line_and_nothing_older_is(inn
     assert not [l for l in lines if "Went quiet when his manager criticised the plan" in l]
 
 
+def test_a_thing_said_before_the_note_and_saved_after_it_is_not_saved_since(inner, monkeypatch):
+    """Since is when he said it (`reported`): a row he typed the day before the note, saved in the run that wrote it, or
+    an old chat filed late, isn't new to the next chat; what he said after it is."""
+    w = inner()
+    noted(w, monkeypatch)  # the run that saves the note saves his gym row of 11-02 too
+    add(w, {"title": "Said long before the note", "date": "2026-10-01", "reported": "2026-11-01", "kind": "observation",
+            "about": [], "by": "sam"}, "- Said long before the note\n")
+    add(w, {"title": "Remembered a dinner when he was ten", "date": "2010", "reported": "2026-11-04", "kind": "observation",
+            "about": [], "by": "sam"}, "- Remembered a dinner when he was ten\n")
+    out = start(w)
+    assert "spoke first in the meeting" not in out and "Said long before the note" not in out
+    assert "Remembered a dinner when he was ten" in out
+
+
 def test_67_a_picture_too_long_to_print_is_cut_and_where_you_stopped_is_kept(inner, monkeypatch):
     w = inner()
     noted(w, monkeypatch)

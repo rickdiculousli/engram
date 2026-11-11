@@ -278,7 +278,9 @@ def _themes(fm: dict) -> str:
 
 def stopped(root: Path, events: list) -> str:
     """What a chat starts with in a repo with notes: the latest note's "where you stopped" lines with its date and
-    themes, its last lines when they're too long, then one line for each entry saved since. Empty with no notes."""
+    themes, its last lines when they're too long, then one line for each entry saved since that he didn't say before the
+    note's day (`reported`, where it's kept: a row typed or a chat filed late is saved after the day it was said). Empty
+    with no notes."""
     name, notes = stopping(root), read(root)
     if not name or not notes:
         return ""
@@ -295,7 +297,8 @@ def stopped(root: Path, events: list) -> str:
         lines = [f"… the rest is in {last['path']}", *kept]
     out += lines
     since = [e for e in events if e.kind != "link" and e.fm.get("note") != fm["id"]
-             and (t := _ts(e.fm.get("recorded"))) and (n := _ts(fm.get("recorded"))) and t >= n]
+             and (t := _ts(e.fm.get("recorded"))) and (n := _ts(fm.get("recorded"))) and t >= n
+             and not (e.fm.get("reported") and str(e.fm["reported"]) < str(fm.get("date", "")))]
     since.sort(key=lambda e: str(e.fm.get("recorded")))
     if since:
         out.append("Saved since:")

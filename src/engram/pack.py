@@ -118,6 +118,18 @@ class Pack:
 
 
 NONE = Pack()
+
+
+def app_kind(root: Path) -> str:
+    """The entry kind the record saves the owner's app rows as (`[app] kind`); empty, none are saved."""
+    return str(store.Store(root).config.get("app", {}).get("kind") or "")
+
+
+def typed(p: Pack, source: str, doc: Doc) -> bool:
+    """Whether a reader's record is the owner's own dated words, which a record with an `app_kind` saves as his entry
+    (and its index then holds as that entry alone): of class `said`, by him, with words and a date, from a source read
+    before each search (one read only on request is too big to read hourly)."""
+    return source not in p.on_request and doc.cls == "said" and config.voice(doc.author) == config.owner_id() and bool(doc.body.strip()) and bool(doc.date)
 _loaded: dict[tuple[str, str], Pack] = {}
 _problems: dict[str, str] = {}
 

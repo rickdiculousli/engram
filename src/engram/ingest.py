@@ -68,11 +68,12 @@ def read_pack(idx, domain: str, names: list[str]) -> tuple[list[str], list]:
     their family. Gives a line per source, and the ways in they open."""
     from engram import pack
     d, p = config.load()[domain], pack.load(domain)
-    out, ways = [], []
+    out, ways, saved = [], [], pack.app_kind(d.repo)
     for name in names:
         try:
             src, docs = p.read[name](d.repo), []
-            for doc in src.docs:  # a long record is cut into chunks, as a file's section is
+            for doc in [x for x in src.docs if not (saved and pack.typed(p, name, x))]:  # his own rows: indexed as his entries
+                # a long record is cut into chunks, as a file's section is
                 doc.author = config.voice(doc.author)
                 doc.date_key = doc.date_key or dates.key(doc.date)
                 parts = sections.chunks(doc.body)

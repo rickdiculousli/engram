@@ -127,6 +127,30 @@ An area's words and a few small functions live in its own record repo, under `.e
 - **Tests.** An area's behaviour is tested in its pack's `tests/`, which run with engram: `uv run pytest <repo>/.engram/tests`. Core's tests file through `examples/notes/`, a small made-up area whose pack sets only words.
 - **Left in core:** the canon's vocabulary that the summaries' format and the index already speak (story, complaint and series prefixes, clinician labels, the summarizer's base prompt and its examples, whose move would change the prompt's bytes and so needs a versioned summary QA), and waysin's treatment builders and its pooled-series name.
 
+## The inner-work settings (not yet read by engram)
+
+**Nothing in this section is built yet.** It is the design the inner-work changes build to, each line tagged with its change; a change's builder makes its lines true and moves them to where they belong in these docs. `examples/inner-work/` (a made-up record, its pack and its chats in `examples/sessions/-home-sam-inner-work/`) sets every one, and each change's tests (`tests/test_notes.py`, `test_threads.py`, `test_suggestions.py`, `test_practices.py`, `test_chat_start.py`, `test_link_kinds.py`, `test_app_rows.py`, `test_belief_trail.py`) are marked `xfail(strict=True)` until it lands. Every setting left out means no change.
+
+In `.engram/engram.toml`:
+- **`[sessions] pause`** (4): minutes of silence that end a session, and how long one waits before it's saved.
+- **`[notes]`** (4): `folder`; `sections`, each a `name` and whose words go in it (`by`: `owner`, `guide`, `guide unanswered`); `line_words`, past which a line is kept by its opening words; `stopped` (8), the section a chat starts with.
+- **`[threads] create`** (5): the kinds of thread the filer may create.
+- **`[theory.kinds.<kind>]`** (6): `folder`, `label`, `status` (whether it has one) and `links` (the moment kinds that may point at it); an insight's `stages` (how far along) and `needs_note`.
+- **`[suggestions] quiet_days`** (6): how long a suggestion the owner never mentions stays in the chat start text.
+- **`[links.moment]`** (9): the repo's link kinds in place of strengthens and weakens: `rels`, `labels`, `owner_words` (kinds whose passage must be the owner's), `skip_by` and `skip_kinds` (records the linking job never reads), `hourly` (it runs in the hourly job, paused weekly pass or not).
+- **`[current]`** (7): `ongoing` and `finished` statuses, `brackets` (whether a name splits at one) and `origin` (the theory kind a tracked item must name).
+- **`[app] kind`** (10) and **`[beliefs] kind`** (12): the entry kinds the owner's app rows and stated beliefs are saved as.
+
+In the pack: the `note`, `suggest`, `stated` and `regroup` words (`suggest` turns suggestions on), and a reader's record of class `said` whose author is `{owner_id}`, which is the owner's own dated words, its thread in `stories` (10).
+
+What the tests hold the code to besides:
+- **The filer's reply** gains `working` and `note` (`sections`: name → lines of `line`, `quote`, `by`; `about`) (4); a fact's `create` (kind, name), `names` (thread → a second name) and `moves` (entry, from, to), and `thread_ops`, which code always refuses (5); `suggestions` (id, kind, name or link or stage, the guide's `line` and `quote`), and a theory item's `stage` and `add` (6); a stated belief's `beliefs` (id, loose) and `new_belief` (12). Every refusal is a row of the run's `dropped`.
+- **A note** is a file under the notes folder whose front matter holds `id`, `date`, `chat` (the chat's id), `lines` (its first and last), `follows` and `about`, with a `## <section>` heading per section; a section nobody spoke for reads "not said" (4).
+- **A thread** has the id of its kind and its name slugged (`person/my-dad`), and `timeline.chain` finds it by its id or any of its names (5).
+- **A suggestion** is `by: claude-suggestion` and `proposed`, and every place it shows says it's the guide's (6). **A moment link** is family `moment` (9), and a history counts an item's moments per label.
+- **An app row** is saved as an entry whose `source` names the reader and the row (10). **A stated belief** keeps `context`, the guide's message before it, and its chat's id; `timeline.trail(domain, item, limit=None)` returns a header (`statements`, `left`, `more`) and one row per statement (`id`, `date`, `said`, `context`, `loose`), oldest first; `capture.regroup(domain, root, ask)` only adds (12).
+- **Chat start** reads the clock through `capture._now`, names an unsaved chat by its id, and `engram session <id>` prints that chat's messages without tool calls or their output (8); `relink.sweep(..., items=[...])` reads one item for a look-back (9).
+
 ## The compiled wiki
 
 `intake.py`, `compile.py`, `wiki.py`, for the owner's calls that knowledge needing ingesting is compiled and that its wiki is a traditional one, of concept articles ([data model](data-model.md#sources-sparks-and-the-wiki)).

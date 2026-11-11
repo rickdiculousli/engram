@@ -36,7 +36,7 @@ pause = 20  # minutes: a silence this long ends a session, and a session is save
 
 [notes]  # change 4: a working session is saved as one note in the repo
 folder = "notes"
-line_words = 40  # a longer line is kept by its opening words
+line_words = 40  # a longer line of the guide's is kept by its opening words; the owner's are whole
 stopped = "where you stopped"  # change 8: the section a chat starts with
 sections = [
     {name = "what you brought", by = ["owner"]},

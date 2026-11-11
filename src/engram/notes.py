@@ -24,7 +24,7 @@ SINCE_MAX = 20  # lines for what was saved since the note
 class Settings:
     folder: str
     sections: tuple[tuple[str, frozenset[str]], ...]  # each section's name and whose words go in it
-    line_words: int
+    line_words: int  # past it, a line of the guide's is kept by its opening words, a question by its closing ones
     stopped: str
     words: str  # the pack's `note` words
 
@@ -240,7 +240,7 @@ def render(fm: dict, sections: dict[str, list[Line]], cfg: Settings) -> str:
                 body.append(f"- {GUIDE} (line {l.at}): “{_cut(l.quote, cfg.line_words)}”")
             else:
                 asked = f", answering “{_tail(l.answering, cfg.line_words)}”" if l.answering else ""
-                body.append(f"- {me} (line {l.at}){asked}: “{_cut(l.quote, cfg.line_words)}”")
+                body.append(f"- {me} (line {l.at}){asked}: “{l.quote}”")  # his words are his, of any length
         if not sections.get(name):
             body.append(NOT_SAID)
         body.append("")

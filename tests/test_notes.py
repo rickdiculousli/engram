@@ -235,6 +235,19 @@ def test_30_an_exercise_longer_than_a_line_is_kept_by_its_opening_words_as_the_g
     assert "we'll talk instead" not in line  # cut to the line's length, the rest a line of the chat away
 
 
+def test_a_line_of_the_owners_is_kept_whole_however_long(inner):
+    """Only the guide's lines and the question beside a reply are cut to `line_words`: his words are his, of any length."""
+    text = (SAMPLE / ".engram/engram.toml").read_text()
+    w = inner(toml=text.replace("line_words = 40", "line_words = 3"))
+    w.chat(1, upto=40)
+    w.run(Model(chat1_note()))
+    n = one_note(w)
+    assert "“maybe quiet isn't the only way to be safe with him.”" in n["sections"]["what you found"]
+    assert "“I want to try saying it at sunday dinner.”" in n["sections"]["where you stopped"]
+    [done] = [l for l in n["sections"]["what was done"].splitlines() if l.strip()]
+    assert done.endswith("“Here is the …”")  # the guide's, cut
+
+
 def test_31_a_pack_with_no_note_settings_writes_nothing_and_leaves_the_summaries(inner):
     """True today: no repo has note settings engram reads."""
     text = (SAMPLE / ".engram/engram.toml").read_text()

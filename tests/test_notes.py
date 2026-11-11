@@ -154,8 +154,6 @@ def test_26_the_note_is_pushed_and_comes_back_from_a_fresh_clone_with_no_data(in
     assert any(r["ref"].startswith("notes/") for r in search.search("chest tight", [D]))
 
 
-@pytest.mark.xfail(strict=True, reason="change 5: a theme's history (`timeline.chain` on a theme) is change 5's; "
-                                       "the note and the entry under it are written")
 def test_27_a_themes_history_shows_the_session_once_as_its_note_with_its_entries_under_it(inner):
     from engram import timeline
     w = inner()

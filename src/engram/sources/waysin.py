@@ -11,6 +11,7 @@ import json
 import re
 from fnmatch import fnmatchcase
 
+from engram import threads
 from engram.config import Domain
 
 SCHEMA = """
@@ -19,7 +20,8 @@ CREATE INDEX IF NOT EXISTS way_phrase ON way(phrase);
 CREATE TABLE IF NOT EXISTS way_ref (kind TEXT NOT NULL, key TEXT NOT NULL, ref TEXT NOT NULL, PRIMARY KEY (kind, key, ref));
 """
 MAX_WORDS = 4  # a longer phrase (a quoted sentence) never turns up whole in a question, so it doesn't name a way in
-LINKED = ("note", "tag")  # a vault's: they light what links to them or carries them, never mere mentions (note names are everyday words)
+LINKED = ("note", "tag", "thread")  # a vault's, and a thread the filer made: they light what links to them or carries
+# them, never mere mentions (their names are everyday words: "dad", "work")
 FORMS = {"topical", "oral", "cream", "ointment", "solution", "drops", "spray", "gel", "foam", "shampoo", "tablet", "capsule"}
 
 
@@ -132,6 +134,12 @@ def sync(idx, d: Domain, conf: dict, more: list = ()) -> int:
         said = [p.lower() for p in w.phrases] if w.kind == "tag" else _phrases(*w.phrases)  # a tag the owner asks by, however short
         k["phrases"] += [p for p in said if p not in k["phrases"]]
         k["refs"] |= set(w.refs)
+    if made := threads.creatable(conf):  # a created thread by any of its names, however long: what's on it
+        from engram.store import Store
+        for t, said in threads.Threads(Store(d.repo).events(), made).names.items():
+            k = keys.setdefault(("thread", t), {"phrases": [], "refs": set(), "roles": []})
+            k["phrases"] += [p for p in dict.fromkeys(" ".join(x.lower().split()) for x in said) if p not in k["phrases"]]
+            k["refs"] |= {r for (r,) in db.execute("SELECT ref FROM on_story WHERE story = ?", (t,))}
     if (conf.get("ways") or {}).get("theory"):  # a discovery file (evidence/D03-cervicogenic-eye.md) and what bears on it
         for (to,) in db.execute("SELECT DISTINCT to_ref FROM link WHERE family = 'evidence' AND rel IN ('strengthens', 'weakens')"):
             if m := re.match(r".*/(D\d+)-([\w-]+)\.md$", to.split("#", 1)[0]):

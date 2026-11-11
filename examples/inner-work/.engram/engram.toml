@@ -46,10 +46,10 @@ sections = [
     {name = "where you stopped", by = ["owner", "guide unanswered"]},
 ]
 
-# ---- Not yet read by engram: the inner-work settings ----
-
-[threads]  # change 5: what the filer may create, named only with the owner's words
+[threads]  # what the filer may create, named only with the owner's words
 create = ["theme", "person", "event"]
+
+# ---- Not yet read by engram: the inner-work settings ----
 
 [theory.kinds.belief]  # change 6: the repo's own theory kinds
 folder = "theory/beliefs"

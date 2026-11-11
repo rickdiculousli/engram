@@ -81,14 +81,16 @@ def inherited(events):
 
 def docs_for(d: Domain) -> list[Doc]:
     from engram.store import Store
+    from engram import threads
     st = Store(d.repo)
     out: list[Doc] = []
     inherit = inherited(st.events())
+    on = threads.Threads(st.events(), threads.creatable(st.config))
     for e in st.events():
         if e.kind in SKIP:
             continue
         by = str(e.fm.get("by", "")) or "repo"
-        stories = ",".join(a.split("/", 1)[1] for a in e.about if a.startswith("story/")) or inherit(e)
+        stories = ",".join(map(threads.key, on.of(e))) or inherit(e)
         milestone = int(str(e.fm.get("milestone")).lower() == "true")
         when = str(e.fm.get("date", "")) if dates.valid(str(e.fm.get("date", ""))) else None
         when = when if when and when != "not-sure" else None

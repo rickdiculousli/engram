@@ -9,9 +9,6 @@ from engram import now as now_mod
 from engram import search, timeline
 from inner_work import D, LATER, Model, add, fact, inner, made, zone  # noqa: F401  (fixtures)
 
-NOT_YET = "change 5: the filer can't create a theme, person or past event, and a thread can't be asked for"
-
-
 def history(name: str) -> str:
     """Everything one request for a thread returns, as text."""
     return json.dumps(timeline.chain(D, name)[1])
@@ -23,7 +20,6 @@ def remark(w, words: str):
 
 
 @pytest.mark.parametrize("name, ok", [("goes quiet around my dad", False), ("quiet around my dad", True)])
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 def test_32_a_theme_is_named_only_with_his_words(inner, name, ok):
     w = inner(record=False)
     w.chat(4, upto=2)
@@ -37,7 +33,6 @@ def test_32_a_theme_is_named_only_with_his_words(inner, name, ok):
         assert [d for d in out["dropped"] if "goes" in d["why"]]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 def test_33_a_kind_the_repo_doesnt_list_is_not_created_and_the_remark_is_saved(inner):
     w = inner(record=False)
     w.chat(4, upto=8)
@@ -49,7 +44,6 @@ def test_33_a_kind_the_repo_doesnt_list_is_not_created_and_the_remark_is_saved(i
     assert [d for d in out["dropped"] if "goal" in d["why"]]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 def test_34_one_request_for_a_person_returns_what_three_chats_said_in_order_and_now_shows_the_latest(inner):
     w = inner()
     w.chat(1, upto=40)
@@ -68,7 +62,6 @@ def test_34_one_request_for_a_person_returns_what_three_chats_said_in_order_and_
     assert "kind for once" in now_mod.text(w.repo)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 def test_35_a_second_name_for_a_person_finds_the_same_person_and_keeps_his_wording(inner):
     w = inner(record=False)
     w.chat(4, upto=2)
@@ -84,7 +77,6 @@ def test_35_a_second_name_for_a_person_finds_the_same_person_and_keeps_his_wordi
     assert not [e for e in w.events() if any(a.startswith("person/") and a != "person/my-dad" for a in e.about)]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 def test_36_a_remark_on_the_wrong_sam_moves_when_he_says_different_sam_and_nothing_is_lost(inner):
     w = inner(record=False)
     w.chat(4, upto=8)
@@ -112,7 +104,6 @@ def test_37_a_remark_attached_to_nothing_is_saved_and_searchable(inner):
     assert any(r["ref"] == e.id for r in search.search("asked about money", [D]))
 
 
-@pytest.mark.xfail(strict=True, reason="change 5: the filer attaches only to the 80 most used threads")
 def test_38_a_remark_attaches_to_the_least_used_of_more_than_eighty_themes(inner):
     w = inner()
     entries = [({"title": f"remark {n}{x}", "date": "2026-10-01", "kind": "observation", "about": [f"theme/t-{n}"], "by": "sam"},
@@ -122,15 +113,14 @@ def test_38_a_remark_attaches_to_the_least_used_of_more_than_eighty_themes(inner
     from engram import store
     st = store.Store(w.repo)
     with st.transaction() as tx:
-        for fm, body in entries:
-            tx.add({"domain": D, **fm}, body)
+        for k, (fm, body) in enumerate(entries):  # a second apart: in one second, two ids' 4-hex hashes can meet
+            tx.add({"domain": D, "recorded": f"2026-10-01T09:{k // 60:02d}:{k % 60:02d}-07:00", **fm}, body)
     w.chat(5)
     said = "they asked me to come again next week, the climbing group."
     w.run(Model({"facts": [fact(5, said, "The climbing group asked Sam to come again.", about=["theme/the-climbing-group"])]}))
     assert "theme/the-climbing-group" in remark(w, said).about
 
 
-@pytest.mark.xfail(strict=True, reason="change 5: no history reads the dated links a join or a split leaves")
 def test_39_a_join_returns_both_histories_and_a_split_keeps_what_came_before(inner):
     w = inner()
     at_work = [add(w, {"title": f"quiet in standup {d}", "date": f"2026-10-0{d}", "kind": "observation",
@@ -151,7 +141,6 @@ def test_39_a_join_returns_both_histories_and_a_split_keeps_what_came_before(inn
     assert later in got and old in got
 
 
-@pytest.mark.xfail(strict=True, reason="change 5: the filer doesn't report a join, split or end it refuses")
 def test_40_the_filer_on_its_own_never_joins_splits_or_ends_a_thread(inner):
     w = inner()
     w.chat(4, upto=8)
@@ -171,7 +160,6 @@ ABOUT_TEN = {"line": 3, "quote": "like when I was about ten and he shouted about
              "create": [{"kind": "event", "name": "he shouted about the bills"}]}
 
 
-@pytest.mark.xfail(strict=True, reason="change 5: \"when I was about ten\" isn't read as an age")
 def test_41_about_ten_keeps_his_wording_and_runs_from_his_ninth_birthday_to_the_day_before_his_twelfth(inner):
     w = inner()
     add(w, {"title": "Sam was born", "date": "1990-05-14", "kind": "observation", "landmark": "birth", "about": [], "by": "sam"},
@@ -193,7 +181,6 @@ def test_41_with_no_birth_year_about_ten_keeps_his_wording_and_no_date(inner):
     assert e.fm.get("date_note") and "reported" in e.fm["date_note"]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 def test_42_two_later_sessions_that_return_to_a_past_event_attach_to_the_same_one(inner):
     w = inner()
     w.chat(4, upto=8)

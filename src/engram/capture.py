@@ -48,7 +48,7 @@ from collections import Counter
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-from engram import commitmsg, config, dates, fix, llm, notes, pack, periods, recsum, store, summarize, units, verbatim
+from engram import commitmsg, config, dates, fix, llm, notes, pack, periods, recsum, store, summarize, threads, units, verbatim
 from engram import now as now_mod
 from engram import theory as theory_mod
 from engram.paths import data_path, record_conf, record_toml
@@ -179,14 +179,16 @@ def shape(st: store.Store, kinds: tuple[str, ...] = ()) -> tuple[list[str], list
     return list(kinds), abouts, home[0][0] if home else ""
 
 
-def on_record(domain: str, said: list[str], per: int = 5) -> list[str]:
-    """The record's current entries on what the owner talked about (a search per message), so repeats are skipped."""
+def on_record(domain: str, said: list[str], per: int = 5, refs: list | None = None) -> list[str]:
+    """The record's current entries on what the owner talked about (a search per message), so repeats are skipped;
+    their refs go into `refs` too."""
     from engram import search
     seen, out = set(), []
     for words in said:
         for r in search.search(words[:500], [domain], limit=per, surround=False):
             if r["ref"] not in seen:
                 seen.add(r["ref"])
+                (refs if refs is not None else []).append(r["ref"])
                 out.append(f"[{r.get('date') or 'undated'}] {r['title']}: {' '.join(str(r.get('snip') or '').split())[:300]} (id {r['ref']})")
     return out
 
@@ -263,7 +265,8 @@ def entity_repeat(fact: dict, stands: list, cur: pack.Current, thing: str | None
     return None
 
 
-def record_context(domain: str, st: store.Store, later: dict[int, str], when: dict[int, str], stands: list, words: str) -> str:
+def record_context(domain: str, st: store.Store, later: dict[int, str], when: dict[int, str], stands: list, words: str,
+                   refs: list | None = None) -> str:
     """What the record already holds, put to the model so a repeat can't slip through on different wording: every
     entry within WINDOW days of each of the owner's new messages, where every thing the pack follows stands, and the
     search hits on his words, in the pack's `record` words."""
@@ -271,7 +274,7 @@ def record_context(domain: str, st: store.Store, later: dict[int, str], when: di
     win = listing(near(st, days))
     now_lines = [f"{c.name}: {c.status}" + (f" since {c.when}" if c.when else "") + (f"; {c.detail}" if c.detail else "")
                  for c, _ in sorted(stands, key=lambda x: x[0].name.lower())]
-    hits = on_record(domain, list(later.values()))
+    hits = on_record(domain, list(later.values()), refs=refs)
     return words.format(window=WINDOW, span=", ".join(sorted(days)) or "unknown",
                         titles=", titles only (there are many)" if len(win) > WINDOW_FULL else "", entries="\n".join(win) or "none",
                         standing="\n".join(now_lines) or "none", hits="\n".join(hits) or "nothing found")
@@ -445,9 +448,16 @@ AGES = {w: n for n, w in enumerate("zero one two three four five six seven eight
 TENS = {w: 10 * n for n, w in enumerate("twenty thirty forty fifty sixty seventy eighty ninety".split(), 2)}
 _A = rf"(\d{{1,2}}|(?:{'|'.join(TENS)})(?:[- ](?:one|two|three|four|five|six|seven|eight|nine)\b)?|" + \
     "|".join(sorted(AGES, key=len, reverse=True)) + ")"  # "twenty-five" is one age
-AGE = re.compile(r"\b(?:(?:when I was|at age|at the age of|aged|ages)\s+" + _A + r"(?:\s*(?:-|–|to)\s*" + _A + r")?"
-                 r"(?:\s+(?:years?|yrs?)\s+old)?|at " + _A + r"\s+(?:years?|yrs?)\s+old|in my teens|adolescence)"
-                 r"(?=\s*(?:$|[^\w\s]|(?:and|but|or|so|then|when|while|because|i|we|my|he|she|it|they)\b))", re.I)
+ROUGHLY = r"(?:about|around|roughly|maybe)\s+"  # "when I was about ten": a year either side, where the record keeps past events
+
+
+def _age(rough: str = "") -> re.Pattern:
+    return re.compile(r"\b(?:(?:when I was|at age|at the age of|aged|ages)\s+" + rough + _A + r"(?:\s*(?:-|–|to)\s*" + _A + r")?"
+                      r"(?:\s+(?:years?|yrs?)\s+old)?|at " + _A + r"\s+(?:years?|yrs?)\s+old|in my teens|adolescence)"
+                      r"(?=\s*(?:$|[^\w\s]|(?:and|but|or|so|then|when|while|because|i|we|my|he|she|it|they)\b))", re.I)
+
+
+AGE, AGE_ROUGH = _age(), _age(f"(?:{ROUGHLY})?")
 
 
 def month_days(words: str) -> list[tuple[int, int, int | None]]:
@@ -513,7 +523,8 @@ def landmarks(st: store.Store) -> dict[str, str]:
     return {k: v for k, v in out.items() if v}
 
 
-def full_date(fact: dict, said_on: str, words: str | None = None, marks: dict | None = None) -> tuple[str, bool, dict]:
+def full_date(fact: dict, said_on: str, words: str | None = None, marks: dict | None = None,
+              rough: bool = False) -> tuple[str, bool, dict]:
     """The fact's date, whether it's an estimate, and what code read of how he said it (`as_said`, and a span's
     `range_from` and `range_to`). Code's reading of his quote wins: one phrase it reads ("yesterday", "about six months
     ago", "last spring", "two or three weeks ago", or a day written with its year) gives the date, or a span's first day,
@@ -529,7 +540,9 @@ def full_date(fact: dict, said_on: str, words: str | None = None, marks: dict | 
     give stands, a fact tied to a landmark keeps the landmark's rules, and a stretch his message names that the reply
     doesn't give as this fact's when dates nothing. An age ("when I was 12") the model's date
     doesn't rest on runs from that birthday (`marks`, the landmarks' dates: its `birth`) to the day before the next one
-    past it; without a birth date, or before that birthday, it's never-said, its words kept."""
+    past it; without a birth date, or before that birthday, it's never-said, its words kept. With `rough` (a record
+    that creates past events), "about ten" runs from his ninth birthday to the day before his twelfth; else a rough
+    age isn't one."""
     date, approx = str(fact.get("date") or "not-sure"), fact.get("approx") in (True, "true", "yes")
     if not dates.valid(date):
         date = "not-sure"
@@ -544,12 +557,14 @@ def full_date(fact: dict, said_on: str, words: str | None = None, marks: dict | 
             ({"range_from": a, "range_to": b} if a < b else {})
     if n > 1 and date == "not-sure":
         return "never-said", False, {}  # his words say when, more than one way, and the model didn't pick
-    if (m := AGE.search(quote)) and not (date != said_on and said_date(date, quote, said_on)):
+    if (m := (AGE_ROUGH if rough else AGE).search(quote)) and not (date != said_on and said_date(date, quote, said_on)):
         if not (born := periods.span((marks or {}).get("birth"))):
             return "never-said", False, {"as_said": m[0]}
         n = [int(x) if x.isdigit() else sum((AGES | TENS)[w] for w in re.split(r"[- ]", x.lower()))
              for x in (m[1] or m[3], m[2] or m[1] or m[3]) if x]
         lo, hi = sorted(n) or (12, 18)  # teens: his 12 to 18
+        if re.search(ROUGHLY, m[0], re.I):
+            lo, hi = lo - 1, hi + 1
         a, b = _back(born[0], -lo, "year").isoformat(), (_back(born[1], -hi - 1, "year") - timedelta(days=1)).isoformat()
         if a > said_on:  # not yet that old: not an age
             return "never-said", False, {"as_said": m[0]}
@@ -678,13 +693,13 @@ def cut_title(text: str, limit: int = 120) -> str:
 
 def entry(fact: dict, said_on: str, stem: str, kinds: list[str], abouts: list[str], home: str,
           words: str | None = None, cur: pack.Current = pack.NONE.current, other: str = "observation",
-          marks: dict | None = None) -> tuple[dict, str]:
+          marks: dict | None = None, rough: bool = False) -> tuple[dict, str]:
     """The event front matter and body for a checked fact, in one of the kinds offered, else `other`. A date he never
     gave is filed as not sure, never guessed; a fact with no date and no past wording is filed at the day he said it.
     A fact the reply ties to a life event (`landmark`, a slug) dates it when his quote dates it firmly; one his quote
     doesn't date (the model's day said is no date) takes the date `marks` gives the slug, approximate, else not sure; his
     own hedge leaves it unpinned. The reply's `as_said` is kept when code read no phrase and it's in his own message."""
-    date, approx, said = full_date(fact, said_on, words, marks := marks or {})
+    date, approx, said = full_date(fact, said_on, words, marks := marks or {}, rough)
     if pin := str(fact.get("landmark") or ""):
         quote = str(fact.get("quote", ""))
         if not ("as_said" in said and "range_from" in said) and not (said_date(date, quote, said_on) and (
@@ -902,6 +917,102 @@ def links_for(eid: str, fm: dict, where: dict, quote: str, source: str, st: stor
                      "from": eid, "to": old, "family": "evidence", "rel": "supersedes", "by": "claude",
                      "author": "engram-capture"}, quote[:120]))
     return out
+
+
+def thread_list(tt: "threads.Threads", st: store.Store, words: str, days: set[str], hits: list[str], top: list[str]) -> list[str]:
+    """The threads the filer is shown, in a record that creates them: those his words name (any of a thread's names,
+    whole words), those the search of his words found entries on, those of the entries around when he spoke, then the
+    most used, each with its names. Why not the most used alone: a thread he hasn't named in months is still his word."""
+    ev = {e.id: e for e in st.events() if e.kind != "link"}
+    named = [t for t, ns in tt.names.items() if any(verbatim.found(n, words) for n in ns)]
+    found = [t for r in hits if (e := ev.get(units.norm(r))) for t in tt.of(e)]
+    around = [t for e in near(st, days) for t in tt.of(e)]
+    out = []
+    for t in dict.fromkeys(named + found + around + top):
+        if tt.created(t):
+            out.append(f"{t} (" + "; ".join(f"“{n}”" for n in tt.names[t]) + (f"; ended {tt.ended[t]}" if t in tt.ended else "") + ")")
+        else:
+            out.append(t)
+    return out
+
+
+def threaded(f: dict, msg: str, tt: "threads.Threads", day: str, stem: str, made: dict[str, list[str]],
+             entries: dict[str, store.Event]) -> tuple[list[str], list[tuple[dict, str]], list[str]]:
+    """What a checked fact does to the record's threads: the threads it starts (`create`: a kind the record creates and
+    a name in whole words of his message), which gathers the earlier entries the fact tells again (`again`), a thread's second name
+    (`names`), and an entry moved off the wrong thread (`moves`: entry, from, to). A thread already going by that name
+    is the one meant, and one this run made (`made`: id -> names) isn't made twice. Returns the threads the fact
+    starts or finds, the entries and links to write, and why each refused part was refused."""
+    ids, out, whys, owner = [], [], [], config.owner()
+    base = {"date": day, "reported": day, "by": config.owner_id(), "author": "engram-capture",
+            "source": f"said in session {stem[:8]} on {day}"}
+
+    def known(t: str) -> bool:
+        return t in tt.names or t in made
+
+    def name(t: str, words: str):
+        if words in tt.names.get(t, []) + made.get(t, []):
+            return
+        made.setdefault(t, []).append(words)
+        out.append(({**base, "kind": threads.KIND, "title": f"{t.split('/')[0]}: {words}", "about": [t], "name": words},
+                    f"- {owner}: “{words}”\n"))
+
+    def start(c) -> str | None:
+        kind, words = str(c.get("kind") or ""), " ".join(str(c.get("name") or "").split())
+        if kind not in tt.made:
+            whys.append(f"can't create a {kind or 'thread'}: the record creates {', '.join(tt.made)}")
+            return None
+        if t := next((x for x in tt.named(words) if x.startswith(kind + "/")), None) or \
+                next((x for x, ns in made.items() if x.startswith(kind + "/") and words in ns), None):
+            return t  # a name it already goes by names nothing new
+        if not words or not verbatim.found(words, msg):
+            whys.append(f"the {kind} name “{words}” isn't in {owner}'s words")
+            return None
+        if kind == threads.PAST and (dates.key(str(f.get("date") or "")) or "") > day:
+            whys.append(f"“{words}” hasn't happened yet: not a past {kind}")
+            return None
+        if kind == threads.THEME and (told := [entries[x].body for x in again if x in entries]) and \
+                not threads.shares(words, told):
+            whys.append(f"the {kind} name “{words}” shares no word with how {owner} told it before")
+            return None  # a theme is what he comes back to, so its name is in both tellings
+        t = threads.tid(kind, words)
+        if not known(t):
+            name(t, words)
+        return t
+
+    def place(e: str, t: str, off: str = ""):
+        out.append(({**base, "kind": "link", "family": "timeline", "rel": threads.PLACE, "from": e, "to": t,
+                     **({"off": off} if off else {}), "about": [x for x in (off, t) if x],
+                     "title": f"{e} moved from {off} to {t}" if off else f"{e} on {t}"}, " ".join(str(f.get("quote", "")).split())[:120]))
+    again = [str(x) for x in f.get("again") or []] if isinstance(f.get("again"), list) else []
+    for c in [c for c in f.get("create") or [] if isinstance(c, dict)]:
+        if t := start(c):
+            ids.append(t)
+            for x in again if t.startswith(threads.THEME + "/") else ():
+                if x in entries and t not in tt.of(entries[x]):
+                    place(x, t)
+    for t, words in (f.get("names") or {}).items() if isinstance(f.get("names"), dict) else ():
+        words = " ".join(str(words).split())
+        if not (tt.created(t) and known(t)):
+            whys.append(f"no thread {t} to give a second name")
+        elif not verbatim.found(words, msg):
+            whys.append(f"the name “{words}” isn't in {owner}'s words")
+        else:
+            name(t, words)
+    for m in [m for m in f.get("moves") or [] if isinstance(m, dict)]:
+        e, off, to = str(m.get("entry") or ""), str(m.get("from") or ""), m.get("to")
+        if e not in entries or off not in tt.of(entries[e]):
+            whys.append(f"can't move {e or 'an entry'}: it isn't on {off or 'that thread'}")
+            continue
+        t = start(to) if isinstance(to, dict) else str(to or "") if known(str(to or "")) else None
+        if t is None and not isinstance(to, dict):
+            whys.append(f"can't move {e} to {to}: no such thread")
+        if t and t != off:
+            place(e, t, off)
+    return ids, out, whys
+
+
+THREAD_OPS = ("join", "split", "end")  # made in conversation, never by the filer
 
 
 VERIFY_HITS, VERIFY_CHARS = 8, 1500  # search hits shown per candidate, and each record's characters
@@ -1193,6 +1304,10 @@ def _file(domain: str, root: Path, path: Path, p: pack.Pack, s: sessions.Session
     cur = p.current
     st = store.Store(root)
     kinds, abouts, home = shape(st, p.kinds)
+    tt = threads.Threads(st.events(), threads.creatable(st.config)) if threads.creatable(st.config) else None
+    known = {a for e in st.events() for a in e.about} | set(tt.names) if tt else abouts  # what a fact may be on
+    if tt:
+        home = ""  # its entries render into no page: a remark on no thread stays on none
     th = theory_shape(st, p.prompts.get("theory", ""))
     mine = filed_from(st, path.stem)
     already = [f"{e.date} {e.fm.get('title', '')}: {' '.join(e.body.split())[:200]} (id {e.id})" for e in mine]
@@ -1201,19 +1316,27 @@ def _file(domain: str, root: Path, path: Path, p: pack.Pack, s: sessions.Session
     stands, marks = standing(st), landmarks(st)
     stories, complaints = placement_shape(st)
     rels = list(st.config.get("links", {}).get("timeline", {}).get("rels") or [])
+    hits: list[str] = []
+    record = record_context(domain, st, later, when, stands, p.prompts.get("record", ""), hits)
+    if tt:
+        abouts = thread_list(tt, st, "\n".join(later.values()), {when[l] for l in later if when.get(l)}, hits, abouts)
     reply, usd = ask(config.voice(p.prompts["file"]).format(domain=domain, upto=upto, kinds=", ".join(kinds), abouts=", ".join(abouts),
                                           stories=", ".join(stories) or "none",
                                           complaints="; ".join(f"{k} ({v[0]})" for k, v in complaints.items()) or "none",
                                           conversation=conversation(shown, upto), window=WINDOW,
                                           landmarks=", ".join(f"{k} ({v})" for k, v in marks.items()) or "none",
                                           theory=th[3].replace("{upto}", str(upto)) if th else "", already="\n".join(already) or "nothing",
-                                          record=record_context(domain, st, later, when, stands, p.prompts.get("record", "")))
+                                          record=record)
                          + (f"\n\n{notes.prompt(cfg, part, notes.recent(root))}" if part else ""))
     res["usd"] += usd
     parsed = reply_json(reply)
-    note, hold = _note(root, path, s, parsed, part, cfg, st, when, res, dry_run) if part else (None, False)
     turns, recent, his = turn_before(s), turn_before(s, RECENT), "\n".join(owners(s).values())
     entries, lines, places, fixable = [], [], [], notes.refs(root)
+    made, threaded_writes, held = {}, [], {e.id: e for e in st.events() if e.kind != "link"}
+    for op in parsed.get("thread_ops") or [] if tt else []:  # a join, a split or an end is the owner's, in conversation
+        kind = str(op.get("op") if isinstance(op, dict) else op)
+        res["dropped"].append({"session": path.stem[:8], "line": None, "text": json.dumps(op)[:120],
+                               "why": f"a thread {kind if kind in THREAD_OPS else 'change'} is made in conversation, never by the filer"})
     for f in parsed.get("facts") or []:
         try:
             line = int(f.get("line"))
@@ -1230,9 +1353,14 @@ def _file(domain: str, root: Path, path: Path, p: pack.Pack, s: sessions.Session
             res["dropped"].append({"session": path.stem[:8], "line": f.get("line"), "why": why, "text": str(f.get("text", ""))[:120],
                                    "quote": str(f.get("quote", ""))[:200]})
         else:
-            fm, body = entry(f, when[int(f["line"])], path.stem, kinds, abouts, home,
+            if tt:
+                ids, writes, whys = threaded(f, later[line], tt, when[line], path.stem, made, held)
+                f = {**f, "about": ids + [a for a in f.get("about") or [] if a not in ids]}
+                threaded_writes += writes
+                res["dropped"] += [{"session": path.stem[:8], "line": line, "why": w, "text": str(f.get("text", ""))[:120]} for w in whys]
+            fm, body = entry(f, when[int(f["line"])], path.stem, kinds, known | set(made) if tt else abouts, home,
                              "\n".join([later[line], str(f.get("answering", ""))]), cur,
-                             p.kinds[0] if p.kinds else "observation", marks)
+                             p.kinds[0] if p.kinds else "observation", marks, threads.PAST in (tt.made if tt else ()))
             if thing and fm["kind"] == cur.entity_kind:  # an existing chain: "Pataday" joins "Pataday 0.7%"
                 fm["thing"] = thing
             if target := correction_target(f, st):
@@ -1243,6 +1371,7 @@ def _file(domain: str, root: Path, path: Path, p: pack.Pack, s: sessions.Session
             entries.append((placed(fm, where), body))
             lines.append(line)
             places.append((where, " ".join(str(f.get("quote", "")).split())))
+    note, hold = _note(root, path, s, parsed, part, cfg, st, when, res, dry_run, set(made)) if part else (None, False)
     if hold:
         return True
     if note:  # what the note states isn't filed again; what's filed beside it is shown under it
@@ -1289,7 +1418,8 @@ def _file(domain: str, root: Path, path: Path, p: pack.Pack, s: sessions.Session
         res["usd"] += usd
         if why:
             res["dropped"].append({"session": path.stem[:8], "line": line, "why": why, "text": "a structural theory change"})
-    places += [None] * (len(entries) - len(places))  # theory changes carry no placement
+    entries += threaded_writes
+    places += [None] * (len(entries) - len(places))  # theory changes and threads carry no placement
     once = {}  # the same fact twice is filed once: in one second the two would share an id and the store refuse it
     for x, w in zip(entries, places):
         once.setdefault(json.dumps(x, sort_keys=True, default=str), (x, w))
@@ -1344,7 +1474,7 @@ NOTE_TRIES = 2  # a refused note is asked for once more, the next run; then the 
 
 
 def _note(root: Path, path: Path, s: sessions.Session, parsed: dict, part: "notes.Part", cfg: "notes.Settings",
-          st: store.Store, when: dict, res: dict, dry_run: bool) -> tuple[dict | None, bool]:
+          st: store.Store, when: dict, res: dict, dry_run: bool, made: set[str] = frozenset()) -> tuple[dict | None, bool]:
     """The session's note from the reply, checked (`notes.check`), and whether to hold the session for one more try:
     (the note, False); (None, True) the first time a note is refused; else (None, False), as for a session that
     wasn't a working one."""
@@ -1366,7 +1496,7 @@ def _note(root: Path, path: Path, s: sessions.Session, parsed: dict, part: "note
     same = [n for n in notes.read(root) if n["fm"].get("chat") == path.stem and notes.first_line(n) < part.first]
     named = str(given.get("follows") or "")
     follows = named if named in {n["fm"]["id"] for n in notes.recent(root)} else same[-1]["fm"]["id"] if same else ""
-    known = {a for e in st.events() for a in e.about}
+    known = {a for e in st.events() for a in e.about} | made  # and the threads this session started
     nid, day = notes.note_id(path.stem, part), when.get(part.exchanges[0].line) or _now().date().isoformat()
     fm = {"id": nid, "title": f"{config.owner()}'s session on {day}", "date": day, "kind": "note", "chat": path.stem,
           "start": part.start, "lines": [part.first, part.last], "follows": follows,

@@ -14,6 +14,7 @@ from engram import config, dates, frontmatter, labels, periods
 from engram.index import open_index
 from engram.paths import index_path, record_toml
 from engram.sources.events import is_event_ref
+from engram.sources.storygraph import WITH_NOTE
 
 MARKS = "; rows marked in, probably or possibly by how much of their date falls inside"  # the period line, when a row is marked
 APART = ("theory/", "now:")  # a theory thread shows in the theory block, and where things stand isn't history
@@ -87,6 +88,8 @@ def chain(domain: str, names: str | list[str], about: str | None = None) -> tupl
     """(header, rows) for stories and recurring symptoms merged into one timeline, rows in time order, undated standing
     sections after. Free text (`about`) adds the stories its search hits sit on, the hits themselves, and one step out:
     records a led-to link joins to a row from another story, so interleaving complaints arrive in the same call."""
+    from engram import ingest
+    ingest.refresh_if_stale([domain])  # what was just filed is on its thread
     names = [names] if isinstance(names, str) else list(names)
     asked = list(names)  # the chains the caller named, before the search adds its picks
     hits: list[str] = []
@@ -167,6 +170,11 @@ def chain(domain: str, names: str | list[str], about: str | None = None) -> tupl
     direct = set(hits)
     direct |= {r["ref"] for r in rows if direct & set(r.get("parts", []))}
     rows, folded = _units(rows, unit_of, direct)
+    here, beside = {r["ref"]: r for r in rows}, {}  # a note lists the entries filed with it, which leave the rows
+    for note, e in db.execute("SELECT from_ref, to_ref FROM link WHERE rel = ?", (WITH_NOTE,)):
+        if note in here and e in here and e != note:
+            beside.setdefault(note, []).append(here[e])
+    rows = [r for r in rows if r["ref"] not in {e["ref"] for v in beside.values() for e in v}]
     found = direct | {into for m, into in folded.items() if m in direct}  # a hit folded into its current version
     for r in rows:  # what no chain or story brought: the search's own find, else a record a led-to link here brought
         if r["ref"] not in found:
@@ -174,6 +182,7 @@ def chain(domain: str, names: str | list[str], about: str | None = None) -> tupl
     num = {r["ref"]: i for i, r in enumerate(rows, 1)}
     num |= {p: num[r["ref"]] for r in rows for p in r.get("parts", [])}  # a link to a consult's section points at its row
     num |= {m: num[r] for m, r in folded.items()}  # a version shown on its unit's row points at that row
+    num |= {e["ref"]: num[n] for n, v in beside.items() for e in v}  # and an entry shown with its note at the note's
     has_sum = db.execute("SELECT 1 FROM sqlite_master WHERE name = 'rec_summary'").fetchone()
 
     def summary(r: dict) -> str:  # direct matches carry one; every other row is its headline (the owner)
@@ -212,6 +221,9 @@ def chain(domain: str, names: str | list[str], about: str | None = None) -> tupl
             row["what"] = " ".join(words[:HEADLINE]) + ("…" if len(words) > HEADLINE else "")
         if s := summary(r):
             row["summary"] = s
+        if r["ref"] in beside:
+            row["filed with it"] = [f"{_what(e['title'], e['ref'], e['date'])} [{e['nid']}]" for e in beside[r["ref"]]]
+            row["_with"] = [e["ref"] for e in beside[r["ref"]]]
         row["id"] = r["nid"]
         ends = r.get("parts") or [r["ref"]]
         after = sorted({num[a] for e in ends for (a,) in db.execute("SELECT from_ref FROM link WHERE rel = 'led-to' AND to_ref = ?", (e,))

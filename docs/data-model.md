@@ -8,7 +8,7 @@ How a record repo engram files for stores its record. A repo engram only reads k
 | **Raw source** | outside material: documents, data files, sessions | the repo's reference folders; Claude Code's session files | never changes; a new version is a new row |
 | **Source and spark** | what the owner hands over to be compiled (a page, a video, an image, a scribble, a quote), and their own passing thought | an entry each ([below](#sources-sparks-and-the-wiki)) | adding entries |
 | **Document** | an argument or a real-world item revised as a whole | markdown files | edited in place; its history is git |
-| **Thread** | a small document with an id and a lifecycle: a story, a recurring thing, a series, a question | one markdown file per thread | its definition is edited in place; its status changes by entries |
+| **Thread** | a small document with an id and a lifecycle: a story, a recurring thing, a series, a question; or a theme, person or past event the filer started (`[threads] create`) | one markdown file per thread; a started one, a `thread` entry per name | its definition is edited in place; its status changes by entries; a started one changes only by entries and dated links |
 | **Status and link** | a thread's state; a relation between two things | `status` entries; lines of `events/links.jsonl` | adding; the latest status wins |
 | **Note** | one working session, in the owner's and the guide's own words, a section each for what the repo's pack names | one markdown file in the repo's notes folder (`[notes] folder`), its id and path from the session's first message | written once; never edited, a correction is an entry that `corrects` it |
 
@@ -50,7 +50,7 @@ Each repo names its own entry kinds in its pack (`kinds`); `interpretation`, `pl
 
 ## Links
 
-Every link is one line of `events/links.jsonl` (from, to, family, rel, stories, date, note), appended to and never edited. Reverse links are computed. Each repo names its link families and rels in `engram.toml` (`[links.<family>]`): a timeline family (`led-to`, pointing forward in time, and splits, joins and dead ends), a theory family (loop steps and joins, each with a strength), an evidence family (`strengthens`, `weakens`, `supersedes`) and `cites`. Corrections are `revises`, `supersedes` and `disagrees`; an entry correcting a note `corrects` it, and the note stays as it was.
+Every link is one line of `events/links.jsonl` (from, to, family, rel, stories, date, note), appended to and never edited. Reverse links are computed. Each repo names its link families and rels in `engram.toml` (`[links.<family>]`): a timeline family (`led-to`, pointing forward in time; `joined-into`, `split-into` and `ended` between threads; `placed-on`, an entry put on a thread, with `off` the one it leaves), a theory family (loop steps and joins, each with a strength), an evidence family (`strengthens`, `weakens`, `supersedes`) and `cites`. Corrections are `revises`, `supersedes` and `disagrees`; an entry correcting a note `corrects` it, and the note stays as it was.
 
 **Link ends:** an entry id, a theory thing (`<kind>/<id>`), a document by its stable id (`doc-k7f2qa`) or one of its sections (`doc-k7f2qa#h3kq`), with `from_hint`/`to_hint` holding the path and heading as they read when the link was written. Ids and anchors live in `events/docs.jsonl`, appended to only ([technical](technical.md#stable-document-ids)). An end written as `path#Heading` stays as written and resolves through the registry.
 

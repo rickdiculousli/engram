@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from pathlib import Path
 
-from engram import config, dates, pack, units
+from engram import config, dates, pack, threads, units
 from engram.index import Doc
 from engram.store import Store
 
@@ -32,6 +32,7 @@ SHOW_STOPPED = timedelta(days=30)
 FINISHED = {"stopped", "done", "concluded", "ruled out", "resolved", "replaced", "inactive"}
 ONGOING = {"taking", "prn", "active"}
 QUIET = timedelta(days=90)
+SAID = re.compile(r"“[^”]+”")  # the owner's words in an entry the filer wrote
 RENEWAL = "renewal"  # an entry recording only that the owner said they're still on a thing: it moves `said`, nothing else
 
 
@@ -203,9 +204,15 @@ def _chain(st: Store, today: date | None = None) -> list[Current]:
     for e in _entities(st, cur):
         if e.id not in narrowed:
             chains.setdefault(chain_id(e, cur), []).append(e)
+    made = threads.creatable(st.config)
     for e in st.events(kind="status") if cur.threads else []:
         for a in e.about if e.id not in narrowed else []:
-            if a.split("/")[0] in cur.threads:
+            if a.split("/")[0] in cur.threads and a.split("/")[0] not in made:
+                chains.setdefault(a, []).append(e)
+    tt = threads.Threads(st.events(), made) if made and set(made) & set(cur.threads) else None
+    for e in st.events() if tt else []:  # a thread the filer makes stands where the latest thing said on it does
+        for a in tt.of(e) if e.kind not in ("link", threads.KIND) and e.id not in narrowed else []:
+            if a.split("/")[0] in cur.threads and tt.created(a):
                 chains.setdefault(a, []).append(e)
     own = [e for e in st.events() if e.kind != "link" and str(e.fm.get("by", "")) == config.owner_id() and _day(e)]
     renewed: dict[str, list[str]] = {}
@@ -215,6 +222,8 @@ def _chain(st: Store, today: date | None = None) -> list[Current]:
     out = []
     for thing, evs in chains.items():
         evs.sort(key=lambda e: str(e.fm.get("recorded", "")))
+        if tt and tt.created(thing):  # filed in one second, the later said is the later
+            evs.sort(key=lambda e: (str(e.fm.get("recorded", "")), dates.key(_day(e)) or ""))
         last = evs[-1]
         status = str(last.fm.get("status", ""))
         when = _day(last)
@@ -234,6 +243,9 @@ def _chain(st: Store, today: date | None = None) -> list[Current]:
             name = str(last.fm.get(prefix) or thing.split("/", 1)[1].replace("-", " "))
             first = next((l.lstrip("- ").strip() for l in last.body.splitlines() if l.strip()), "")
             shown = re.sub(r"\*\*", "", first.split(": ", 1)[1] if first.startswith(name + ":") else first)
+            if tt and tt.created(thing):  # his own words on it, as said
+                name = tt.names[thing][0]
+                shown = next((m[0] for l in reversed(last.body.splitlines()) if (m := SAID.search(l))), shown)
             group = cur.threads[prefix]
             started, changed = (_first_session(st, thing, corrected, cur.starts[prefix]) if prefix in cur.starts else ""), ""
         history = [f"{e.fm.get('status', '')} {_day(e) or 'date not sure'}" for e in evs]

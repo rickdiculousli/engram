@@ -21,8 +21,21 @@ his answer to that question: never a statement in his voice. When his words say 
 from these ({landmarks}), else a new short one. When he says a note listed below was wrong, give "corrects": its id,
 and "text" as it should read.
 
-When a fact is about a theme, a person or a past event the record doesn't hold yet, give "create": [{{"kind": "theme",
-"person" or "event", "name": <a few of his own words, copied exactly>}}]. Never join, split or end one.
+Threads: "about" takes the threads listed there, each shown with {owner}'s names for it. A thread is one of:
+- a person;
+- a past event: something that happened once, before the day he says it;
+- a theme: something that keeps happening in his life or that he keeps coming back to (a situation, a habit, a worry),
+  beside the people and events in it.
+When a fact is about a person or a past event none of the listed threads is, give "create": [{{"kind": "person" or
+"event", "name": <his own words for it in that message, copied exactly>}}]. For each fact give "again": the ids of
+the entries listed below where he brought up the same thing at an earlier time (the same worry, situation, plan or
+habit, even if it has moved on since), whatever threads they're on, or [] when this is the first time he brings it up;
+a person or event thread holding it doesn't make it new. A fact with "again" is on a theme as well as on its people and
+events: a listed theme/... one, or a new one, given as "create" with "kind": "theme" and a name copied from that
+message, in words he also used for it before. Facts here about one situation share one theme. A fact with no "again" never starts a theme, and what the theory below
+already holds is never one. When he calls a listed thread by a new name, give "names": {{<thread>: <his words>}}. When
+he says an entry is on the wrong one, give "moves": [{{"entry": <its id>, "from": <the thread>, "to": <the right
+thread, or {{"kind", "name"}}>}}]. Never join, split or end a thread.
 {theory}
 Reply with JSON only: {{"facts": [...], "theory": []}}.
 
@@ -154,6 +167,7 @@ pack = Pack(
              "note": NOTE, "suggest": SUGGEST, "stated": STATED, "regroup": REGROUP},
     kinds=("observation", "practice", "stated-belief", "plan"),
     current=Current(entity_kind="practice", entity_prefix="practice", detail="note",
-                    statuses=("started", "carried", "paused", "retired"), group="practices", sections=("practices", "stopped")),
+                    statuses=("started", "carried", "paused", "retired"), group="practices", threads={"person": "people"},
+                    sections=("practices", "people", "stopped")),
     read={"gym": read_gym},
 )

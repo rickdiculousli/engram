@@ -298,7 +298,8 @@ STEP_RELS = ("led-to", "strengthens", "weakens")  # what a second step follows: 
 REL = {("timeline", "out"): "led to", ("timeline", "in"): "led from", ("evidence", "out"): "bears on",
        ("evidence", "in"): "evidence for it"}
 # Links that list a page's records: the page brings every one, oldest first, and each record names the page it's on.
-LISTED = {"occurrence": ("occurrence", "on the timeline of"), "arc-step": ("arc step", "on the arc of")}
+LISTED = {"occurrence": ("occurrence", "on the timeline of"), "arc-step": ("arc step", "on the arc of"),
+          "with-note": ("filed with it", "filed with the note")}
 # What the record says against itself: shown first at both ends (in, out), with the link's note.
 FIXED = {"supersedes": ("outdated by", "outdates"), "revises": ("revised by", "revises"),
          "disagrees": ("disagrees with", "disagrees with"), "corrects": ("corrected by", "corrects")}

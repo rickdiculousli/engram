@@ -13,6 +13,7 @@ from engram.paths import record_toml
 from engram.store import Store
 
 FAMILIES = ("timeline", "evidence")
+WITH_NOTE = "with-note"  # a note -> an entry filed beside it, read from the entry's `note`
 
 
 def ref_of(e, store: Store) -> str | None:
@@ -90,6 +91,9 @@ def links(d: Domain, refs: list[str] = (), first: dict[str, str] | None = None) 
                     continue
                 seen.add((fa, fb, fam, link.fm.get("rel", "")))
                 out.append((fa, fb, fam, link.fm.get("rel", ""), story, link.id, note))
+    for e in st.events() if noted else []:  # an entry filed beside a note is listed by it, as a page lists its occurrences
+        if e.kind != "link" and str(e.fm.get("note") or "") in noted and (r := ref_of(e, st)):
+            out.append((noted[e.fm["note"]], r, "timeline", WITH_NOTE, "", e.id, ""))
     return out
 
 

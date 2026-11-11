@@ -144,11 +144,27 @@ def prune_nodes(repo: Path, dry_run: bool = False) -> list[str]:
     return drop
 
 
+def _noted(d: Domain) -> dict[str, dict]:
+    """Each note's path -> its day and the threads it's on (`engram.threads`), from its front matter."""
+    from engram import threads
+    from engram.store import Store
+    st = Store(d.repo)
+    on = threads.Threads(st.events(), threads.creatable(st.config))
+    out = {}
+    for n in notes.read(d.repo):
+        about = n["fm"].get("about") or []
+        day = str(n["fm"].get("date") or "")
+        out[n["path"]] = {"date": day if dates.key(day) else None,
+                          "stories": ",".join(map(threads.key, on.on(n["fm"]["id"], about if isinstance(about, list) else [about], day)))}
+    return out
+
+
 def docs_for(d: Domain) -> list[Doc]:
     out: list[Doc] = []
     attrs = nodes(d.repo)
     folders = _own(d).get("spines", [])
     whole = f"{notes.folder(d.repo)}/" if notes.folder(d.repo) else ""  # a note is one record, read whole
+    held = _noted(d) if whole else {}
     for rel in files(d):
         text = (d.repo / rel).read_text(errors="replace")
         kind = rel.parts[0] if len(rel.parts) > 1 else rel.stem
@@ -185,6 +201,8 @@ def docs_for(d: Domain) -> list[Doc]:
             dt = dates.first_in(heading) or None
             parts = chunks(body)
             a = attrs.get(base) or ({"node": page, "milestone": 1} if page else {"stories": spine(r, folders)})
+            if r in held:  # a note: on the threads it names, dated its session's first day
+                dt, a = held[r]["date"], {**a, "stories": held[r]["stories"]}
             for i, part in enumerate(parts, 1):
                 ref = base if len(parts) == 1 else f"{base}@{i}"
                 out.append(Doc(ref=ref, source=SOURCE, cls="section", kind=kind, title=title, body=part,

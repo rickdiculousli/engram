@@ -7,10 +7,11 @@ usage: uv run python bench/inner_checks.py run M3 M5 [--jobs 6] [--only M3-04,M5
 Each case runs in its own process with its own ENGRAM_DATA, ENGRAM_CONFIG, box config and sessions folder under
 `eval/inner-work/scratch/`, ENGRAM_SANDBOX set and no remote, so nothing reaches a real record, index or config. A
 check is judged by its `JUDGES` entry, or for a check of the guide's suggestions (M2, M8, M9) its `SUGGESTIONS` one, by
-what the record holds of the case's suggestion, seeded as the filer keeps one, or for a check of the linking job (M1,
-M4, M10) its `LINKS` one: each of the owner's lines seeded as the filer files one, the linking job run on the record (a
-dry run: its read, its code's guards and its confirming call, filing nothing), and judged by what each call gave; a
-check with none can't run yet."""
+what the record holds of the case's suggestion, seeded as the filer keeps one, for a check of stated beliefs (M11-M13)
+its `BELIEFS` one, by the stated beliefs the record holds of the case's lines and the beliefs they link to, or for a
+check of the linking job (M1, M4, M10) its `LINKS` one: each of the owner's lines seeded as the filer files one, the
+linking job run on the record (a dry run: its read, its code's guards and its confirming call, filing nothing), and
+judged by what each call gave; a check with none can't run yet."""
 import json
 import os
 import re
@@ -96,6 +97,7 @@ def one(check: str, case_id: str, work: Path) -> dict:
     kept = notes.read(repo)
     first = next((json.loads(m.group(0)) for c in calls if (m := re.search(r"\{.*\}", c["reply"], re.S))), {})
     got = SUGGESTIONS[check](case, first, held(repo, sug["id"], held_before)) if check in SUGGESTIONS else \
+        BELIEFS[check](case, repo, held_before) if check in BELIEFS else \
         judge_m7(case, made) if check == "M7" else judge_m6(case, repo) if check == "M6" else JUDGES[check](case, first, kept)
     return {"id": case_id, "hard": case.get("hard"), "expect": case["expect"], **got,
             "usd": round(sum(r["usd"] for r in runs), 4), "calls": len(calls),
@@ -261,6 +263,47 @@ def judge_m6(case: dict, repo: Path) -> dict:
             "saved": {str(k): v for k, v in sorted(got.items())}}
 
 
+def believed(repo: Path, text: str) -> dict:
+    """What the record holds of one message of his as stated beliefs: each one whose words are in it, and the beliefs
+    those link to."""
+    from engram import beliefs, store, verbatim
+    s, st = beliefs.settings(repo), store.Store(repo)
+    links = beliefs.linked(st, s)
+    mine = [e for e in st.events(kind=s.kind) if beliefs.said(e) and verbatim.found(beliefs.said(e), text)]
+    return {"said": [beliefs.said(e) for e in mine], "beliefs": sorted({str(ln.fm["to"]) for e in mine for ln in links.get(e.id, [])})}
+
+
+def _statements(case: dict, repo: Path) -> list[dict]:
+    return [believed(repo, case["chats"][x["chat"]]["chat"][x["line"] - 1]["text"]) for x in case["statements"]]
+
+
+def judge_m11(case: dict, repo: Path, before: set[str]) -> dict:
+    """Wrong unless both statements are kept as stated beliefs and both link to the case's belief, or, where it's
+    "new", to one same belief the record didn't hold before."""
+    a, b = _statements(case, repo)
+    want = case["expect"]["belief"]
+    shared = set(a["beliefs"]) & set(b["beliefs"])
+    ok = bool(shared - before) if want == "new" else want in shared
+    return {"wrong": not ok, "statements": [a, b], "shared": sorted(shared)}
+
+
+def judge_m12(case: dict, repo: Path, before: set[str]) -> dict:
+    """Wrong when the two statements link to any one belief."""
+    a, b = _statements(case, repo)
+    shared = set(a["beliefs"]) & set(b["beliefs"])
+    return {"wrong": bool(shared), "statements": [a, b], "shared": sorted(shared)}
+
+
+def judge_m13(case: dict, repo: Path, before: set[str]) -> dict:
+    """Wrong when his line under test is kept as a stated belief, linked or not."""
+    from engram import config, notes, store, verbatim
+    text = next(t["text"] for t in case["chat"] if t["line"] == case["statement_line"])
+    got = believed(repo, text)
+    kept = [e.kind for e in store.Store(repo).events() if e.fm.get("author") == "engram-capture" and e.kind not in ("link", "status")
+            and any(w == config.owner() and verbatim.found(q, text) for w, q in notes.spoken(e.body))]
+    return {"wrong": bool(got["said"]), **got, "kept_as": kept}
+
+
 def moments(repo: Path, case: dict, whole: bool = False) -> dict[int, str]:
     """The case's lines of the owner's filed as the filer files them, on the day the chat is from: each his words as a
     quote, with the guide's question it answers when the message before it asks one. Each line is its own entry, its
@@ -359,6 +402,7 @@ def judge_moment(case: dict, proposed: list, confirmed: list, probes: list) -> d
 JUDGES = {"M3": judge_m3, "M5": judge_m5, "M7": judge_m7}
 LINKS = {"M1": judge_m1, "M4": judge_moment, "M10": judge_moment}  # judged by what the linking job gave the case's moments
 SUGGESTIONS = {"M2": judge_m2, "M8": judge_m8, "M9": judge_m9}  # judged by what the record holds of the suggestion
+BELIEFS = {"M11": judge_m11, "M12": judge_m12, "M13": judge_m13}  # judged by the stated beliefs the record holds
 NO_THEMES = ("M7",)  # its cases start with no themes: the sample's one is left out
 
 

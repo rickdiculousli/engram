@@ -35,7 +35,8 @@ CLASSIFY_VERSION = "5"
 HEAD = 65536
 # How a session an agent started opens. T3 puts "Act as the <role> sub-agent for this task." before every brief it
 # delegates, and nothing else tells such a session from the owner's own: both are `sdk-ts`, in a worktree, in auto mode.
-AGENT_OPENERS = ("Act as the", "Read your brief at", "You are executor", "You generate", "=== QUEUED")
+AGENT_OPENERS = re.compile(r"Act as the [\w/ -]+ sub-agent for this task\.|Read your brief at |You are executor \S+ in "
+                           r"|You generate|=== QUEUED")  # each as a harness writes it whole: the owner's own words may open alike
 BRIEF_CHARS = 1500  # a message this long with headings is an agent's brief, written for an agent: no quote comes from one
 HEADINGS = re.compile(r"^#{1,6} ", re.M)
 
@@ -208,7 +209,7 @@ def by_agent(s: Session) -> bool:
     agent's brief does. None of its messages are the owner's words. A long first message alone doesn't count: the owner
     opens with long pastes too, and each message is judged a brief on its own where it matters."""
     first = next((e.asked for e in s.exchanges if not e.meta and not e.summary), "")
-    return s.entrypoint == "sdk-cli" or first.startswith(AGENT_OPENERS)
+    return s.entrypoint == "sdk-cli" or bool(AGENT_OPENERS.match(first))
 
 
 def _dashed(name: str) -> str:

@@ -69,12 +69,13 @@ TEXT_CAP, CLAIMS_CAP, CHRONOLOGY_CAP = 400, 25, 60
 # `sessions_from` folders (a harness's own runs).
 LAUNCHED = ("-private-var-folders-",)
 # Turns a program, a skill or another session wrote, though they arrive as user turns. Only the rest are the owner's words.
-AUTOMATED = [(re.compile(p, re.S), label) for p, label in [
+AUTOMATED = [(re.compile(p, re.S | re.M), label) for p, label in [
     (r"^Base directory for this skill: \S*?([\w-]+)\s", "Skill loaded"),
     (r"^Another Claude session sent a message:", "Another Claude session"),
     (r"^(=== QUEUED CONVERSATION SPANS|You generate concise git branch names|Review the change at this commit"
-     r"|(TODAY IS|Today is) \d{4}-\d{2}-\d{2}|# Scout packet|Build what's accepted in|Please analyze this codebase"
-     r"|You are (executor|the )|YOUR PREVIOUS ANSWER WAS REJECTED)", "Prompt")]]
+     r"|(TODAY IS|Today is) \d{4}-\d{2}-\d{2}(\.(\s|$)| for this \w+\.)|# Scout packet|Build what's accepted in"
+     r"|Please analyze this codebase|You are executor \S+ in |YOUR PREVIOUS ANSWER WAS REJECTED)", "Prompt"),
+    (r"^You are the [^\n]*\n.*^#{1,6} ", "Prompt")]]  # a role a program hands out heads a brief with sections
 
 
 Unavailable = llm.Unavailable  # a call failed instead of answering: run() stops on it and keeps done sessions; tests raise it
@@ -126,13 +127,13 @@ def _owner_turn(owner: str) -> str:
 def clean(s: sessions.Session) -> list[Turn]:
     """The owner's words verbatim, the messages he sent while Claude worked in their place, and Claude's replies; tool
     calls, tool output, reminders and compaction summaries dropped, and so is Claude's narration between commands
-    when a final reply follows it, since its statuses go stale within the turn. A turn sent again right after is a retry, and only
+    when a final reply follows it, since its statuses go stale within the turn. A turn sent again with nothing said between is a retry, and only
     the later one is kept. A session with no turn of his (a headless run, a launcher's prompt) has nothing to summarize."""
     owner = config.owner()
     xs = [x for x in s.exchanges if not x.summary]
     out = []
     for i, x in enumerate(xs):
-        if i + 1 < len(xs) and xs[i + 1].asked.strip() == x.asked.strip():
+        if i + 1 < len(xs) and xs[i + 1].asked.strip() == x.asked.strip() and not (x.replies or x.queued):
             continue
         who, words = ("Skill loaded", x.asked.lstrip("# ").splitlines()[0][:80]) if x.meta else speaker(s, x.asked, owner)
         parts = [f"{who}: {_clip(words)}"]

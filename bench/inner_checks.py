@@ -25,10 +25,10 @@ D, ZONE, START = "inner-work", "America/Los_Angeles", datetime(2026, 11, 10, 3, 
 SKILL = "Base directory for this skill: /home/sam/.claude/skills/innerwork\n\n# Inner work\n\nGuide Sam's session."
 
 
-def chat_rows(case: dict, chat_id: str) -> list[str]:
+def chat_rows(case: dict, chat_id: str, start: datetime = START) -> list[str]:
     """The case's chat as Claude Code writes it, a minute between messages. A chat that opens with the guide opens, as
     one started by the inner-work skill does, with the skill's text, which is nobody's turn."""
-    rows, parent, t = [], None, START
+    rows, parent, t = [], None, start
     turns = list(case["chat"])
     if turns and turns[0]["who"] != "owner":
         turns.insert(0, {"who": "skill", "text": SKILL})
@@ -54,15 +54,13 @@ def _git(repo: Path, *a: str):
 
 
 def one(check: str, case_id: str, work: Path) -> dict:
-    """One case, in this process: the scratch record and chat, the filer run as the hourly job would (and once more an
-    hour later, when it held the session for its note), and what was kept."""
-    from engram import capture, ingest, notes
+    """One case, in this process: the scratch record and its chat (or its chats, oldest first, each on its day), the
+    filer run on each as the hourly job would (and once more an hour later, when it held the session for its note),
+    and what was kept."""
+    from engram import capture, ingest, notes, store
     case = next(c for c in json.loads((EVAL / f"{check}.json").read_text())["cases"] if c["id"] == case_id)
     repo, chats = work / "repo", work / "projects/-home-sam-inner-work"
-    chat_id = f"5e11{abs(hash(case_id)) % 10**8:08d}-0000-4000-8000-{int(time.time()) % 10**12:012d}"
     chats.mkdir(parents=True)
-    path = chats / f"{chat_id}.jsonl"
-    path.write_text("\n".join(chat_rows(case, chat_id)) + "\n")
     calls, real = [], capture._ask
 
     def ask(prompt, effort=None):
@@ -70,14 +68,22 @@ def one(check: str, case_id: str, work: Path) -> dict:
         calls.append({"prompt_head": prompt[:80], "reply": reply, "usd": usd})
         return reply, usd
     capture._ask = ask
-    ingest.record(D)
-    runs = [capture.file_session(D, repo, path)]
-    capture.mark(*runs[-1]["mark"])
-    if runs[-1]["mark"][3] == 0:  # held for its note: the next run asks once more
+    runs, made = [], []  # made: (the chat's index, each thread it started)
+    for i, chat in enumerate(case.get("chats") or [case]):
+        chat_id = f"5e{i}{abs(hash(case_id)) % 10**5:05d}-0000-4000-8000-{int(time.time()) % 10**12:012d}"  # its own short id
+        path = chats / f"{chat_id}.jsonl"
+        start = datetime.fromisoformat(chat["date"]).replace(hour=18, tzinfo=timezone.utc) if chat.get("date") else START
+        path.write_text("\n".join(chat_rows(chat, chat_id, start)) + "\n")
+        before = {e.id for e in store.Store(repo).events(kind="thread")}
+        ingest.record(D)
         runs.append(capture.file_session(D, repo, path))
+        capture.mark(*runs[-1]["mark"])
+        if runs[-1]["mark"][3] == 0:  # held for its note: the next run asks once more
+            runs.append(capture.file_session(D, repo, path))
+        made += [(i, e.about[0], e.fm["name"]) for e in store.Store(repo).events(kind="thread") if e.id not in before]
     kept = notes.read(repo)
     first = next((json.loads(m.group(0)) for c in calls if (m := re.search(r"\{.*\}", c["reply"], re.S))), {})
-    got = JUDGES[check](case, first, kept)
+    got = JUDGES[check](case, first, kept) if check != "M7" else judge_m7(case, made)
     return {"id": case_id, "hard": case.get("hard"), "expect": case["expect"], **got,
             "usd": round(sum(r["usd"] for r in runs), 4), "calls": len(calls),
             "dropped": [d for r in runs for d in r["dropped"]], "note": kept[-1]["body"] if kept else None,
@@ -108,7 +114,24 @@ def judge_m5(case: dict, reply: dict, kept: list[dict]) -> dict:
     return {"wrong": got is not case["expect"]["working"], "working": got, "noted": bool(kept)}
 
 
-JUDGES = {"M3": judge_m3, "M5": judge_m5}
+CONTENT = re.compile(r"[\w']+")
+FILLER = {"a", "an", "the", "of", "to", "and", "my", "his", "with", "at", "in", "on"}
+
+
+def judge_m7(case: dict, made: list[tuple[int, str, str]]) -> dict:
+    """A theme is started only in the chat where its thing comes up a second time, and only there, named with no
+    content word that isn't in his words there (`name_from`) and none of `name_not`; with nothing repeated, none."""
+    exp, themes = case["expect"], [(i, n) for i, t, n in made if t.startswith("theme/")]
+    words = lambda s: {w.lower().strip("'") for w in CONTENT.findall(s)} - FILLER
+    if not exp["create"]:
+        return {"wrong": bool(themes), "themes": themes, "made": made}
+    span, banned = words(exp["name_from"]), {w.lower() for w in exp.get("name_not", [])}
+    fits = [n for i, n in themes if i == exp["in_chat"] and words(n) <= span and not words(n) & banned]
+    return {"wrong": not fits or len(fits) < len(themes), "themes": themes, "made": made}
+
+
+JUDGES = {"M3": judge_m3, "M5": judge_m5, "M7": judge_m7}
+NO_THEMES = ("M7",)  # its cases start with no themes: the sample's one is left out
 
 
 def setup(check: str, case_id: str) -> tuple[Path, dict]:
@@ -116,6 +139,10 @@ def setup(check: str, case_id: str) -> tuple[Path, dict]:
     shutil.rmtree(work, ignore_errors=True)
     repo = work / "repo"
     shutil.copytree(SAMPLE, repo, ignore=shutil.ignore_patterns("__pycache__"))
+    if check in NO_THEMES:
+        for f in (repo / "events").rglob("*.md"):
+            if "theme/" in f.read_text():
+                f.unlink()
     _git(work, "init", "-q", "-b", "main", "repo")
     _git(repo, "config", "user.email", "t@example.com")
     _git(repo, "config", "user.name", "t")

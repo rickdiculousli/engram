@@ -207,8 +207,8 @@ def check(reply: dict, part: Part, cfg: Settings, mine: dict[int, str], before: 
           ) -> tuple[dict[str, list[Line]], list[tuple[int, str]], tuple[int | None, str] | None]:
     """A note's sections as code keeps them, the lines left out (line, why), and why the whole note is refused, if it
     is: a line that's in nobody's words where it cites, or no words of the owner's at all. A line of the guide's in a
-    section only the owner's words go in is left out, whoever the reply credits; a section left empty reads "not
-    said"."""
+    section only the owner's words go in is left out, whoever the reply credits, as is one in a section of what he
+    didn't answer when a message of his in the session comes after it; a section left empty reads "not said"."""
     given = (reply.get("sections") if isinstance(reply, dict) else None) or {}
     given = given if isinstance(given, dict) else {}
     out, left = {}, []
@@ -220,8 +220,11 @@ def check(reply: dict, part: Part, cfg: Settings, mine: dict[int, str], before: 
             line, why = _resolve(item, part, mine, before)
             if line is None:
                 return {}, left, (item.get("line"), why)
+            later = [l for l in mine if line.at < l <= part.last] if line.who == "guide" and "guide" not in by else []
             if not (("owner" in by) if line.who == "owner" else bool({"guide", UNANSWERED} & by)):
                 left.append((line.at, f"{config.owner() if line.who == 'owner' else GUIDE}'s words don't go under “{name}”"))
+            elif later:  # what the guide offered goes there only while he hasn't answered it
+                left.append((line.at, f"the guide's line was answered at line {min(later)}, so it isn't under “{name}”"))
             elif line not in got:
                 got.append(line)
         out[name] = got

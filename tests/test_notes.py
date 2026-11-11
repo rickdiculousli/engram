@@ -235,6 +235,19 @@ def test_30_an_exercise_longer_than_a_line_is_kept_by_its_opening_words_as_the_g
     assert "we'll talk instead" not in line  # cut to the line's length, the rest a line of the chat away
 
 
+def test_an_offer_he_answered_later_in_the_session_is_not_where_he_stopped(inner):
+    """"Where you stopped" takes what the guide offered that he didn't answer: one he took up after is left out."""
+    w = inner()
+    w.chat(1, upto=40)
+    reply = chat1_note()
+    reply["note"]["sections"]["where you stopped"].append(guide(1, "Would it help to practise it once a day until then, out loud?"))
+    out = w.run(Model(reply))
+    stopped = one_note(w)["sections"]["where you stopped"]
+    assert "practise it once a day" not in stopped
+    assert "Next time we can start from the sentence" in stopped  # nothing of his came after this one
+    assert [d for d in out["dropped"] if d.get("line") == line_of(1, "Would it help to practise")]
+
+
 def test_a_line_of_the_owners_is_kept_whole_however_long(inner):
     """Only the guide's lines and the question beside a reply are cut to `line_words`: his words are his, of any length."""
     text = (SAMPLE / ".engram/engram.toml").read_text()

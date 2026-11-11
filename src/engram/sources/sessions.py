@@ -19,7 +19,7 @@ from pathlib import Path
 
 from engram.config import GENERAL, Domain
 from engram.index import now, open_index
-from engram.paths import data_path, index_path
+from engram.paths import data_path, index_path, record_conf
 
 ROOT = Path(os.environ.get("ENGRAM_SESSIONS_ROOT", Path.home() / ".claude/projects")).expanduser()
 REMINDER = re.compile(r"<system-reminder>.*?</system-reminder>", re.S)
@@ -235,6 +235,20 @@ def classify(s: Session, doms: dict[str, Domain]) -> str:
     return GENERAL
 
 
+def _kept(repo: Path | None) -> dict:
+    """The repo's `[sessions]` in its engram.toml: `start`, the first day of its record, and `exclude`, chats by id that
+    aren't record (the ones that built the repo)."""
+    return record_conf(repo).get("sessions", {}) if repo else {}
+
+
+def from_start(s: Session, repo: Path | None) -> Session:
+    """The session as its repo keeps it: only what was typed on or after the repo's start day (the owner's day), so
+    nothing before it is filed, summarized or quoted."""
+    if start := str(_kept(repo).get("start") or ""):
+        s.exchanges = [x for x in s.exchanges if (_local_date(x.ts) or "") >= start]
+    return s
+
+
 def _local_date(ts: str | None) -> str | None:
     if not ts:
         return None
@@ -290,8 +304,11 @@ def ingest(doms: dict[str, Domain], root: Path | None = None) -> dict:
     root = root or ROOT
     st = _state()
     known = {r[0]: r[1:] for r in st.execute("SELECT path, bytes, mtime_ns, head_sha, domain FROM file")}
+    excluded = {n: set(map(str, _kept(d.repo).get("exclude", []))) for n, d in doms.items()}
+    marked = sorted((n, sorted(v)) for n, v in excluded.items() if v)  # a chat excluded or let back in is filed again
+    version = CLASSIFY_VERSION + (f":{hashlib.sha256(json.dumps(marked).encode()).hexdigest()[:12]}" if marked else "")
     row = st.execute("SELECT value FROM meta WHERE key = 'classify_version'").fetchone()
-    refile = (row[0] if row else None) != CLASSIFY_VERSION
+    refile = (row[0] if row else None) != version
     files = sorted((p for p in root.rglob("*.jsonl") if p.is_file()), key=lambda p: p.stat().st_mtime)
     idx = {d: open_index(index_path(d)) for d in doms}
     counts = {"files": len(files), "read": 0, "rewritten": 0, "removed": 0, "gone": 0}
@@ -315,6 +332,8 @@ def ingest(doms: dict[str, Domain], root: Path | None = None) -> dict:
             rewritten = bool(prev) and (stt.st_size < prev[0] or (prev[0] >= HEAD and head != prev[2]))
             s = parse(p, root)
             domain = classify(s, doms)
+            if s.stem in excluded.get(domain, ()):  # skipped like a title generator: its summary goes (summarize.index_all)
+                domain = "skipped"
             counts["read"] += 1
             counts["rewritten"] += rewritten
             with st:
@@ -325,7 +344,7 @@ def ingest(doms: dict[str, Domain], root: Path | None = None) -> dict:
                            "seen = excluded.seen, gone = NULL",
                            (str(p), stt.st_size, stt.st_mtime_ns, head, domain, len(s.exchanges), int(rewritten), now()))
         with st:
-            st.execute("INSERT OR REPLACE INTO meta VALUES ('classify_version', ?)", (CLASSIFY_VERSION,))
+            st.execute("INSERT OR REPLACE INTO meta VALUES ('classify_version', ?)", (version,))
         present = {str(p) for p in files}
         with st:
             for path in known:

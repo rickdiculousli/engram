@@ -1153,7 +1153,7 @@ def file_session(domain: str, root: Path, path: Path, ask=None, dry_run: bool = 
     with contextlib.closing(db()) as c:
         upto = (c.execute("SELECT upto FROM filed WHERE session = ?", (path.stem,)).fetchone() or (0,))[0]
     size = path.stat().st_size
-    s = _parse(path)
+    s = sessions.from_start(_parse(path), root)
     later = owners(s, upto)
     res = {"session": path.stem[:8], "filed": 0, "dropped": [], "kept": [], "would_file": [], "usd": 0.0,
            "mark": (domain, path, max([upto, *later]), size)}
@@ -1322,7 +1322,7 @@ def renew(domain: str, root: Path, path: Path, upto: int, ask=None, dry_run: boo
     res = {"session": path.stem[:8], "called": False, "renewed": 0, "would_renew": [], "dropped": [], "usd": 0.0}
     if not p.prompts.get("renew"):
         return res
-    s = _parse(path)
+    s = sessions.from_start(_parse(path), root)
     later = owners(s, upto)
     if not later:
         return res

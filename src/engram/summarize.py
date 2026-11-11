@@ -862,7 +862,7 @@ def plan(path: Path, domain: str) -> dict | None:
     s = _load_session(path)
     if s is None:
         return None
-    turns = clean(s)
+    turns = clean(sessions.from_start(s, (d := config.load().get(domain)) and d.repo))
     if not turns:
         return {"path": path, "domain": domain, "empty": True}
     segs = segments(turns)

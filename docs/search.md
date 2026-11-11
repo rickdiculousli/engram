@@ -78,7 +78,8 @@ Each session goes to exactly one index file: the repo it was started in (an owne
 2. **general** otherwise, searched only on request. Touching a repo's files from elsewhere doesn't count: a meta session carries far too much context to sit in a record's index.
 
 - **Skipped:** title-generator sessions, and sessions that touched `~/.local/share/engram/eval/`, along with their subagents: they build or review the question sets and hold the answer keys, so indexing them would let a test run read the keys back.
-- **A classifier change refiles every known session** on the next ingest.
+- **Not record:** a repo's `[sessions] exclude` in its `engram.toml` names chats by id that are skipped too, so their stored summaries go; entries already filed from one stay, since the record is never deleted. `[sessions] start` is its record's first day: what was typed before it, by the owner's day, is never filed, summarized or quoted (`sessions.from_start`), though the rest of that chat is. Why the repo holds them: the chats that built a repo were started in it, and nothing else tells them from its sessions.
+- **A classifier change refiles every known session** on the next ingest, and so does a change to any repo's excluded chats.
 - **No session turn is indexed,** nor a spilled `tool-results/` file: a session is searched through its checked summary ([summaries](summaries.md)).
 
 ## The query

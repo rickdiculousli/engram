@@ -4,6 +4,7 @@ import re
 
 DASHES = re.compile(r"\s*[-‐-―−]\s*")
 BROKEN = re.compile(r"(\w)[-­]\s*\n\s*(\w)")  # a word hyphenated across a line
+UNSPACED = re.compile(r"[\u3040-\u30ff\u31f0-\u31ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff66-\uff9f\U00020000-\U0003ffff]")  # Han and kana: no spaces between words
 
 
 def norm(s: str) -> str:
@@ -19,14 +20,19 @@ def found(quote: str, text: str) -> bool:
     return inside(norm(quote), norm(text))
 
 
+def _joined(a: str, b: str) -> bool:
+    """Two letters or digits side by side are one word, unless either is of a script written without word spaces."""
+    return a.isalnum() and b.isalnum() and not (UNSPACED.match(a) or UNSPACED.match(b))
+
+
 def inside(part: str, whole: str) -> bool:
     """`part` is in `whole` as whole words: where it starts or ends with a letter or digit, the text beside it there
-    isn't one. Why: "no" is no quote of "I know", nor "mm" of "summer"."""
+    isn't one of the same word. Why: "no" is no quote of "I know", nor "mm" of "summer"; in Chinese or Japanese,
+    written without spaces, any run of characters can be a quote."""
     i = whole.find(part)
     while i >= 0:
         j = i + len(part)
-        if not (part[:1].isalnum() and i and whole[i - 1].isalnum()) and \
-                not (part[-1:].isalnum() and j < len(whole) and whole[j].isalnum()):
+        if not (part and i and _joined(whole[i - 1], part[0])) and not (part and j < len(whole) and _joined(part[-1], whole[j])):
             return True
         i = whole.find(part, i + 1)
     return False

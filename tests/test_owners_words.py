@@ -99,7 +99,9 @@ def test_stored_summaries_stay_current_with_no_call(world, monkeypatch, server):
 
 
 @pytest.mark.parametrize("quote, words, found", [("no", "I know", False), ("mm", "summer", False), ("I know", "well, I know.", True),
-                                                 ("chest. tight.", "chest. tight.", True), ("no", "no, not that", True)])
+                                                 ("chest. tight.", "chest. tight.", True), ("no", "no, not that", True),
+                                                 ("我很累", "今天我很累了", True), ("疲れた", "今日は疲れたよ", True),
+                                                 ("tired", "今天tired了", True), ("no", "我know", False)])
 def test_a_quote_of_his_words_is_whole_words(quote, words, found):
     """The one quote check the filer and the summaries' lint share."""
     assert capture.verbatim.found(quote, words) is found

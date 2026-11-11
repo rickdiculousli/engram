@@ -4,7 +4,7 @@ import re
 import subprocess
 from pathlib import Path
 
-from engram import commitmsg, dates, notes
+from engram import commitmsg, dates, frontmatter, notes, theory
 from engram.config import Domain
 from engram.index import Doc
 from engram.labels import nid
@@ -187,6 +187,7 @@ def docs_for(d: Domain) -> list[Doc]:
                                stories=a.get("stories", "")))
             continue
         secs = md_sections(text) if rel.suffix == ".md" and not (whole and r.startswith(whole)) else [([], text)]
+        guide = rel.suffix == ".md" and text.startswith("---") and (frontmatter.split(text)[0] or {}).get("by") == theory.SUGGESTION
         used: dict[str, int] = {}
         page = next((v for k, v in PAGES.items() if r.startswith(k)), "")
         for path, body in secs:
@@ -197,7 +198,7 @@ def docs_for(d: Domain) -> list[Doc]:
             used[base] = used.get(base, 0) + 1
             if used[base] > 1:
                 base = f"{base}~{used[base]}"
-            title = " › ".join([rel.as_posix()] + path)
+            title = " › ".join([rel.as_posix()] + path) + (f" ({theory.SUGGESTED})" if guide and not path else "")  # its front matter
             dt = dates.first_in(heading) or None
             parts = chunks(body)
             a = attrs.get(base) or ({"node": page, "milestone": 1} if page else {"stories": spine(r, folders)})

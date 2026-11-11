@@ -48,9 +48,13 @@ def _phrases(*names: str) -> list[str]:
     return list(dict.fromkeys(out))
 
 
-def entity_phrases(entity: str) -> list[str]:
+def entity_phrases(entity: str, whole: bool = False) -> list[str]:
     """What names a medication in text: its brand, its generic (the bracket's first part), and the first word of a long
-    brand ("olopatadine" of a long name)."""
+    brand ("olopatadine" of a long name). A name kept whole (the pack's `whole_names`) is named by itself alone, at any
+    length: a practice is said by its whole name, and four words of it name something else."""
+    if whole:
+        n = " ".join(entity.lower().split())
+        return [n] if len(n) > 2 else []
     brand, _, generic = entity.partition("(")
     first = brand.split()[0] if len(brand.split()) > 1 and len(brand.split()[0]) >= 6 else ""
     return _phrases(brand, generic.split(",")[0], first)
@@ -58,8 +62,11 @@ def entity_phrases(entity: str) -> list[str]:
 
 def _keys(d: Domain, conf: dict, docs: list[tuple]) -> dict[tuple[str, str], dict]:
     """(kind, key) -> {phrases, refs}: what names each way in, and the records it lights before mentions."""
+    from engram import pack
     repo, ways, out = d.repo, conf.get("ways") or {}, {}
     refs = [r for r, *_ in docs]
+    whole = pack.load(d.name).current.whole_names
+    called = lambda entity: entity.strip().lower() if whole else entity.partition("(")[0].strip().lower()
 
     def add(kind, key, phrases, lit=(), roles=()):
         w = out.setdefault((kind, key), {"phrases": [], "refs": set(), "roles": []})
@@ -77,13 +84,13 @@ def _keys(d: Domain, conf: dict, docs: list[tuple]) -> dict[tuple[str, str], dic
             for n, line in enumerate((repo / f).read_text().splitlines() if (repo / f).exists() else [], 1):
                 if line.strip():
                     entity = json.loads(line).get("entity", "")
-                    add("treatment", entity.partition("(")[0].strip().lower(), entity_phrases(entity), [f"{f}:{n}"])
+                    add("treatment", called(entity), entity_phrases(entity, whole), [f"{f}:{n}"])
         if t.get("entities"):  # entries naming a medication (a med-change's entity), once log pages are gone
             from engram.store import Store
             for e in Store(repo).events(kind=t["entities"]):
                 entity = str(e.fm.get("entity", ""))
                 if entity:
-                    add("treatment", entity.partition("(")[0].strip().lower(), entity_phrases(entity), [e.id])
+                    add("treatment", called(entity), entity_phrases(entity, whole), [e.id])
         if t.get("series_about"):  # a treatment series: every entry about it
             from engram.store import Store
             for e in Store(repo).events():

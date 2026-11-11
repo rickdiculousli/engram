@@ -48,7 +48,7 @@ from collections import Counter
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-from engram import commitmsg, config, dates, fix, llm, notes, pack, periods, recsum, store, summarize, threads, units, verbatim
+from engram import commitmsg, config, dates, fix, frontmatter, llm, notes, pack, periods, recsum, store, summarize, threads, units, verbatim
 from engram import now as now_mod
 from engram import theory as theory_mod
 from engram.paths import data_path, record_conf, record_toml
@@ -238,9 +238,9 @@ def standing(st: store.Store) -> list[tuple["now_mod.Current", set[str]]]:
     """Where every thing the pack follows stands (each id's chain followed to its latest entry), with the names it goes
     by: every entity string its entries used, the fields that also name it, any aliases the entries list, a thread's name."""
     names = {t: forms[0] for t, forms in now_mod.names(st).items()}
-    out = []
+    cur, out = now_mod.spec(st), []
     for c in now_mod._chain(st):
-        out.append((c, names.get(c.thing, set()) | {_n(c.name), _n(c.name.split("(")[0]),
+        out.append((c, names.get(c.thing, set()) | {_n(c.name), _n(now_mod.base(c.name, cur)),
                                                     _n(c.thing.split("/", 1)[-1].replace("-", " "))}))
     return out
 
@@ -254,13 +254,13 @@ def entity_repeat(fact: dict, stands: list, cur: pack.Current, thing: str | None
     ent, status = str(fact.get("entity") or ""), str(fact.get("status") or "")
     if not ent or status not in cur.repeats:
         return None
-    k, names = thing or now_mod.key(ent, cur), {_n(ent), _n(ent.split("(")[0])}
+    k, names = thing or now_mod.key(ent, cur), {_n(ent), _n(now_mod.base(ent, cur))}
     for c, al in stands:
         if c.thing != k and (thing or not names & al):
             continue
         shown, held = _n(fact.get(cur.detail) or "") if cur.detail else "", _n(c.detail)
         same = shown in held and dates.numbers(shown) <= dates.numbers(held)
-        if c.status in cur.repeats[status] and (not shown or status not in now_mod.ONGOING or same):
+        if c.status in cur.repeats[status] and (not shown or status not in cur.ongoing or same):
             return f"repeat: {c.name} is already {c.status} in the record"
     return None
 
@@ -693,8 +693,11 @@ def cut_title(text: str, limit: int = 120) -> str:
 
 def entry(fact: dict, said_on: str, stem: str, kinds: list[str], abouts: list[str], home: str,
           words: str | None = None, cur: pack.Current = pack.NONE.current, other: str = "observation",
-          marks: dict | None = None, rough: bool = False) -> tuple[dict, str]:
-    """The event front matter and body for a checked fact, in one of the kinds offered, else `other`. A date he never
+          marks: dict | None = None, rough: bool = False, asked: bool = False) -> tuple[dict, str]:
+    """The event front matter and body for a checked fact, in one of the kinds offered, else `other`. With `asked` (a
+    record that keeps the guide's suggestions), a reply of under SHORT words to a question, or one given no headline,
+    is kept as the question and the reply, headline and body, never the model's statement of it in his voice: "yeah"
+    to "is that shame?" isn't "feels shame". A date he never
     gave is filed as not sure, never guessed; a fact with no date and no past wording is filed at the day he said it.
     A fact the reply ties to a life event (`landmark`, a slug) dates it when his quote dates it firmly; one his quote
     doesn't date (the model's day said is no date) takes the date `marks` gives the slug, approximate, else not sure; his
@@ -719,7 +722,10 @@ def entry(fact: dict, said_on: str, stem: str, kinds: list[str], abouts: list[st
         homes = [a for a in abouts if a.startswith(home + "/")]
         if homes:  # the fact still needs a page to render into: the most used one
             about.insert(0, homes[0])
-    text = headline(fact["text"])
+    quote = " ".join(str(fact["quote"]).split())
+    q = " ".join(str(fact.get("answering") or "").split())
+    short = asked and q and (len(quote.split()) < SHORT or not str(fact.get("text") or "").strip())  # or no headline of its own
+    text = f"“{q}” — {config.owner()}: “{quote}”" if short else headline(fact["text"])
     fm = {"title": cut_title(text), "date": date, "reported": said_on, "kind": kind,
           "about": about, "by": config.owner_id(), "source": f"said in session {stem[:8]} on {said_on}", "author": "engram-capture"}
     if date == "not-sure":
@@ -731,15 +737,31 @@ def entry(fact: dict, said_on: str, stem: str, kinds: list[str], abouts: list[st
     fm |= said
     if kind == cur.entity_kind:
         fm.update(entity=fact["entity"], status=fact["status"], **({cur.detail: fact.get(cur.detail) or ""} if cur.detail else {}),
-                  reason=" ".join(str(fact.get("reason") or "").split())[:200])
-    who = f"{config.owner()}, answering “{' '.join(fact['answering'].split())}”" if fact.get("answering") else config.owner()
-    return fm, f"- {text}\n- {who}: “{' '.join(str(fact['quote']).split())}”\n"
+                  reason=" ".join(str(fact.get("reason") or "").split())[:200], **({"origin": fact["origin"]} if cur.origin else {}))
+    if short:
+        fm["answering"] = q
+    who = f"{config.owner()}, answering “{q}”" if q else config.owner()
+    return fm, f"- {text}\n- {who}: “{quote}”\n"
 
 
-def theory_shape(st: store.Store, words: str):
+def unfollowed(fact: dict, cur: pack.Current, g) -> str | None:
+    """Why a thing the pack follows isn't followed, where the pack requires it to name the theory item it came from
+    (`origin`, of the pack's `current.origin` kind), or None: it names none, or one the theory doesn't hold."""
+    o = str(fact.get("origin") or "")
+    if o and (t := g.things.get(o)) and t.kind == cur.origin:
+        return None
+    name = fact.get("entity") or "it"
+    if o:
+        return f"not followed: {name} names {o} as where it came from, and the theory holds no such {cur.origin}; kept as an entry"
+    return f"not followed: {name} names no {cur.origin} it came from; kept as an entry"
+
+
+def theory_shape(st: store.Store, words: str, suggest: str = ""):
     """The theory graph, its link kinds and strengths, and the graph as the model reads it in the pack's `theory`
-    words: each thing's id, kind, status and name, each loop's path, and the joins already held. None when the record
-    has no theory graph, or its pack no words for one."""
+    words: each thing's id, kind, status and name (and a stage, and whose it is, where its kind or a suggestion has
+    them), each loop's path, and the joins already held; then, where the pack keeps the guide's suggestions, its
+    `suggest` words. None when the record has no theory graph, or its pack no words for one. Its last item says
+    whether suggestions are kept."""
     from engram import theory
     g = theory.load(st.root)
     if not g.things or not words:
@@ -748,30 +770,59 @@ def theory_shape(st: store.Store, words: str):
     rels, strengths = list(conf.get("rels") or []), list(conf.get("weights") or STRENGTHS)
     lines = ["id\tkind\tstatus\tname"]
     for t in g.things.values():
-        lines.append(f"{t.id}\t{t.kind}\t{g.status.get(t.id, ('none',))[0] or 'none'}\t{t.title}")
+        line = f"{t.id}\t{t.kind}\t{g.status.get(t.id, ('none',))[0] or 'none'}\t{t.title}"
+        if stages := (g.kinds[t.kind].stages if t.kind in g.kinds else []):
+            line += f"\tstage {g.stage.get(t.id, ('none',))[0]} (of {', '.join(stages)})"
+        lines.append(line + (f"\t{w}" if (w := theory.who(g, t.id)) else ""))
     lines += [f"{l} path: {' → '.join(g.path(l))}" for l in g.loops() if g.path(l)]
     lines += [f"join: {e.a} {e.rel} {e.b} ({e.strength or 'no strength'})" for e in g.joins()]
     graph = "\n".join(lines)
     text = config.voice(words).format(statuses=", ".join(THEORY_STATUSES), rels=", ".join(rels) or "none (no links can be filed)",
                                       strengths=", ".join(strengths), graph=graph, upto="{upto}")
-    return g, rels, strengths, text, graph
+    if suggest:
+        text += "\n" + config.voice(suggest).format(upto="{upto}", kinds=", ".join(g.kinds) or "none")
+    return g, rels, strengths, text, graph, bool(suggest)
 
 
-def check_theory(item: dict, later: dict[int, str], turns: dict[int, str], g, rels: list[str], strengths: list[str]) -> str | None:
+def check_theory(item: dict, later: dict[int, str], turns: dict[int, str], g, rels: list[str], strengths: list[str],
+                 note: str = "") -> str | None:
     """Why a theory change can't be filed, or None: it must be in the owner's own words (his agreement when he agreed to
-    Claude's proposal in the turn just before), on ids the graph holds, with a status or rel the record knows."""
+    Claude's proposal in the turn just before), on ids the graph holds, with a status, a stage or a rel the record
+    knows. A new thing (`add`) is of one of the record's own kinds and named with his words in that message; one of a
+    kind that `needs_note` is added only from a session with a note (`note`, its id)."""
     why = _his(item, later, turns)
     if why:
         return why
-    st, ln = item.get("status"), item.get("link")
+    st, ln, add = item.get("status"), item.get("link"), item.get("add")
+    if item.get("agrees") is not None:  # a yes when asked, to a guide's suggestion: kept on it, never his
+        tid = str(item["agrees"])
+        if tid not in g.things or g.things[tid].by != theory_mod.SUGGESTION:
+            return f"{tid} isn't one of the guide's suggestions"
+        return None if item.get("answering") else "a yes when asked needs the question it answers"
+    if isinstance(add, dict):
+        kind, tid, name = str(add.get("kind", "")), str(add.get("id", "")), " ".join(str(add.get("name") or "").split())
+        if why := _new_id(kind, tid, g):
+            return why
+        if not name or not verbatim.found(name, later[int(item["line"])]):
+            return f"a new {kind} is named only with {config.owner()}'s words in that message"
+        if g.kinds[kind].needs_note and not note:
+            return f"a new {kind} names the note it came from, and this session has no note"
+        return None
     if isinstance(st, dict):
-        tid, to = str(st.get("id", "")), str(st.get("to", ""))
+        tid, to, stage = str(st.get("id", "")), str(st.get("to") or ""), str(st.get("stage") or "")
         if tid not in g.things:
             return f"unknown theory id {tid}"
-        if to not in THEORY_STATUSES:
+        if not (to or stage):
+            return "neither a status nor a stage"
+        if to and to not in THEORY_STATUSES:
             return f"unknown status {to}"
-        if g.status.get(tid, ("",))[0] == to:
+        if to and g.status.get(tid, ("",))[0] == to:
             return f"{tid} is already {to}"
+        stages = g.kinds[g.things[tid].kind].stages if g.things[tid].kind in g.kinds else []
+        if stage and stage not in stages:
+            return f"unknown stage {stage}" + (f" (one of: {', '.join(stages)})" if stages else f": {tid} has no stages")
+        if stage and g.stage.get(tid, ("",))[0] == stage:
+            return f"{tid} is already at {stage}"
         return None
     if isinstance(ln, dict):
         a, b, rel = str(ln.get("from", "")), str(ln.get("to", "")), str(ln.get("rel", ""))
@@ -794,16 +845,126 @@ def check_theory(item: dict, later: dict[int, str], turns: dict[int, str], g, re
     return "neither a status nor a link"
 
 
+def _new_id(kind: str, tid: str, g) -> str | None:
+    """Why a new thing can't take this kind and id, or None: one of the record's own kinds, an id like <kind>/<name>
+    in lower-case words and dashes, not one the theory holds."""
+    if kind not in g.kinds:
+        return f"{kind or 'no kind'} isn't one of the theory's own kinds ({', '.join(g.kinds) or 'it has none'})"
+    if not re.fullmatch(rf"{re.escape(kind)}/[a-z0-9]+(?:-[a-z0-9]+)*", tid):
+        return f"a new {kind} needs an id like {kind}/<name>, got {tid!r}"
+    if tid in g.things:
+        return f"already in the theory as {tid}"
+    return None
+
+
+SHORT = 3  # a reply of fewer words is kept as the question and the reply, never as a statement in his voice
+
+
+def check_suggestion(item: dict, guides: dict[int, tuple[str, str]], g, rels: list[str]) -> str | None:
+    """Why the guide's suggestion can't go into the theory, or None. Its quote is the guide's own words, whole words of
+    the guide's message on its line, past the filed mark (`guides`: line -> its text and day). It's a new thing of one of
+    the record's own kinds (`kind`, `id`, `name`), or a join between two things the theory holds (`link`); never a
+    status or a stage, which are the owner's, and never a loop's step: a suggestion can't change what he agreed to."""
+    try:
+        line = int(item.get("line"))
+    except (TypeError, ValueError):
+        line = None
+    quote = " ".join(str(item.get("quote") or "").split())
+    if line not in guides:
+        return f"line {item.get('line')} isn't one of the guide's new messages"
+    if not quote or not verbatim.found(quote, guides[line][0]):
+        return f"quote not in the guide's message on line {line}"
+    for what in ("stage", "status"):
+        if item.get(what):
+            return f"a {what} is set only from {config.owner()}'s words or with his agreement, never by the guide's suggestion"
+    ln = item.get("link")
+    if ln is not None:
+        loop = str((ln or {}).get("loop") or "") if isinstance(ln, dict) else ""
+        if not isinstance(ln, dict) or loop or ln.get("op") or ln.get("step") or ln.get("rel") == "feeds":
+            return f"a suggestion never adds, removes or reorders a step of {loop or 'a loop'}"
+        a, b, rel = str(ln.get("from", "")), str(ln.get("to", "")), str(ln.get("rel", ""))
+        for x in (a, b):
+            if x not in g.things:
+                return f"unknown theory id {x}"
+        if rel not in rels:
+            return f"unknown rel {rel}"
+        if any(e.a == a and e.b == b and e.rel == rel for e in g.edges):
+            return "link already in the theory"
+        return None
+    if not " ".join(str(item.get("name") or "").split()):
+        return "a suggestion needs a name"
+    return _new_id(str(item.get("kind", "")), str(item.get("id", "")), g)
+
+
+def suggested(items: list, guides: dict[int, tuple[str, str]], g, rels: list[str], stem: str,
+              res: dict) -> tuple[list[tuple[str, str]], dict[str, tuple[dict, str]], list[tuple[dict, str]]]:
+    """The guide's suggestions a reply gives, checked (`check_suggestion`), as the theory takes them: a new thing's file
+    (by claude-suggestion, its quote the guide's words) with its "proposed" status, or a join. The graph gains each new
+    thing, so one given twice is one, and what the owner says of it in the same reply finds it. Returns (files,
+    proposed status by thing, joins)."""
+    files, proposed, joins = [], {}, []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        if why := check_suggestion(item, guides, g, rels):
+            res["dropped"].append({"session": stem[:8], "line": item.get("line"), "why": why, "text": str(item.get("quote", ""))[:120]})
+            continue
+        words, day = guides[int(item["line"])]
+        quote = verbatim.span(" ".join(str(item["quote"]).split()), words)
+        base = {"date": day, "reported": day, "by": theory_mod.SUGGESTION, "source": f"said in session {stem[:8]} on {day}",
+                "author": "engram-capture"}
+        if isinstance(item.get("link"), dict):
+            a, b, rel = (str(item["link"][k]) for k in ("from", "to", "rel"))
+            g.edges.append(theory_mod.Edge("", a, b, rel, quote, by=theory_mod.SUGGESTION))
+            joins.append(({**base, "title": f"{g.label(a)} {rel} {g.label(b)} ({theory_mod.SUGGESTED})", "kind": "link",
+                           "about": [a, b], "from": a, "to": b, "family": "theory", "rel": rel, "since": day}, f"the guide: “{quote}”"))
+            continue
+        kind, tid, name = str(item["kind"]), str(item["id"]), " ".join(str(item["name"]).split())
+        t = theory_mod.Thing(tid, kind, name, theory_mod.file_for(g, kind, tid), f"{name} ({theory_mod.SUGGESTED})", since=day,
+                             by=theory_mod.SUGGESTION, quote=quote)
+        g.things[tid], g.status[tid], g.word[tid] = t, ("proposed", day, ""), {"by": theory_mod.SUGGESTION}
+        files.append((t.file, frontmatter.dump({"id": tid, "kind": kind, "short": name, "by": theory_mod.SUGGESTION, "quote": quote,
+                                                "since": day}) + f"# {t.title}\n\nThe guide's words, on {day}: “{quote}”\n"))
+        proposed[tid] = ({**base, "title": f"{t.title}: proposed", "kind": "status", "about": [tid], "status": "proposed"},
+                         f"- the guide: “{quote}”\n")
+    return files, proposed, joins
+
+
+def owned(item: dict, said_on: str, words: str, g, note: str) -> tuple[str, str]:
+    """A new thing of one of the record's own kinds the owner names (a checked `add`): its file, by him, named with his
+    words as he typed them, with the session's note when it has one. The graph gains it."""
+    add = item["add"]
+    kind, tid = str(add["kind"]), str(add["id"])
+    name = verbatim.span(" ".join(str(add["name"]).split()), words)
+    g.things[tid] = theory_mod.Thing(tid, kind, name, theory_mod.file_for(g, kind, tid), name, since=said_on, by=config.owner_id())
+    fm = {"id": tid, "kind": kind, "short": name, "by": config.owner_id(), "since": said_on, **({"note": note} if note else {})}
+    return g.things[tid].file, frontmatter.dump(fm) + f"# {name}\n\n{config.owner()}'s words, on {said_on}: “{' '.join(str(item['quote']).split())}”\n"
+
+
+def adopting(item: dict, g) -> bool:
+    """A status that would make a guide's suggestion still proposed the owner's own."""
+    st = item.get("status") if isinstance(item.get("status"), dict) else {}
+    tid = str(st.get("id", ""))
+    return st.get("to") in ("provisional", "confirmed") and tid in g.things and g.things[tid].by == theory_mod.SUGGESTION \
+        and (g.word.get(tid) or {}).get("by", theory_mod.SUGGESTION) == theory_mod.SUGGESTION
+
+
 def theory_entry(item: dict, said_on: str, stem: str, g) -> tuple[dict, str]:
-    """A checked theory change as the store writes it: a status event on the theory, or a theory link (appended to
-    links.jsonl by the store), by the owner, since the day he said it."""
+    """A checked theory change as the store writes it: a status event on the theory (its status, its stage, or both),
+    or a theory link (appended to links.jsonl by the store), by the owner, since the day he said it. On a guide's
+    suggestion it keeps his words (`said`) and the question he answered, so whose it is can be shown beside the guide's."""
     who = f"{config.owner()}, agreeing to “{' '.join(item['answering'].split())}”" if item.get("answering") else config.owner()
     said = f"{who}: “{' '.join(str(item['quote']).split())}”"
     base = {"date": said_on, "reported": said_on, "by": config.owner_id(), "source": f"said in session {stem[:8]} on {said_on}",
             "author": "engram-capture"}
     if isinstance(item.get("status"), dict):
-        tid, to = item["status"]["id"], item["status"]["to"]
-        return {**base, "title": f"{g.label(tid)}: {to}", "kind": "status", "about": [tid], "status": to}, f"- {said}\n"
+        tid, to, stage = item["status"]["id"], item["status"].get("to"), item["status"].get("stage")
+        fm = {**base, "title": f"{g.label(tid)}: {', '.join(x for x in (to, stage) if x)}", "kind": "status", "about": [tid],
+              **({"status": to} if to else {}), **({"stage": stage} if stage else {})}
+        if g.things[tid].by == theory_mod.SUGGESTION:
+            fm |= {"said": " ".join(str(item["quote"]).split()), **({"answering": " ".join(item["answering"].split())}
+                                                                    if item.get("answering") else {})}
+        return fm, f"- {said}\n"
     ln = item["link"]
     a, b, rel = ln["from"], ln["to"], ln["rel"]
     fm = {**base, "title": f"{g.label(a)} {rel} {g.label(b)}", "kind": "link", "about": [a, b], "from": a, "to": b,
@@ -1312,7 +1473,9 @@ def _file(domain: str, root: Path, path: Path, p: pack.Pack, s: sessions.Session
     known = {a for e in st.events() for a in e.about} | set(tt.names) if tt else abouts  # what a fact may be on
     if tt:
         home = ""  # its entries render into no page: a remark on no thread stays on none
-    th = theory_shape(st, p.prompts.get("theory", ""))
+    th = theory_shape(st, p.prompts.get("theory", ""), p.prompts.get("suggest", ""))
+    g = th[0] if th else theory_mod.load(root)
+    asked = bool(th and th[5])  # where the guide's suggestions are kept, a short yes is kept as the question and the yes
     mine = filed_from(st, path.stem)
     already = [f"{e.date} {e.fm.get('title', '')}: {' '.join(e.body.split())[:200]} (id {e.id})" for e in mine]
     already += [r[:300] for x in s.exchanges for r in x.ran if r.startswith("Bash:") and FILED.search(r)]
@@ -1350,6 +1513,9 @@ def _file(domain: str, root: Path, path: Path, p: pack.Pack, s: sessions.Session
         if adopts and f.get("answering") and not verbatim.found(str(f["answering"]), turns.get(line, "")):
             f = {k: v for k, v in f.items() if k != "answering"}  # a plan he adopts rests on no question: one not asked just before isn't kept
         why = check(f, later, turns, when.get(line), his, recent if adopts else None)
+        if not why and cur.origin and f.get("kind") == cur.entity_kind and (untracked := unfollowed(f, cur, g)):
+            res["dropped"].append({"session": path.stem[:8], "line": line, "why": untracked, "text": str(f.get("text", ""))[:120]})
+            f = {**f, "kind": p.kinds[0] if p.kinds else "observation"}  # what he said is still his entry
         thing = now_mod.chain_for(st, str(f.get("entity") or "")) if cur.entity_kind and f.get("kind") == cur.entity_kind else None
         if not why and cur.entity_kind and f.get("kind") == cur.entity_kind:
             why = entity_repeat(f, stands, cur, thing)
@@ -1359,7 +1525,7 @@ def _file(domain: str, root: Path, path: Path, p: pack.Pack, s: sessions.Session
         else:
             fm, body = entry(f, when[int(f["line"])], path.stem, kinds, known | set(made) if tt else abouts, home,
                              "\n".join([later[line], str(f.get("answering", ""))]), cur,
-                             p.kinds[0] if p.kinds else "observation", marks, threads.PAST in (tt.made if tt else ()))
+                             p.kinds[0] if p.kinds else "observation", marks, threads.PAST in (tt.made if tt else ()), asked)
             if tt:
                 ids, writes, whys = threaded(f, later[line], tt, when[line], fm["date"], path.stem, made, held)
                 fm["about"] = (ids + [a for a in fm["about"] if a not in ids])[:3]
@@ -1407,14 +1573,39 @@ def _file(domain: str, root: Path, path: Path, p: pack.Pack, s: sessions.Session
                                 "text": entries[i][0]["title"]})
     entries = [x for i, x in enumerate(entries) if i not in repeats]
     places = [x for i, x in enumerate(places) if i not in repeats]
+    files, proposed, joins = [], {}, []  # what the guide suggested: its things' files, their "proposed", its joins
+    if asked:
+        guides = {ln: (r, when.get(x.line) or _now().date().isoformat())
+                  for x in shown.exchanges for ln, r in zip(x.reply_lines, x.replies) if ln > upto}
+        files, proposed, joins = suggested(parsed.get("suggestions") or [], guides, g, th[1], path.stem, res)
+    answered = set()  # a suggestion he speaks of in the session it was made starts at his word; its file keeps the guide's
     for t in parsed.get("theory") or []:
         if not isinstance(t, dict):
             continue
-        why = check_theory(t, later, turns, *th[:3]) if th else "the record has no theory graph"
+        why = check_theory(t, later, turns, *th[:3], note=note["fm"]["id"] if note else "") if th else "the record has no theory graph"
         if why:
             res["dropped"].append({"session": path.stem[:8], "line": t.get("line"), "why": why, "text": str(t.get("quote", ""))[:120]})
-        else:
-            entries.append(theory_entry(t, when[int(t["line"])], path.stem, th[0]))
+            continue
+        line = int(t["line"])
+        if isinstance(t.get("add"), dict):
+            files.append(owned(t, when[line], later[line], g, note["fm"]["id"] if note else ""))
+            continue
+        short = adopting(t, g) and len(" ".join(str(t["quote"]).split()).split()) < SHORT
+        if t.get("agrees") is not None or short:  # a yes when asked adopts nothing
+            tid = str(t["agrees"]) if t.get("agrees") is not None else t["status"]["id"]
+            if not t.get("answering"):
+                res["dropped"].append({"session": path.stem[:8], "line": line, "text": str(t.get("quote", ""))[:120],
+                                       "why": f"a reply of under {SHORT} words never makes the guide's suggestion {tid} {config.owner()}'s"})
+                continue
+            fm, body = entry({**t, "text": "", "date": "not-sure", "kind": ""}, when[line], path.stem, kinds, [], "",
+                             later[line], cur, p.kinds[0] if p.kinds else "observation", marks, asked=True)
+            entries.append(({**fm, "about": [tid]}, body))
+            res["kept"].append({"session": path.stem[:8], "line": line, "text": fm["title"],
+                                "why": f"kept on {tid} as the question and his reply; a yes when asked doesn't make it his"})
+            continue
+        answered.add(t["status"]["id"] if isinstance(t.get("status"), dict) else "")
+        entries.append(theory_entry(t, when[line], path.stem, g))
+    entries += [x for tid, x in proposed.items() if tid not in answered] + joins
     revision = None
     try:
         line = int(parsed.get("structural"))
@@ -1439,6 +1630,7 @@ def _file(domain: str, root: Path, path: Path, p: pack.Pack, s: sessions.Session
             res["would_file"].append({"session": path.stem[:8], "kind": "theory-change", "ops": revision["ops"]})
         if note:
             res["would_file"].append({"session": path.stem[:8], **note["fm"], "body": note["text"]})
+        res["would_file"] += [{"session": path.stem[:8], "file": f, "body": text} for f, text in files]
         return False
     if revision:
         from engram import theorychange
@@ -1459,21 +1651,21 @@ def _file(domain: str, root: Path, path: Path, p: pack.Pack, s: sessions.Session
             x[0]["supersedes"] = old
         left.append((x, w))
     entries, places = [x for x, _ in left], [w for _, w in left]
-    if entries or note:
+    if entries or note or files:
         msg = commitmsg.message("note", n=len(entries), session=path.stem[:8]) if note else \
             commitmsg.message("facts", n=len(entries), session=path.stem[:8])
         with st.transaction(message=msg) as tx:
             dom = st.config.get("domain", {}).get("name", "")
-            if note:  # never over an existing one: a note is written once
-                (root / note["path"]).parent.mkdir(parents=True, exist_ok=True)
-                with (root / note["path"]).open("x") as f:
-                    f.write(note["text"])
-                tx.extra.append(note["path"])
+            for where, text in ([(note["path"], note["text"])] if note else []) + files:  # never over an existing file
+                (root / where).parent.mkdir(parents=True, exist_ok=True)
+                with (root / where).open("x") as f:
+                    f.write(text)
+                tx.extra.append(where)
             for (fm, body), w in zip(entries, places):
                 eid = tx.add({**fm, "domain": dom}, body).id
                 for lfm, why in links_for(eid, fm, w[0], w[1], fm.get("source", ""), st) if w else []:
                     tx.add({**lfm, "domain": dom}, why)
-    res["filed"] += len(entries) + bool(note)
+    res["filed"] += len(entries) + bool(note) + len(files)
     return False
 
 
@@ -1562,11 +1754,11 @@ def renew(domain: str, root: Path, path: Path, upto: int, ask=None, dry_run: boo
     before = answered(s)
     st = store.Store(root)
     day = date.fromisoformat(max([when[l] for l in later if l in when] or [_now().date().isoformat()]))
-    forms = now_mod.names(st)
-    marked = {c.thing: c for c in now_mod._chain(st, day) if now_mod.mark(c, day)}
+    forms, cur = now_mod.names(st), now_mod.spec(st)
+    marked = {c.thing: c for c in now_mod._chain(st, day) if now_mod.mark(c, day, cur)}
     naming = {t: _naming(forms.get(t, [set(), set(), set()]), c.name) for t, c in marked.items()}
     named = {t: [l for l, words in later.items() if rx and rx.search(f"{before.get(l, '')}\n{words}")
-                 and now_mod.mark(marked[t], date.fromisoformat(when.get(l, day.isoformat())))]
+                 and now_mod.mark(marked[t], date.fromisoformat(when.get(l, day.isoformat())), cur)]
              for t, rx in naming.items()}
     mine = f"said in session {path.stem[:8]} "  # a refile rereads the session: what it renewed stays renewed
     done = {str(e.fm.get("thing")) for e in st.events(kind=now_mod.RENEWAL) if str(e.fm.get("source", "")).startswith(mine)}
@@ -1577,7 +1769,7 @@ def renew(domain: str, root: Path, path: Path, upto: int, ask=None, dry_run: boo
     me = config.owner()
     exchanges = "\n\n".join(f"[line {l}]\nClaude: {' '.join(before.get(l, '').split())[-RENEW_CONTEXT:] or '(nothing)'}\n{me}: {later[l]}"
                              for l in lines)
-    things = "\n".join(f"- {t}: {marked[t].name} ({now_mod.mark(marked[t], day)})" for t in named)
+    things = "\n".join(f"- {t}: {marked[t].name} ({now_mod.mark(marked[t], day, cur)})" for t in named)
     reply, res["usd"] = (ask or _ask)(config.voice(p.prompts["renew"]).format(domain=domain, things=things, exchanges=exchanges))
     res["called"] = True
     turns, out = turn_before(s), []

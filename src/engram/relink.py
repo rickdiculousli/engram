@@ -267,11 +267,12 @@ PLACED = ("engram-sweep", "engram-relink")  # the authors of the links engram pl
 
 
 def _about(repo: Path, g: theory.Graph, t: theory.Thing) -> str:
-    """A loop or Discovery as the sweep's calls see it: its status, a loop's path, its text. Its hash is its version."""
+    """A target as the sweep's calls see it: its status, a loop's path, whose it is when it's the guide's suggestion,
+    its text. Its hash is its version."""
     body = frontmatter.split((repo / t.file).read_text())[1].strip() if t.file and (repo / t.file).exists() else ""
-    status = g.status.get(t.id, ("",))[0]
+    status, who = g.status.get(t.id, ("",))[0], theory.who(g, t.id)
     return f"<target id=\"{t.id}\"{f' status=\"{status}\"' if status else ''}>\n" + \
-           (f"path: {g.draw(t.id)}\n" if t.kind == "loop" else "") + f"{body}\n</target>"
+           (f"path: {g.draw(t.id)}\n" if t.kind == "loop" else "") + (f"{who}\n" if who else "") + f"{body}\n</target>"
 
 
 def _version(text: str) -> str:
@@ -416,7 +417,8 @@ def sweep(repo: Path, ask=None, confirm=None, dry_run: bool = False, limit: int 
     have |= {(x["from"], x["to"], rel) for x in state["pending"] + state["confirmed"] for rel in RELS}
     unread = [r for r in recs if state["read"].get(r[0]) != sig(r[2])]
     work = batches(unread, SWEEP_BUDGET)[:limit]
-    targets_text = "\n".join(about(t) for t in tg.values())
+    # the record's own kinds are shown with the theory they belong to; links are made only to loops and Discoveries
+    targets_text = "\n".join(about(t) for t in [*tg.values(), *(t for t in g.things.values() if t.kind in g.kinds)])
     out = {"records": len(recs), "unread": len(unread), "targets": len(tg), "batches": 0, "proposed": 0, "links": [],
            "dropped": [], "moved": [], "confirmed": [], "rejected": [], "usd": 0.0, "read_usd": 0.0, "stopped": False}
     if recheck_out:

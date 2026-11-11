@@ -23,7 +23,7 @@ ORDER = ["id", "title", "heading", "date", "date_note", "reported", "approx", "r
 WRITTEN = frozenset(ORDER) | {  # every field engram itself writes on an entry, a link or a note: none a pack's to name
     "entity", "status", "reason", "thing", "edits", "note", "corrects", "as_said", "landmark", "range_from", "range_to",
     "aliases", "from", "to", "rel", "family", "strength", "since", "loop", "step", "chat", "start", "lines", "follows",
-    "continues"}
+    "continues", "origin", "stage", "said", "answering", "quote"}
 
 
 def lock_file(root: Path) -> Path:

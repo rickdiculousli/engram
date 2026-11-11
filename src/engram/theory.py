@@ -9,14 +9,24 @@ A thread file's front matter names it: `id` (`loop/2b`), `kind`, `short` (the la
 
 A revision (`engram theory change`, engram.theorychange) never edits a link: a step or join it retires gets a status
 event on `link/<its id>` saying "retired", with what replaced it and why. The graph leaves retired links out, and
-`load(repo, asof=...)` gives the graph as it stood on a day, so "what did we think back then" still works."""
+`load(repo, asof=...)` gives the graph as it stood on a day, so "what did we think back then" still works.
+
+A record may add its own kinds (`[theory.kinds.<kind>]` in its engram.toml): each a folder of thread files, beside the
+built-in ones, and for a kind whose change is gradual (an insight) the `stages` it moves through, a second label kept
+apart from its status, and `needs_note` (one is added only from a session that has a note). A thing the guide
+suggested (`by: claude-suggestion`, its words in `quote`) is shown as the guide's wherever it's printed (`who`)."""
 import math
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from engram import frontmatter
+from engram import config, frontmatter
+from engram.paths import record_conf
 from engram.store import Store
+
+SUGGESTION = "claude-suggestion"  # who a guide's suggestion is by, as an entry the guide's words hold is
+SUGGESTED = "the guide's suggestion"  # how one is labelled wherever it's shown
+GONE = ("ruled out", "replaced")  # statuses that take a thing out of the picture a chat starts with
 
 
 @dataclass
@@ -30,6 +40,23 @@ class Thing:
     say: list[str] = field(default_factory=list)
     since: str = ""
     by: str = ""
+    quote: str = ""  # a suggestion's: the guide's words
+
+
+@dataclass
+class Kind:
+    """One of a record's own theory kinds: where its things live, and for a change made gradually, the stages it
+    moves through and whether one must come from a session's note."""
+    folder: str
+    stages: list[str] = field(default_factory=list)
+    needs_note: bool = False
+
+
+def kinds(repo: Path) -> dict[str, Kind]:
+    """The record's own theory kinds, from `[theory.kinds.<kind>]`; none, the theory is the built-in one."""
+    conf = (record_conf(repo).get("theory") or {}).get("kinds") or {}
+    return {k: Kind(str(v["folder"]).strip("/"), [str(x) for x in v.get("stages") or []], bool(v.get("needs_note")))
+            for k, v in conf.items() if isinstance(v, dict) and v.get("folder")}
 
 
 @dataclass
@@ -67,6 +94,9 @@ class Graph:
     edges: list[Edge]
     status: dict[str, tuple[str, str, str]]  # thing -> (status, date, event id)
     retired: list[Retired] = field(default_factory=list)
+    kinds: dict[str, Kind] = field(default_factory=dict)  # the record's own kinds
+    stage: dict[str, tuple[str, str, str]] = field(default_factory=dict)  # thing -> (stage, date, event id), apart from status
+    word: dict[str, dict] = field(default_factory=dict)  # thing -> the front matter of the event its status is from
 
     def label(self, thing: str) -> str:
         t = self.things.get(thing)
@@ -144,16 +174,18 @@ def load(repo: Path, asof: str | None = None) -> Graph:
     def later(day: str) -> bool:
         return bool(asof and day and str(day)[:10] > asof)
     things: dict[str, Thing] = {}
-    for p in sorted((repo / "theory").glob("*.md")) if (repo / "theory").exists() else []:
-        fm, body = frontmatter.split(p.read_text())
-        if not fm or not fm.get("id"):
-            continue
-        head = next((l.lstrip("# ").strip() for l in body.splitlines() if l.startswith("# ")), fm["id"])
-        if later(str(fm.get("since", ""))):
-            continue
-        things[fm["id"]] = Thing(fm["id"], fm.get("kind", ""), str(fm.get("short") or head), p.relative_to(repo).as_posix(), head,
-                                 [str(s) for s in fm.get("stories") or []], [str(s) for s in fm.get("say") or []],
-                                 str(fm.get("since", "")), str(fm.get("by", "")))
+    own = kinds(repo)
+    for folder, kind in [("theory", ""), *((k.folder, name) for name, k in own.items())]:
+        for p in sorted((repo / folder).glob("*.md")) if (repo / folder).exists() else []:
+            fm, body = frontmatter.split(p.read_text())
+            if not fm or not fm.get("id"):
+                continue
+            head = next((l.lstrip("# ").strip() for l in body.splitlines() if l.startswith("# ")), fm["id"])
+            if later(str(fm.get("since", ""))):
+                continue
+            things[fm["id"]] = Thing(fm["id"], fm.get("kind") or kind, str(fm.get("short") or head), p.relative_to(repo).as_posix(),
+                                     head, [str(s) for s in fm.get("stories") or []], [str(s) for s in fm.get("say") or []],
+                                     str(fm.get("since", "")), str(fm.get("by", "")), str(fm.get("quote") or ""))
     for p in sorted((repo / "evidence").glob("D[0-9]*-*.md")) if (repo / "evidence").exists() else []:
         fm, _ = frontmatter.split(p.read_text())
         did = str((fm or {}).get("id") or p.name.split("-", 1)[0])
@@ -164,23 +196,50 @@ def load(repo: Path, asof: str | None = None) -> Graph:
             fm, body = frontmatter.split(p.read_text())
             head = next((l.lstrip("# ").strip() for l in (body or p.read_text()).splitlines() if l.startswith("# ")), p.stem)
             things[f"{kind}/{p.stem}"] = Thing(f"{kind}/{p.stem}", kind, p.stem, p.relative_to(repo).as_posix(), head)
-    edges, status, retired = [], {}, {}
+    edges, status, retired, stage, word = [], {}, {}, {}, {}
     for e in st.events():
         if e.kind == "link" and e.fm.get("family") == "theory" and not later(str(e.fm.get("since") or e.date)):
             edges.append(Edge(e.id, e.fm.get("from", ""), e.fm.get("to", ""), e.fm.get("rel", ""), e.body.strip(),
                               str(e.fm.get("strength", "")), str(e.fm.get("since", "")), str(e.fm.get("by", "")),
                               str(e.fm.get("loop", "")), int(e.fm.get("step") or 0), str(e.fm.get("entry", ""))))
-    for e in sorted(st.events(kind="status"), key=lambda e: str(e.fm.get("recorded", ""))):
+    # a guide's suggestion is where its thing's history starts: in the same second, it comes before what's said of it
+    for e in sorted(st.events(kind="status"), key=lambda e: (str(e.fm.get("recorded", "")), e.fm.get("by") != SUGGESTION)):
         if later(str(e.date)):
             continue
         for a in e.about:
             if a.startswith("link/") and e.fm.get("status") == RETIRED:
                 retired[a[5:]] = e
             elif "/" in a and not a.startswith(("story/", "series/")):
-                status[a] = (str(e.fm.get("status", "")), str(e.date), e.id)
+                if "status" in e.fm or not e.fm.get("stage"):  # a stage alone leaves the status as it was
+                    status[a] = (str(e.fm.get("status", "")), str(e.date), e.id)
+                    word[a] = e.fm
+                if e.fm.get("stage"):
+                    stage[a] = (str(e.fm["stage"]), str(e.date), e.id)
     gone = [Retired(x, str(retired[x.id].date), str(retired[x.id].fm.get("replaced_by", "")), str(retired[x.id].fm.get("why", "")),
                     retired[x.id].id) for x in edges if x.id in retired]
-    return Graph(things, [x for x in edges if x.id not in retired], status, gone)
+    return Graph(things, [x for x in edges if x.id not in retired], status, gone, own, stage, word)
+
+
+def file_for(g: Graph, kind: str, tid: str) -> str:
+    """Where a new thing's file goes: its kind's folder, for a kind of the record's own, else theory/<kind>-<name>.md."""
+    name = re.sub(r"[^\w]+", "-", tid.split("/", 1)[-1].lower()).strip("-")
+    return f"{g.kinds[kind].folder}/{name}.md" if kind in g.kinds else f"theory/{kind}-{name}.md"
+
+
+def who(g: Graph, thing: str) -> str:
+    """Whose a thing is, for a guide's suggestion: the guide's words while it's proposed, and once the owner has said
+    something of it, his words beside them ("raised by the guide, adopted by <owner>"). Empty for any other thing."""
+    t = g.things.get(thing)
+    if not t or t.by != SUGGESTION:
+        return ""
+    fm, status = g.word.get(thing) or {}, g.status.get(thing, ("",))[0]
+    if not fm or fm.get("by") == SUGGESTION:
+        return f"{SUGGESTED}: “{t.quote}”" if t.quote else SUGGESTED
+    said = f"“{' '.join(str(fm.get('said') or '').split())}”"
+    if fm.get("answering"):
+        said = f"asked “{' '.join(str(fm['answering']).split())}”, {said}"
+    verb = "adopted" if status in ("provisional", "confirmed") else status
+    return f"raised by the guide, {verb} by {config.owner()}: {said}"
 
 
 def node_doc(g: Graph, thing: str, refs: list[str]) -> str | None:
@@ -202,13 +261,21 @@ def text(g: Graph) -> str:
     out.append("")
     out.append("join\tkind\tstrength\tsince\tby\tmechanism")
     for e in g.joins():
-        out.append(f"{g.label(e.a)} → {g.label(e.b)}\t{e.rel}\t{e.strength}\t{e.since}\t{e.by}\t{e.note}")
+        out.append(f"{g.label(e.a)} → {g.label(e.b)}\t{e.rel}\t{e.strength}\t{e.since}\t"
+                   f"{SUGGESTED if e.by == SUGGESTION else e.by}\t{e.note}")
     out.append("")
     out.append("theory\tstatus\tsince\twhat")
     for t in g.things.values():
         if t.kind in ("discovery", "pattern"):
             s, d, _ = g.status.get(t.id, ("", "", ""))
             out.append(f"{t.short}\t{s}\t{d}\t{t.title}")
+    if g.kinds:  # the record's own kinds: each thing's status, its stage where its kind has them, and whose it is
+        out.append("")
+        out.append("item\tkind\tstatus\tstage\tsince\twho")
+        for t in g.things.values():
+            if t.kind in g.kinds:
+                out.append(f"{t.short}\t{t.kind}\t{g.status.get(t.id, ('',))[0]}\t{g.stage.get(t.id, ('',))[0]}\t{t.since}\t"
+                           f"{who(g, t.id) or t.by}")
     if g.retired:
         out.append("")
         out.append("retired\twhen\treplaced by\twhy")

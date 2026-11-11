@@ -2,7 +2,7 @@
 things stand" follows (the practices), and a reader for the rows the person's gym app keeps. Every word is made up.
 
 The words under "Not yet read by engram" are the inner-work changes' (docs/technical.md, "The inner-work settings"):
-`suggest`, `stated` and `regroup`. Today engram reads only the rest."""
+`stated` and `regroup`. Today engram reads only the rest."""
 import json
 from datetime import datetime
 from pathlib import Path
@@ -65,8 +65,11 @@ Search hits:
 {hits}"""
 
 THEORY = """
-How things work underneath for {owner}, as he has agreed it: change it only when {owner} says so after line {upto},
-with a status (one of: {statuses}) or a link (one of: {rels}; strength one of: {strengths}).
+How things work underneath for {owner}: change it only when {owner} says so after line {upto}, in his own words, with a
+status (one of: {statuses}), a stage for a thing that has stages ("status": {{"id", "stage"}}: how far along the change
+is, apart from how sure it is) or a link (one of: {rels}; strength one of: {strengths}). A belief, part or insight he
+names himself that isn't below is "add": {{"kind", "id": <kind>/<a few words, lower case, joined by dashes>, "name":
+his words for it, copied exactly}}. A thing marked as the guide's suggestion is Claude's idea, not his.
 
 {graph}
 """
@@ -121,10 +124,21 @@ Earlier notes: {recent}"""
 
 # ---- Not yet read by engram: the inner-work changes' words ----
 
-SUGGEST = """The guide's ideas about {owner} that he hasn't agreed to are kept too, as the guide's: for each one the guide
-offered after line {upto}, give "suggestions": [{{"line": <the guide's line>, "quote": <the guide's words, copied
-exactly>, "kind" (one of {kinds}) and "name", or "link"}}]. When {owner} later says one in his own words, says yes when
-asked, or says no, give it under "theory" with his words."""
+SUGGEST = """Claude's ideas about {owner} that he hasn't taken up (a hunch, "maybe there's a part of you that...", a belief or a
+pattern Claude names in him) are kept too, as Claude's. For each new one Claude offers after line {upto}, give
+"suggestions": [{{"line": <Claude's line>, "quote": <Claude's words for the idea, copied exactly>, "kind": one of
+{kinds}, "id": <kind>/<a few words, lower case, joined by dashes>, "name": <a short name for it>}}]. When Claude offers
+again, in any words, an idea the theory above already holds as the guide's suggestion, give that thing's own id: it's
+the same suggestion, said again. A different idea about the same part or belief is a new one.
+
+What {owner} says after line {upto} about one of the guide's suggestions above goes under "theory", with his line and
+his words:
+- he says the idea himself, as his own (in his words, with his own name for it, even grudgingly): "status":
+  {{"id": <its id>, "to": "provisional"}}, his words that say it as "quote";
+- he says no to it, or that it isn't him: "status": {{"id": <its id>, "to": "ruled out"}};
+- he says yes, maybe or could be when Claude asks about it ("yeah", "I guess", "could be"): "agrees": <its id>, with
+  "answering": Claude's question, copied exactly. That isn't his own words for it.
+Asking about one, wondering, being unsure, or planning to watch for it changes nothing: give nothing for it."""
 
 STATED = """When {owner} says something about himself ("I'm a burden"), give it as a fact of kind {kind} and, under
 "beliefs", every belief below it expresses, by meaning, not by shared words ("loose": true when the fit is partial). If
@@ -168,6 +182,7 @@ pack = Pack(
     kinds=("observation", "practice", "stated-belief", "plan"),
     current=Current(entity_kind="practice", entity_prefix="practice", detail="routine",
                     statuses=("started", "carried", "paused", "retired"), group="practices", threads={"person": "people"},
-                    sections=("practices", "people", "stopped")),
+                    sections=("practices", "people", "stopped"), ongoing=frozenset({"started", "carried"}),
+                    finished=frozenset({"retired"}), whole_names=True, origin="insight"),
     read={"gym": read_gym},
 )

@@ -62,6 +62,10 @@ class Current:
     ahead_dir: str = ""  # a folder whose documents are named by a date ahead
     team: tuple[str, str] = ("", "")  # the `by:` prefix of the people the owner sees, and what the picture calls them
     name_forms: Callable[[str], list[set[str]]] | None = None  # an entity's name, its forms strictest first
+    ongoing: frozenset[str] = frozenset({"taking", "prn", "active"})  # the statuses of a thing still going
+    finished: frozenset[str] = frozenset({"stopped", "done", "concluded", "ruled out", "resolved", "replaced", "inactive"})
+    whole_names: bool = False  # a name is whole: never split at a bracket into brand and generic, and a way in at any length
+    origin: str = ""  # the theory kind an entity entry must name (`origin`) to be followed: one naming none is an entry
 
     def __post_init__(self):
         """A detail named like a field engram writes is refused: engram's value would overwrite it, or it engram's."""

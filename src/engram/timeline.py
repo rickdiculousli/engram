@@ -469,6 +469,13 @@ def _theory(db, num: dict[str, int], domain: str | None = None, then: str | None
                "id": nid[0] if nid else "", "_refs": [doc] if doc else []}
         out.append({k: v for k, v in row.items() if v != [] or k == "_refs"})
         shown |= {l, *g.path(l)}
+    for t in sorted(x for x in named if g.things[x].kind in g.kinds):  # a thing of the record's own kinds, asked for:
+        doc = th.node_doc(g, t, refs_of(t))                               # its status, its stage and whose it is
+        nid = db.execute("SELECT nid FROM doc WHERE ref = ? OR parent = ? LIMIT 1", (doc, doc)).fetchone() if doc else None
+        what = "; ".join(x for x in (g.stage.get(t, ("",))[0], th.who(g, t)) if x) or g.things[t].title
+        out.append({"theory": g.things[t].short, "status": g.status.get(t, ("",))[0], "what": what, "id": nid[0] if nid else "",
+                    "_refs": [doc] if doc else []})
+        shown.add(t)
     cited = [t for t in cited_order if t.startswith(("discovery/", "pattern/"))]
     focus = set(loops) | named | set(cited[:JOIN_FOCUS])  # the joins on what the answer leans on most
     near = shown | lit_of(g, weight) | named

@@ -80,7 +80,8 @@ def test_21_a_rejected_note_still_files_the_facts_gets_a_summary_and_is_retried_
     for hours in range(3):
         w.run(model, now=LATER + timedelta(hours=hours))
     assert not w.notes_of(1)
-    assert [e.fm["title"] for e in w.mine()] == ["Chest went tight in the exercise."]  # the facts, as entries
+    # the facts, as entries: a reply of two words as the question and the reply (change 6)
+    assert [e.fm["title"] for e in w.mine()] == [f"“{answering(1, 'chest. tight.')}” — Sam: “chest. tight.”"]
     plan = summarize.plan(path, D)
     assert plan and not plan.get("empty") and "chest. tight." in "\n".join(t.text for t in plan["turns"])  # a summary
     assert len(model.of("file")) == 2  # the note tried, then retried once, not every hour

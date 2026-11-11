@@ -33,7 +33,6 @@ def practice(w, status: str, day: str, name: str = SPEAK, body: str = "", **more
                    "entity": name, "status": status, "by": "sam", "origin": "insight/quiet-kept-me-safe", **more}, body or f"- {status}\n")
 
 
-@pytest.mark.xfail(strict=True, reason="change 7: the ongoing statuses are fixed in code, and \"carried\" isn't one")
 def test_59_a_carried_practice_shows_when_it_started_and_last_mentioned_once_quiet(inner):
     w = inner()
     practice(w, "carried", "2026-11-05")
@@ -44,7 +43,6 @@ def test_59_a_carried_practice_shows_when_it_started_and_last_mentioned_once_qui
     assert "last mentioned 2026-11" in now_mod.text(w.repo, date(2027, 3, 1))
 
 
-@pytest.mark.xfail(strict=True, reason="change 7: the finished statuses are fixed in code, and \"retired\" isn't one")
 def test_60_a_retired_practice_shows_thirty_days_with_its_reason_then_moves_to_stopped(inner):
     w = inner()
     practice(w, "retired", "2026-11-10", body="- reason: it comes on its own now\n")
@@ -54,7 +52,6 @@ def test_60_a_retired_practice_shows_thirty_days_with_its_reason_then_moves_to_s
     assert SPEAK not in section(later, "practices") and SPEAK in section(later, "stopped")
 
 
-@pytest.mark.xfail(strict=True, reason="change 7: a name longer than four words names no way in")
 def test_61_a_practice_with_a_five_word_name_is_found_by_that_name(inner):
     w = inner()
     practice(w, "started", "2026-11-04", name="say the sentence at dinner")
@@ -71,7 +68,6 @@ def started(w, origin: str | None):
     return w.run(Model({"facts": [fact]}))
 
 
-@pytest.mark.xfail(strict=True, reason="change 7: nothing can require a tracked item to name where it came from")
 def test_62_a_practice_naming_no_insight_is_saved_as_an_entry_and_not_tracked(inner):
     w = inner()
     started(w, None)
@@ -79,7 +75,6 @@ def test_62_a_practice_naming_no_insight_is_saved_as_an_entry_and_not_tracked(in
     assert "box breathing" not in now_mod.text(w.repo)
 
 
-@pytest.mark.xfail(strict=True, reason="change 7: nothing checks the insight a tracked item names")
 def test_63_a_practice_naming_an_insight_the_theory_lacks_is_not_tracked(inner):
     w = inner()
     out = started(w, "insight/not-in-the-theory")

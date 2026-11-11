@@ -2,7 +2,8 @@
 in conversation the moment the owner agrees to a change in the model, and by the hourly job as a backstop.
 
 A change is a list of operations:
-- add-node: a condition, or a state a loop passes through: a new thread file under theory/
+- add-node: a condition, or a state a loop passes through: a new thread file under theory/; or a thing of one of the
+  record's own kinds, in its kind's folder
 - add-loop: a new loop, its path given whole
 - insert-step / remove-step: a member added to or taken out of a loop; the step it breaks is retired and the new steps
   take its place
@@ -19,7 +20,6 @@ import copy
 import hashlib
 import json
 import os
-import re
 import sqlite3
 import subprocess
 import sys
@@ -31,7 +31,7 @@ from engram import commitmsg, config, frontmatter, theory
 from engram.paths import data_path
 from engram.store import Store
 
-KINDS = ("node", "state", "loop")
+KINDS = ("node", "state", "loop")  # the built-in kinds; a record's own (`[theory.kinds]`) sit beside them
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS change (
   id TEXT PRIMARY KEY, domain TEXT, repo TEXT, at TEXT, summary TEXT, state TEXT, result TEXT, usd REAL DEFAULT 0,
@@ -62,10 +62,6 @@ def db() -> sqlite3.Connection:
 
 def _today() -> str:
     return datetime.now().astimezone().date().isoformat()
-
-
-def _slug(s: str) -> str:
-    return re.sub(r"[^\w]+", "-", s.lower()).strip("-")
 
 
 def _config(st: Store) -> tuple[list[str], list[str]]:
@@ -114,13 +110,13 @@ def plan(g: theory.Graph, ops: list[dict], rels: list[str], strengths: list[str]
         kind = op.get("op")
         if kind == "add-node":
             tid, k = str(op.get("id", "")), str(op.get("kind") or "node")
-            if k not in KINDS or not tid.startswith(k + "/") or len(tid) <= len(k) + 1:
+            if (k not in KINDS and k not in h.kinds) or not tid.startswith(k + "/") or len(tid) <= len(k) + 1:
                 raise ChangeError(f"a new {k} needs an id like {k}/<name>, got {tid!r}")
             if tid in h.things:
                 raise ChangeError(f"{tid} already exists")
             if not str(op.get("title", "")).strip():
                 raise ChangeError(f"{tid} needs a title")
-            t = theory.Thing(tid, k, str(op.get("short") or op["title"]), f"theory/{k}-{_slug(tid.split('/', 1)[1])}.md",
+            t = theory.Thing(tid, k, str(op.get("short") or op["title"]), theory.file_for(h, k, tid),
                              str(op["title"]), [str(s) for s in op.get("stories") or []], [str(s) for s in op.get("say") or []])
             h.things[tid] = t
             writes.append(("thing", t, str(op.get("about") or "")))
@@ -134,7 +130,7 @@ def plan(g: theory.Graph, ops: list[dict], rels: list[str], strengths: list[str]
             for x in path:
                 need(x)
             h.things[lid] = theory.Thing(lid, "loop", str(op.get("short") or lid.replace("loop/", "Loop ")),
-                                         f"theory/loop-{_slug(lid.split('/', 1)[1])}.md", str(op.get("title") or lid),
+                                         theory.file_for(h, "loop", lid), str(op.get("title") or lid),
                                          [], [str(s) for s in op.get("say") or []])
             writes.append(("thing", h.things[lid], str(op.get("about") or "")))
             notes = list(op.get("mechanisms") or [])

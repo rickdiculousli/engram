@@ -29,8 +29,6 @@ from engram.store import Store
 
 SOURCE = "current"
 SHOW_STOPPED = timedelta(days=30)
-FINISHED = {"stopped", "done", "concluded", "ruled out", "resolved", "replaced", "inactive"}
-ONGOING = {"taking", "prn", "active"}
 QUIET = timedelta(days=90)
 RENEWAL = "renewal"  # an entry recording only that the owner said they're still on a thing: it moves `said`, nothing else
 
@@ -70,8 +68,13 @@ def spec(st: Store) -> pack.Current:
     return pack.for_repo(st.root).current
 
 
+def base(name: str, cur: pack.Current) -> str:
+    """An entity's name without its bracket (a medication's generic), unless the pack keeps names whole."""
+    return name if cur.whole_names else name.split("(")[0]
+
+
 def key(entity: str, cur: pack.Current) -> str:
-    name = entity.split("(")[0].strip().lower()
+    name = base(entity, cur).strip().lower()
     return f"{cur.entity_prefix}/" + re.sub(r"[^\w]+", "-", name).strip("-")
 
 
@@ -127,7 +130,7 @@ def chain_for(st: Store, name: str) -> str | None:
 
     def rank(t: str):
         rec, status = last.get(t, ("", ""))
-        return status not in FINISHED, rec
+        return status not in cur.finished, rec
     tiers = [lambda forms, t=t: mine[t] & forms[t] for t in range(3)]
     tiers.append(lambda forms: any(k.startswith(m + " ") for m in mine[2] for k in forms[2]))
     tiers.append(lambda forms: any(len(m.split()) > 1 and f" {m} " in f" {k} " for m in mine[2] for k in forms[2]))
@@ -149,14 +152,14 @@ def detail(e, field: str) -> str:
     return str(e.fm.get(field) or next((l.split(":", 1)[1].strip() for l in e.body.splitlines() if l.startswith(f"- {field}:")), ""))
 
 
-def _run_start(evs: list, field: str) -> tuple[str, str]:
+def _run_start(evs: list, field: str, cur: pack.Current) -> tuple[str, str]:
     """(when the current run of an entity began, what its latest entry changed) for one still going: the dated entries
     in date order, back from the latest while each is still ongoing; a pause or stop ends the walk, so a restart is a
     new start."""
     dated = sorted((e for e in evs if _day(e)), key=lambda e: dates.key(_day(e)))
     run = []
     for e in reversed(dated):
-        if str(e.fm.get("status", "")) not in ONGOING:
+        if str(e.fm.get("status", "")) not in cur.ongoing:
             break
         run.append(e)
     if len(run) < 2:
@@ -173,13 +176,13 @@ def _first_session(st: Store, thing: str, corrected: set[str], start: tuple[str,
     return min(days, key=dates.key) if days else ""  # as the record wrote it: a month stays a month
 
 
-def _said(evs: list, own: list, today: date, renewed: list[str] = ()) -> str:
+def _said(evs: list, own: list, today: date, cur: pack.Current, renewed: list[str] = ()) -> str:
     """The day of the owner's last word on an entity's chain, up to today: its entries' dates, its renewals' and those
     of the owner's own dated entries its way in names. "" when its chain has no date."""
     from engram.sources import waysin
     if not any(_day(e) for e in evs):
         return ""
-    phrases = {p for e in evs for p in waysin.entity_phrases(str(e.fm["entity"]))}
+    phrases = {p for e in evs for p in waysin.entity_phrases(str(e.fm["entity"]), cur.whole_names)}
     names = re.compile(r"\b(" + "|".join(sorted(map(re.escape, phrases), key=len, reverse=True)) + r")\b", re.I) if phrases else None
     chain = {e.id for e in evs}
     days = [_day(e) for e in evs if _day(e)] + list(renewed)
@@ -187,9 +190,9 @@ def _said(evs: list, own: list, today: date, renewed: list[str] = ()) -> str:
     return max((dates.key(d) for d in days if dates.key(d) <= today.isoformat()), default="")
 
 
-def mark(c: Current, today: date) -> str:
+def mark(c: Current, today: date, cur: pack.Current) -> str:
     """"last mentioned 2026-06" for a thing still going whose owner last mentioned it over QUIET ago; "" otherwise."""
-    if c.status not in ONGOING or not c.said or date.fromisoformat(c.said) >= today - QUIET:
+    if c.status not in cur.ongoing or not c.said or date.fromisoformat(c.said) >= today - QUIET:
         return ""
     return f"last mentioned {c.said[:7]}"
 
@@ -245,11 +248,11 @@ def _chain(st: Store, today: date | None = None) -> list[Current]:
         if last.kind == cur.entity_kind:
             name = str(last.fm["entity"])
             shown = detail(last, cur.detail)
-            if not shown and status in ONGOING:  # the latest entry only changed the status: the detail before it
+            if not shown and status in cur.ongoing:  # the latest entry only changed the status: the detail before it
                 shown = next((d for e in reversed(evs[:-1]) if (d := detail(e, cur.detail))), "")
             group = cur.groups.get(str(last.fm.get("group", "")), cur.group)
-            started, changed = _run_start(evs, cur.detail) if status in ONGOING else ("", "")
-            said = _said(evs, own, today, renewed.get(thing, []))
+            started, changed = _run_start(evs, cur.detail, cur) if status in cur.ongoing else ("", "")
+            said = _said(evs, own, today, cur, renewed.get(thing, []))
         else:
             prefix = thing.split("/")[0]
             name = str(last.fm.get(prefix) or thing.split("/", 1)[1].replace("-", " "))
@@ -262,7 +265,7 @@ def _chain(st: Store, today: date | None = None) -> list[Current]:
             started, changed = (_first_session(st, thing, corrected, cur.starts[prefix]) if prefix in cur.starts else ""), ""
         history = [f"{e.fm.get('status', '')} {_day(e) or 'date not sure'}" for e in evs]
         out.append(Current(thing, name, status, when, shown, last.id, group, history, conflict,
-                           reason(last) if status in FINISHED else "", [e.id for e in evs], started, changed, said))
+                           reason(last) if status in cur.finished else "", [e.id for e in evs], started, changed, said))
     return out
 
 
@@ -270,12 +273,12 @@ def build(repo: Path, today: date | None = None) -> dict[str, list[Current]]:
     """Sections of where things stand, as the pack names them, then stopped."""
     today = today or date.today()
     st = Store(repo)
-    hidden = spec(st).hidden
+    cur = spec(st)
     sections: dict[str, list[Current]] = {}
     for c in _chain(st, today):
-        finished = c.status in FINISHED
+        finished = c.status in cur.finished
         recent = finished and c.when and dates.key(c.when) and date.fromisoformat(dates.key(c.when)) >= today - SHOW_STOPPED
-        if c.group in hidden and finished:
+        if c.group in cur.hidden and finished:
             continue
         sections.setdefault("stopped" if finished and not recent else c.group, []).append(c)
     for v in sections.values():
@@ -347,6 +350,36 @@ def theories(repo: Path) -> tuple[list[tuple[str, str, str]], list[str]]:
     return ths, qs
 
 
+def own_theory(repo: Path, today: date) -> list[str]:
+    """The record's own kinds of theory (`[theory.kinds]`), one line each: its status, its stage and whose it is. Left
+    out: what's ruled out or replaced, and a guide's suggestion still proposed that the owner hasn't spoken of (an
+    entry of his on it) for `[suggestions] quiet_days`, counted from when it was made; moments linked to it and the
+    guide saying it again don't count. `engram theory` prints them all. None for a record without such kinds."""
+    from engram import theory
+    from engram.paths import record_conf
+    g = theory.load(repo)
+    if not g.kinds:
+        return []
+    quiet = (record_conf(repo).get("suggestions") or {}).get("quiet_days")
+    cut = (today - timedelta(days=int(quiet))).isoformat() if quiet else ""
+    me, last = config.owner_id(), {}
+    for e in Store(repo).events() if cut else []:
+        if e.kind != "link" and str(e.fm.get("by", "")) == me and _day(e):
+            for a in e.about:
+                last[a] = max(last.get(a, ""), dates.key(_day(e)))
+    out = []
+    for t in g.things.values():
+        status = g.status.get(t.id, ("",))[0]
+        if t.kind not in g.kinds or status in theory.GONE:
+            continue
+        unanswered = t.by == theory.SUGGESTION and (g.word.get(t.id) or {}).get("by", theory.SUGGESTION) == theory.SUGGESTION
+        if cut and unanswered and max(last.get(t.id, ""), dates.key(t.since) or "") < cut:
+            continue
+        bits = [b for b in (status, g.stage.get(t.id, ("",))[0], theory.who(g, t.id)) if b]
+        out.append(f"- {t.short} ({t.kind})" + (f": {'; '.join(bits)}" if bits else ""))
+    return out
+
+
 def text(repo: Path, today: date | None = None, mark_shown: bool = False) -> str:
     """Where things stand, what a session needs first at the top, since the session start cuts it from its end:
     upcoming, the theories and open questions, the pack's sections in its order, the team, and last what stopped over a
@@ -371,6 +404,9 @@ def text(repo: Path, today: date | None = None, mark_shown: bool = False) -> str
     if qs:
         lines.append(f"\nopen questions ({len(qs)}):")
         lines += [f"- {q}" for q in qs]
+    if own := own_theory(repo, today):
+        lines.append("\nthe theory (`engram theory` prints all of it):")
+        lines += own
 
     def section(name: str):
         items = secs.get(name, [])
@@ -379,14 +415,14 @@ def text(repo: Path, today: date | None = None, mark_shown: bool = False) -> str
         lines.append(f"\n{name}:")
         for c in items:
             label = c.status if c.status not in ("taking", "active") else ""
-            if c.status in FINISHED:
+            if c.status in cur.finished:
                 since = c.when or "date not sure"
             elif name in cur.threads.values():  # a status line written that day, and when the thread began
                 since = "; ".join(b for b in (f"as of {c.when}" if c.when else "", f"first session {c.started}" if c.started else "") if b)
             else:
                 since = since_text(c)
             why = f"why: {c.reason}" if c.reason and c.reason not in c.detail else ""
-            bits = [b for b in (label, since, c.detail, why, mark(c, today)) if b]
+            bits = [b for b in (label, since, c.detail, why, mark(c, today, cur)) if b]
             line = f"- {c.name}: {'; '.join(bits)} [{c.entry}]"
             if c.conflict:
                 line += f" — the record disagrees: also {', '.join(c.conflict)}"
@@ -417,10 +453,10 @@ def _begun(cur: pack.Current) -> set[str]:
     return {cur.threads[p] for p in cur.starts if p in cur.threads}
 
 
-def line(c: Current, begun: set[str]) -> str:
+def line(c: Current, begun: set[str], cur: pack.Current) -> str:
     """Where one thing stands, in one line: its name, status, since when, its detail and why it stopped."""
     why = f" Why: {c.reason}" if c.reason else ""
-    when = since_text(c) if c.status in ONGOING and c.group not in begun else f"{c.when or ''}" + (
+    when = since_text(c) if c.status in cur.ongoing and c.group not in begun else f"{c.when or ''}" + (
         f", first session {c.started}" if c.started else "")
     return " ".join(f"{c.name}: {' '.join(b for b in (c.status, when) if b)}. {c.detail}{why}".split())
 
@@ -436,11 +472,12 @@ def standing(repo: Path) -> dict[str, str | None]:
     stamp = (str(repo), ev.stat().st_mtime_ns if ev.exists() else 0)
     if _STANDING.get("stamp") != stamp:
         out = {}
-        begun = _begun(pack.for_repo(repo).current)
+        cur = pack.for_repo(repo).current
+        begun = _begun(cur)
         for items in build(repo).values():
             for c in items:
                 for e in c.chain:
-                    out[e] = None if e == c.entry else line(c, begun)
+                    out[e] = None if e == c.entry else line(c, begun, cur)
         _STANDING.clear()
         _STANDING.update(stamp=stamp, lines=out)
     return _STANDING["lines"]
@@ -449,11 +486,12 @@ def standing(repo: Path) -> dict[str, str | None]:
 def docs_for(repo: Path, today: date | None = None) -> list[Doc]:
     """One row per thing, so a search about the present finds where it stands."""
     out = []
-    begun = _begun(pack.for_repo(repo).current)
+    cur = pack.for_repo(repo).current
+    begun = _begun(cur)
     for section, items in build(repo, today).items():
         for c in items:
             why = f" Why: {c.reason}" if c.reason else ""
-            when = since_text(c) if c.status in ONGOING and c.group not in begun else f"{c.when or ''}" + (
+            when = since_text(c) if c.status in cur.ongoing and c.group not in begun else f"{c.when or ''}" + (
                 f", first session {c.started}" if c.started else "")
             body = f"{c.name}: {c.status} {when}. {c.detail}{why}\nhistory: {'; '.join(c.history)}".strip()
             out.append(Doc(ref=f"now:{c.thing}", source=SOURCE, cls="current", kind=section, title=f"now › {section} › {c.name}",

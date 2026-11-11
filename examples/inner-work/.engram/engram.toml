@@ -49,30 +49,22 @@ sections = [
 [threads]  # what the filer may create, named only with the owner's words
 create = ["theme", "person", "event"]
 
-# ---- Not yet read by engram: the inner-work settings ----
-
-[theory.kinds.belief]  # change 6: the repo's own theory kinds
+[theory.kinds.belief]  # the record's own theory kinds, beside node, state and loop
 folder = "theory/beliefs"
-label = "belief"
-status = true
-links = ["showed-up", "set-off-by", "did-differently", "didnt-fit", "eased"]
-
+links = ["showed-up", "set-off-by", "did-differently", "didnt-fit", "eased"]  # change 9, not yet read: the moment kinds that may point at it
 [theory.kinds.part]
 folder = "theory/parts"
-label = "part"
-status = true
-links = ["showed-up", "set-off-by", "did-differently", "eased"]
-
+links = ["showed-up", "set-off-by", "did-differently", "eased"]  # change 9, not yet read
 [theory.kinds.insight]
 folder = "theory/insights"
-label = "insight"
-status = true
-links = ["did-differently", "eased"]
+links = ["did-differently", "eased"]  # change 9, not yet read
 stages = ["noticed", "trying", "living it"]  # how far along the change is, beside how sure it is
-needs_note = true
+needs_note = true  # one is added only from a session with a note, which it names
 
-[suggestions]  # change 6: the guide's ideas, kept as the guide's; the pack's `suggest` words turn the filer's side on
-quiet_days = 30  # one the owner hasn't mentioned for this long leaves the chat start text
+[suggestions]  # the guide's ideas, kept as the guide's where the pack has `suggest` words
+quiet_days = 30  # one the owner hasn't spoken of for this long leaves the picture a chat starts with
+
+# ---- Not yet read by engram: the inner-work settings ----
 
 [links.moment]  # change 9: how a moment links to the theory, in place of strengthens and weakens
 rels = ["showed-up", "set-off-by", "did-differently", "didnt-fit", "eased"]
@@ -81,12 +73,6 @@ owner_words = ["eased"]  # only on a passage of the owner's own words
 skip_by = ["claude-suggestion"]  # never sent to the linking job
 skip_kinds = ["status", "practice"]
 hourly = true  # the linking job runs in the hourly job, whatever [refine] says
-
-[current]  # change 7: practices, as engram follows medications
-ongoing = ["started", "carried"]
-finished = ["retired"]
-brackets = false  # a name isn't split at a bracket
-origin = "insight"  # a tracked practice names the insight it came from
 
 [app]  # change 10: what the pack's `gym` reader passes as the owner's own words
 kind = "practice-note"

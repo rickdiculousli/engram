@@ -697,7 +697,7 @@ def entry(fact: dict, said_on: str, stem: str, kinds: list[str], abouts: list[st
     """The event front matter and body for a checked fact, in one of the kinds offered, else `other`. With `asked` (a
     record that keeps the guide's suggestions), a reply of under SHORT words to a question, or one given no headline,
     is kept as the question and the reply, headline and body, never the model's statement of it in his voice: "yeah"
-    to "is that shame?" isn't "feels shame". A date he never
+    to "is that shame?" isn't "feels shame". With no question, such a reply is headlined as his words alone. A date he never
     gave is filed as not sure, never guessed; a fact with no date and no past wording is filed at the day he said it.
     A fact the reply ties to a life event (`landmark`, a slug) dates it when his quote dates it firmly; one his quote
     doesn't date (the model's day said is no date) takes the date `marks` gives the slug, approximate, else not sure; his
@@ -725,7 +725,8 @@ def entry(fact: dict, said_on: str, stem: str, kinds: list[str], abouts: list[st
     quote = " ".join(str(fact["quote"]).split())
     q = " ".join(str(fact.get("answering") or "").split())
     short = asked and q and (len(quote.split()) < SHORT or not str(fact.get("text") or "").strip())  # or no headline of its own
-    text = f"“{q}” — {config.owner()}: “{quote}”" if short else headline(fact["text"])
+    text = f"“{q}” — {config.owner()}: “{quote}”" if short else f"“{quote}”" if asked and len(quote.split()) < SHORT \
+        else headline(fact["text"])
     fm = {"title": cut_title(text), "date": date, "reported": said_on, "kind": kind,
           "about": about, "by": config.owner_id(), "source": f"said in session {stem[:8]} on {said_on}", "author": "engram-capture"}
     if date == "not-sure":
@@ -737,7 +738,7 @@ def entry(fact: dict, said_on: str, stem: str, kinds: list[str], abouts: list[st
     fm |= said
     if kind == cur.entity_kind:
         fm.update(entity=fact["entity"], status=fact["status"], **({cur.detail: fact.get(cur.detail) or ""} if cur.detail else {}),
-                  reason=" ".join(str(fact.get("reason") or "").split())[:200], **({"origin": fact["origin"]} if cur.origin else {}))
+                  reason=" ".join(str(fact.get("reason") or "").split())[:200], **({"origin": fact["origin"]} if cur.origin and fact.get("origin") else {}))
     if short:
         fm["answering"] = q
     who = f"{config.owner()}, answering “{q}”" if q else config.owner()
@@ -746,7 +747,8 @@ def entry(fact: dict, said_on: str, stem: str, kinds: list[str], abouts: list[st
 
 def unfollowed(fact: dict, cur: pack.Current, g) -> str | None:
     """Why a thing the pack follows isn't followed, where the pack requires it to name the theory item it came from
-    (`origin`, of the pack's `current.origin` kind), or None: it names none, or one the theory doesn't hold."""
+    (`origin`, of the pack's `current.origin` kind), or None: it names none, or one the theory doesn't hold. Asked only
+    of one that starts a chain: a later change joins the chain its start was let into."""
     o = str(fact.get("origin") or "")
     if o and (t := g.things.get(o)) and t.kind == cur.origin:
         return None
@@ -763,8 +765,10 @@ def theory_shape(st: store.Store, words: str, suggest: str = ""):
     `suggest` words. None when the record has no theory graph, or its pack no words for one. Its last item says
     whether suggestions are kept."""
     from engram import theory
+    if not words:
+        return None
     g = theory.load(st.root)
-    if not g.things or not words:
+    if not g.things:
         return None
     conf = st.config.get("links", {}).get("theory", {})
     rels, strengths = list(conf.get("rels") or []), list(conf.get("weights") or STRENGTHS)
@@ -964,9 +968,7 @@ def spoken(item: dict) -> tuple[dict | None, str]:
 def adopting(item: dict, g) -> bool:
     """A status that would make a guide's suggestion still proposed the owner's own."""
     st = item.get("status") if isinstance(item.get("status"), dict) else {}
-    tid = str(st.get("id", ""))
-    return st.get("to") in ("provisional", "confirmed") and tid in g.things and g.things[tid].by == theory_mod.SUGGESTION \
-        and (g.word.get(tid) or {}).get("by", theory_mod.SUGGESTION) == theory_mod.SUGGESTION
+    return st.get("to") in ("provisional", "confirmed") and theory_mod.unanswered(g, str(st.get("id", "")))
 
 
 def theory_entry(item: dict, said_on: str, stem: str, g) -> tuple[dict, str]:
@@ -1494,7 +1496,7 @@ def _file(domain: str, root: Path, path: Path, p: pack.Pack, s: sessions.Session
     if tt:
         home = ""  # its entries render into no page: a remark on no thread stays on none
     th = theory_shape(st, p.prompts.get("theory", ""), p.prompts.get("suggest", ""))
-    g = th[0] if th else theory_mod.load(root)
+    g = th[0] if th else theory_mod.load(root) if cur.origin else None  # read again only for what a practice names
     asked = bool(th and th[5])  # where the guide's suggestions are kept, a short yes is kept as the question and the yes
     mine = filed_from(st, path.stem)
     already = [f"{e.date} {e.fm.get('title', '')}: {' '.join(e.body.split())[:200]} (id {e.id})" for e in mine]
@@ -1533,10 +1535,10 @@ def _file(domain: str, root: Path, path: Path, p: pack.Pack, s: sessions.Session
         if adopts and f.get("answering") and not verbatim.found(str(f["answering"]), turns.get(line, "")):
             f = {k: v for k, v in f.items() if k != "answering"}  # a plan he adopts rests on no question: one not asked just before isn't kept
         why = check(f, later, turns, when.get(line), his, recent if adopts else None)
-        if not why and cur.origin and f.get("kind") == cur.entity_kind and (untracked := unfollowed(f, cur, g)):
+        thing = now_mod.chain_for(st, str(f.get("entity") or "")) if cur.entity_kind and f.get("kind") == cur.entity_kind else None
+        if not why and cur.origin and f.get("kind") == cur.entity_kind and not thing and (untracked := unfollowed(f, cur, g)):
             res["dropped"].append({"session": path.stem[:8], "line": line, "why": untracked, "text": str(f.get("text", ""))[:120]})
             f = {**f, "kind": p.kinds[0] if p.kinds else "observation"}  # what he said is still his entry
-        thing = now_mod.chain_for(st, str(f.get("entity") or "")) if cur.entity_kind and f.get("kind") == cur.entity_kind else None
         if not why and cur.entity_kind and f.get("kind") == cur.entity_kind:
             why = entity_repeat(f, stands, cur, thing)
         if why:
@@ -1603,7 +1605,8 @@ def _file(domain: str, root: Path, path: Path, p: pack.Pack, s: sessions.Session
             if new:
                 guides.setdefault(x.line, ("\n\n".join(r for _, r in new), day))
         files, proposed, joins = suggested(parsed.get("suggestions") or [], guides, g, th[1], path.stem, res)
-    answered = set()  # a suggestion he speaks of in the session it was made starts at his word; its file keeps the guide's
+    spoke = set()  # a suggestion he speaks of in the session it was made starts at his word; its file keeps the guide's:
+    # written both, in one second the store would order the two by their hashes
     for t in parsed.get("theory") or []:
         if not isinstance(t, dict):
             continue
@@ -1633,9 +1636,9 @@ def _file(domain: str, root: Path, path: Path, p: pack.Pack, s: sessions.Session
             res["kept"].append({"session": path.stem[:8], "line": line, "text": fm["title"],
                                 "why": f"kept on {tid} as the question and his reply; a yes when asked doesn't make it his"})
             continue
-        answered.add(t["status"]["id"] if isinstance(t.get("status"), dict) else "")
+        spoke.add(t["status"]["id"] if isinstance(t.get("status"), dict) else "")
         entries.append(theory_entry(t, when[line], path.stem, g))
-    entries += [x for tid, x in proposed.items() if tid not in answered] + joins
+    entries += [x for tid, x in proposed.items() if tid not in spoke] + joins
     revision = None
     try:
         line = int(parsed.get("structural"))

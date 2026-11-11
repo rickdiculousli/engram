@@ -211,6 +211,9 @@ def apply(repo: Path, ops: list[dict], by: str = "with-claude", why: str = "", s
     g = theory.load(repo)
     rels, strengths = _config(st)
     h, writes, touched = plan(g, ops, rels, strengths, why)
+    for w in writes:  # a guide's suggestion is the owner's only in his own words, which its status entry keeps
+        if w[0] == "status" and theory.unanswered(g, w[1]) and not said.strip():
+            raise ChangeError(f"{w[1]} is the guide's suggestion: a status on it needs his words (--said)")
     day = date or _today()
     structural = any(w[0] != "status" for w in writes)
     res = Result(change="", ops=ops, structural=structural)
@@ -259,7 +262,8 @@ def apply(repo: Path, ops: list[dict], by: str = "with-claude", why: str = "", s
                 res.written.append(ev.id)
             elif w[0] == "status":
                 tid, to = w[1], w[2]
-                ev = tx.add({**base, "title": f"{g.label(tid)}: {to}", "kind": "status", "about": [tid], "status": to},
+                ev = tx.add({**base, "title": f"{g.label(tid)}: {to}", "kind": "status", "about": [tid], "status": to,
+                             **({"said": " ".join(said.split())} if g.things[tid].by == theory.SUGGESTION else {})},
                             f"- {g.label(tid)} is now {to}." + (f"\n- why: {why.strip()}" if why.strip() else "") + f"{words}\n")
                 res.written.append(ev.id)
     res.change = f"{day}-{hashlib.sha256(' '.join(res.written).encode()).hexdigest()[:6]}"

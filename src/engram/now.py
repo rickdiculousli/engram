@@ -357,9 +357,9 @@ def own_theory(repo: Path, today: date) -> list[str]:
     guide saying it again don't count. `engram theory` prints them all. None for a record without such kinds."""
     from engram import theory
     from engram.paths import record_conf
-    g = theory.load(repo)
-    if not g.kinds:
+    if not theory.kinds(repo):
         return []
+    g = theory.load(repo)
     quiet = (record_conf(repo).get("suggestions") or {}).get("quiet_days")
     cut = (today - timedelta(days=int(quiet))).isoformat() if quiet else ""
     me, last = config.owner_id(), {}
@@ -372,8 +372,7 @@ def own_theory(repo: Path, today: date) -> list[str]:
         status = g.status.get(t.id, ("",))[0]
         if t.kind not in g.kinds or status in theory.GONE:
             continue
-        unanswered = t.by == theory.SUGGESTION and (g.word.get(t.id) or {}).get("by", theory.SUGGESTION) == theory.SUGGESTION
-        if cut and unanswered and max(last.get(t.id, ""), dates.key(t.since) or "") < cut:
+        if cut and theory.unanswered(g, t.id) and max(last.get(t.id, ""), dates.key(t.since) or "") < cut:
             continue
         bits = [b for b in (status, g.stage.get(t.id, ("",))[0], theory.who(g, t.id)) if b]
         out.append(f"- {t.short} ({t.kind})" + (f": {'; '.join(bits)}" if bits else ""))

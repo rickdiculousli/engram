@@ -351,3 +351,40 @@ def test_what_he_says_of_a_suggestion_decides_and_a_doubt_rules_nothing_out(inne
                              "says": "denies"}]}), now=LATER + timedelta(hours=1))
     g = theory.load(w.repo)
     assert g.status["belief/on-the-outside"][0] == "ruled out" and "ruled out by Sam" in theory.who(g, "belief/on-the-outside")
+
+
+# The step's review.
+
+def test_a_yeah_with_no_question_is_headlined_as_his_word_alone_never_a_statement_in_his_voice(inner):
+    w = inner()
+    w.chat(5)
+    w.run(Model({"facts": [{**yeah_after("Is that shame?"), "answering": "", "text": "Sam feels shame."}]}))
+    [e] = [e for e in w.mine() if "“yeah”" in e.body]
+    assert "shame" not in e.fm["title"] + e.body and e.fm["title"] == "“yeah”"
+
+
+def test_a_suggestion_is_adopted_in_conversation_only_with_his_words_and_shows_them(inner):
+    w = inner()
+    with pytest.raises(theorychange.ChangeError, match="his words"):
+        theorychange.apply(w.repo, [{"op": "status", "id": "belief/on-the-outside", "to": "provisional"}], relink=False)
+    theorychange.apply(w.repo, [{"op": "status", "id": "belief/on-the-outside", "to": "provisional"}], relink=False,
+                       said="I am on the outside a lot")
+    g = theory.load(w.repo)
+    assert theory.who(g, "belief/on-the-outside") == "raised by the guide, adopted by Sam: “I am on the outside a lot”"
+
+
+def test_the_theory_is_read_only_where_its_words_or_kinds_are(env, monkeypatch):
+    """A record with no theory words and no kinds of its own files and prints where things stand without reading the
+    theory more than `engram now`'s one read of its Discoveries."""
+    from test_now import CURRENT, TOML  # noqa: F401
+    from conftest import NOTES_PACK
+    reads = []
+    real = theory.load
+    monkeypatch.setattr(theory, "load", lambda *a, **k: reads.append(1) or real(*a, **k))
+    (env["tmp"] / "pack").mkdir()
+    (env["tmp"] / "pack/__init__.py").write_text((NOTES_PACK / "__init__.py").read_text() + CURRENT)
+    repo = make_repo(env["tmp"] / "notes", {".engram/engram.toml": TOML})
+    env["set_repo"]("notes", repo, pack=env["tmp"] / "pack")
+    from engram import now
+    now.text(repo)
+    assert len(reads) == 1

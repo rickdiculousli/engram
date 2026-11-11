@@ -102,3 +102,15 @@ def test_64_engram_now_for_the_made_up_medical_record_is_unchanged(quiet):
     text = now_mod.text(quiet["repo"], date(2026, 10, 20))
     # "Drop X" and "Drop X (olopatadine)" are one chain: the name splits at its bracket
     assert text == MEDICAL_NOW.format(drop=drop, tablet=tablet, zinc=zinc)
+
+
+def test_a_change_to_a_followed_practice_needs_no_origin_of_its_own(inner):
+    """The review: only a practice starting a chain must name where it came from; its later changes join the chain."""
+    w = inner()
+    w.chat(6, lines=made(6, "2026-11-13T04:00:00", [("O", "I've stopped speaking first in meetings, it comes on its own now."),
+                                                    ("G", "Good.")]))
+    fact = {"line": 1, "quote": "I've stopped speaking first in meetings, it comes on its own now.", "text": "Retired speaking first",
+            "date": "not-sure", "kind": "practice", "entity": SPEAK, "status": "retired", "reason": "it comes on its own now"}
+    out = w.run(Model({"facts": [fact]}))
+    assert not [d for d in out["dropped"] if "not followed" in d["why"]]
+    assert f"- {SPEAK}: retired" in now_mod.text(w.repo, date(2026, 11, 20))

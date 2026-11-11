@@ -226,6 +226,12 @@ def file_for(g: Graph, kind: str, tid: str) -> str:
     return f"{g.kinds[kind].folder}/{name}.md" if kind in g.kinds else f"theory/{kind}-{name}.md"
 
 
+def unanswered(g: Graph, thing: str) -> bool:
+    """A guide's suggestion the owner hasn't said anything of yet: its status is still the guide's own."""
+    t = g.things.get(thing)
+    return bool(t) and t.by == SUGGESTION and (g.word.get(thing) or {}).get("by", SUGGESTION) == SUGGESTION
+
+
 def who(g: Graph, thing: str) -> str:
     """Whose a thing is, for a guide's suggestion: the guide's words while it's proposed, and once the owner has said
     something of it, his words beside them ("raised by the guide, adopted by <owner>"). Empty for any other thing."""
@@ -233,7 +239,7 @@ def who(g: Graph, thing: str) -> str:
     if not t or t.by != SUGGESTION:
         return ""
     fm, status = g.word.get(thing) or {}, g.status.get(thing, ("",))[0]
-    if not fm or fm.get("by") == SUGGESTION:
+    if unanswered(g, thing):
         return f"{SUGGESTED}: “{t.quote}”" if t.quote else SUGGESTED
     said = f"“{' '.join(str(fm.get('said') or '').split())}”"
     if fm.get("answering"):

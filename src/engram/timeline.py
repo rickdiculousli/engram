@@ -406,7 +406,8 @@ def _theory(db, num: dict[str, int], domain: str | None = None, then: str | None
     repo = config.load()[domain].repo if domain else None
     g = th.load(repo) if repo and record_toml(repo).exists() else th.Graph({}, [], {})
     kinds = relink.kinds(repo) if repo and record_toml(repo).exists() else relink.EVIDENCE
-    moments = (lambda t: {}) if kinds.family == relink.EVIDENCE.family else lambda t: _moments(db, g, t, kinds)
+    own = kinds.family != relink.EVIDENCE.family  # the record's own kinds: moments, never for and against
+    moments = (lambda t: _moments(db, g, t, kinds)) if own else lambda t: {}
     by_file = {t.file: t for t in g.things.values() if t.file}
     nodes: dict[str, dict] = {}
     loop_ev: dict[str, dict[str, set]] = {}
@@ -468,7 +469,7 @@ def _theory(db, num: dict[str, int], domain: str | None = None, then: str | None
         ev = loop_ev.get(l, {"for": set(), "against": set()})
         row = {"theory": g.things[l].short, "status": g.status.get(l, ("",))[0],
                "what": f"{g.things[l].title.split(' — ', 1)[-1]}: {g.draw(l)}",
-               **(moments(l) or {"for": len(ev["for"]), "against": sorted(ev["against"]) if len(ev["against"]) <= 10 else len(ev["against"])}),
+               **(moments(l) if own else {"for": len(ev["for"]), "against": sorted(ev["against"]) if len(ev["against"]) <= 10 else len(ev["against"])}),
                "id": nid[0] if nid else "", "_refs": [doc] if doc else []}
         out.append({k: v for k, v in row.items() if v != [] or k == "_refs"})
         shown |= {l, *g.path(l)}

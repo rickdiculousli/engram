@@ -12,6 +12,8 @@ says which records bear on what changed:
 Code checks every record id and target against the batch and the change, and drops repeats of links already held.
 Links are filed by=claude, as placement, never as the owner's claims. The timeline and the stories don't change. Each
 change runs once; its outcome is one line in the next session's `engram now` (theorychange.notices)."""
+import contextlib
+import fcntl
 import hashlib
 import json
 import re
@@ -70,14 +72,17 @@ EVIDENCE = Kinds("evidence", {r: Rel(r, r) for r in ("strengthens", "weakens")},
 
 def kinds(repo: Path | None) -> Kinds:
     """The record's link kinds (`[links.moment]`, each rel a table: `label`, `means`, `to`, `owner_words`), else
-    strengthens and weakens on loops and Discoveries."""
-    conf = ((record_conf(repo).get("links") or {}).get("moment") or {}) if repo else {}
+    strengthens and weakens on loops and Discoveries. A kind with no `to` points at any target; the job reads against
+    every theory kind a kind names, or with none named, the loops and the record's own theory kinds."""
+    conf_ = record_conf(repo) if repo else {}
+    conf = (conf_.get("links") or {}).get("moment") or {}
     rels = conf.get("rels")
     if not isinstance(rels, dict) or not rels:
         return EVIDENCE
-    out = {str(k): Rel(str(k), str(v.get("label") or k), frozenset(str(x) for x in v.get("to") or ()), str(v.get("means") or ""),
-                       bool(v.get("owner_words"))) for k, v in rels.items() if isinstance(v, dict)}
-    return Kinds("moment", out, frozenset(t for r in out.values() for t in r.to or ()),
+    out = {str(k): Rel(str(k), str(v.get("label") or k), frozenset(str(x) for x in v["to"]) if "to" in v else None,
+                       str(v.get("means") or ""), bool(v.get("owner_words"))) for k, v in rels.items() if isinstance(v, dict)}
+    named = frozenset(t for r in out.values() for t in r.to or ())
+    return Kinds("moment", out, named or frozenset({"loop", *((conf_.get("theory") or {}).get("kinds") or {})}),
                  frozenset(str(x) for x in conf.get("skip_by") or ()), frozenset(str(x) for x in conf.get("skip_kinds") or ()),
                  bool(conf.get("hourly")))
 
@@ -486,7 +491,27 @@ def sweep(repo: Path, ask=None, confirm=None, dry_run: bool = False, limit: int 
 
     `replay` lands an approved set with no model calls: its "proposals" (record, to, rel, passage) answer each read for
     the records in that batch, and a link is confirmed only when its (passage, target, rel) is in its "approved"; every
-    guard runs against the record as it stands."""
+    guard runs against the record as it stands. One record's runs take turns (`lock`): the hourly job's, a look-back's
+    and the weekly pass's would otherwise read the same links as unfiled and file them twice."""
+    with lock(repo):
+        return _sweep(repo, ask, confirm, dry_run, limit, cap, replay, items)
+
+
+@contextlib.contextmanager
+def lock(repo: Path):
+    """The linking job's turn on a record: a run waits for one already running on it."""
+    path = data_path("sweep") / f"{Store(repo).config.get('domain', {}).get('name', 'domain')}.lock"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w") as fh:
+        fcntl.flock(fh, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(fh, fcntl.LOCK_UN)
+
+
+def _sweep(repo: Path, ask, confirm, dry_run: bool, limit: int | None, cap: float, replay: dict | None,
+           items: list[str] | None) -> dict:
     p = pack.for_repo(repo)
     if not (p.prompts.get("sweep") and p.prompts.get("sweep_confirm")):
         raise SystemExit(f"engram: {repo}'s pack has no `sweep` and `sweep_confirm` words; its evidence isn't swept")

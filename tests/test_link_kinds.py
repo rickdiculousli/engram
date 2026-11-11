@@ -332,3 +332,38 @@ def test_a_thing_added_after_a_full_read_is_read_against_alone_and_nothing_is_re
     assert NOBODY in "\n".join(reads)
     _, again = sweep(w, [])
     assert not again.of("sweep")
+
+
+def test_a_loop_with_no_moments_shows_no_for_or_against_where_the_repo_names_its_own_kinds(inner):
+    inner()
+    text = history("loop/quiet")
+    [row] = [json.loads(l) for l in text.splitlines() if l.startswith('{"theory":"the quiet loop"')]
+    assert "for" not in row and "against" not in row
+
+
+def test_a_kind_that_names_no_theory_kinds_may_point_at_any_the_job_reads_against(inner):
+    w = inner()
+    toml = w.repo / ".engram/engram.toml"
+    text = toml.read_text()
+    toml.write_text(text.replace('label = "did differently"\nmeans = "Sam stepped out of the old pattern here"\nto = ["belief", "part", "loop", "insight"]\n',
+                                 'label = "did differently"\nmeans = "Sam stepped out of the old pattern here"\n'))
+    assert relink.kinds(w.repo).rels["did-differently"].to is None
+    words = "I spoke first in the meeting"
+    e = moment(w, words)
+    out, _ = sweep(w, [{"record": e, "to": "loop/quiet", "rel": "did-differently", "passage": words}], dry_run=True)
+    assert [(x["from"], x["rel"]) for x in out["links"]] == [(e, "did-differently")]
+
+
+def test_a_look_back_waits_for_the_linking_job_running_on_the_same_record(inner):
+    """One record's linking job runs one at a time, so a look-back and the hourly job never file one link twice."""
+    import threading
+    w = inner()
+    moment(w, NOBODY)
+    m = Model()
+    with relink.lock(w.repo):
+        t = threading.Thread(target=relink.sweep, args=(w.repo,), kwargs={"ask": m, "confirm": m, "items": ["belief/unlikable"]})
+        t.start()
+        t.join(1.5)
+        assert t.is_alive() and not m.of("sweep")
+    t.join(30)
+    assert m.of("sweep")

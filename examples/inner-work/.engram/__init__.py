@@ -125,11 +125,11 @@ Earlier notes: {recent}"""
 # ---- Not yet read by engram: the inner-work changes' words ----
 
 SUGGEST = """Claude's ideas about {owner} that he hasn't taken up (a hunch, "maybe there's a part of you that...", a belief or a
-pattern Claude names in him) are kept too, as Claude's. For each new one Claude offers after line {upto}, give
-"suggestions": [{{"line": <Claude's line>, "quote": <Claude's words for the idea, copied exactly>, "kind": one of
-{kinds}, "id": <kind>/<a few words, lower case, joined by dashes>, "name": <a short name for it>}}]. When Claude offers
-again, in any words, an idea the theory above already holds as the guide's suggestion, give that thing's own id: it's
-the same suggestion, said again. A different idea about the same part or belief is a new one.
+pattern Claude names in him) are kept too, as Claude's. For each such idea Claude offers after line {upto}, new or
+said again, give "suggestions": [{{"line": <Claude's line>, "quote": <Claude's words for the idea, copied exactly>,
+"kind": one of {kinds}, "id": <kind>/<a few words, lower case, joined by dashes>, "name": <a short name for it>}}]. An
+idea the theory above already holds as the guide's suggestion, offered again in any words, takes that thing's own id:
+it's the same suggestion, said again. A different idea about the same part or belief is a new one, with a new id.
 
 What {owner} says after line {upto} about one of the guide's suggestions above goes under "theory", with his line and
 his words:

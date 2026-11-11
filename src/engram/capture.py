@@ -864,7 +864,8 @@ def check_suggestion(item: dict, guides: dict[int, tuple[str, str]], g, rels: li
     """Why the guide's suggestion can't go into the theory, or None. Its quote is the guide's own words, whole words of
     the guide's message on its line, past the filed mark (`guides`: line -> its text and day). It's a new thing of one of
     the record's own kinds (`kind`, `id`, `name`), or a join between two things the theory holds (`link`); never a
-    status or a stage, which are the owner's, and never a loop's step: a suggestion can't change what he agreed to."""
+    status or a stage, which are the owner's, and never a loop's step: a suggestion can't change what he agreed to. A
+    line is a reply's own, or the owner's message the replies answer, as the conversation shows them."""
     try:
         line = int(item.get("line"))
     except (TypeError, ValueError):
@@ -1575,8 +1576,13 @@ def _file(domain: str, root: Path, path: Path, p: pack.Pack, s: sessions.Session
     places = [x for i, x in enumerate(places) if i not in repeats]
     files, proposed, joins = [], {}, []  # what the guide suggested: its things' files, their "proposed", its joins
     if asked:
-        guides = {ln: (r, when.get(x.line) or _now().date().isoformat())
-                  for x in shown.exchanges for ln, r in zip(x.reply_lines, x.replies) if ln > upto}
+        guides = {}  # a reply by its own line, and the replies to his message by its line, as the conversation shows them
+        for x in shown.exchanges:
+            new = [(ln, r) for ln, r in zip(x.reply_lines, x.replies) if ln > upto]
+            day = when.get(x.line) or _now().date().isoformat()
+            guides |= {ln: (r, day) for ln, r in new}
+            if new:
+                guides.setdefault(x.line, ("\n\n".join(r for _, r in new), day))
         files, proposed, joins = suggested(parsed.get("suggestions") or [], guides, g, th[1], path.stem, res)
     answered = set()  # a suggestion he speaks of in the session it was made starts at his word; its file keeps the guide's
     for t in parsed.get("theory") or []:

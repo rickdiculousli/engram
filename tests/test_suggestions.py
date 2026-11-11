@@ -328,3 +328,10 @@ def test_a_hedged_yes_when_asked_is_kept_on_the_suggestion_as_the_question_and_h
     [e] = w.events(about="belief/on-the-outside")[-1:]
     assert e.fm["answering"] == BURDEN and "“yeah”" in e.fm["title"]
     assert [d for d in out["dropped"] if "belief/burden isn't one of the guide's suggestions" in d["why"]]
+
+
+def test_a_suggestion_may_name_the_line_of_the_message_the_guide_answered(inner):
+    w = inner()
+    suggested(w, {**KEEPS, "id": "part/adds-it-up", "name": "adds it up", "line": KEEPS["line"] - 1,
+                  "quote": "adding up every time you didn't speak"})
+    assert theory.load(w.repo).things["part/adds-it-up"].by == "claude-suggestion"

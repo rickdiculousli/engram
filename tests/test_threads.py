@@ -196,3 +196,12 @@ def test_42_two_later_sessions_that_return_to_a_past_event_attach_to_the_same_on
                             "date": "not-sure", "kind": "observation", "about": [event]}]}), now=LATER + timedelta(hours=2))
     got = history(event)
     assert all(remark(w, words).id in got for words in ("when I was about ten", "the old house", "the bills thing"))
+
+
+def test_now_shows_his_words_on_a_thread_never_the_question_he_answered(inner):
+    w = inner(record=False)
+    w.chat(4, upto=8)
+    w.run(Model({"facts": [fact(4, "on the phone with my father yesterday", "Sam's father asked him about money.",
+                                answering="When did you notice it this time?", create=[{"kind": "person", "name": "my father"}])]}))
+    [line] = [l for l in now_mod.text(w.repo).splitlines() if "my father" in l]
+    assert "on the phone with my father yesterday" in line and "notice it this time" not in line

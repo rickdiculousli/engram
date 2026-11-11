@@ -32,7 +32,6 @@ SHOW_STOPPED = timedelta(days=30)
 FINISHED = {"stopped", "done", "concluded", "ruled out", "resolved", "replaced", "inactive"}
 ONGOING = {"taking", "prn", "active"}
 QUIET = timedelta(days=90)
-SAID = re.compile(r"“[^”]+”")  # the owner's words in an entry the filer wrote
 RENEWAL = "renewal"  # an entry recording only that the owner said they're still on a thing: it moves `said`, nothing else
 
 
@@ -195,6 +194,19 @@ def mark(c: Current, today: date) -> str:
     return f"last mentioned {c.said[:7]}"
 
 
+def his_words(body: str) -> str:
+    """The owner's words, quoted, in an entry the filer wrote (`capture.entry`): its line `- <owner>: “<his words>”`, or
+    `- <owner>, answering “<the question>”: “<his words>”`, read from its last `: “`, so the question he answered is
+    never taken for his words; empty when it has no such line."""
+    me = config.owner()
+    for line in reversed(body.splitlines()):
+        line = line.rstrip()
+        head, sep, words = line.removesuffix("”").rpartition(": “")
+        if sep and line.endswith("”") and (head == f"- {me}" or head.startswith(f"- {me}, ")):
+            return f"“{words}”"
+    return ""
+
+
 def _chain(st: Store, today: date | None = None) -> list[Current]:
     today = today or date.today()
     cur = spec(st)
@@ -245,7 +257,7 @@ def _chain(st: Store, today: date | None = None) -> list[Current]:
             shown = re.sub(r"\*\*", "", first.split(": ", 1)[1] if first.startswith(name + ":") else first)
             if tt and tt.created(thing):  # his own words on it, as said
                 name = tt.names[thing][0]
-                shown = next((m[0] for l in reversed(last.body.splitlines()) if (m := SAID.search(l))), shown)
+                shown = his_words(last.body) or shown
             group = cur.threads[prefix]
             started, changed = (_first_session(st, thing, corrected, cur.starts[prefix]) if prefix in cur.starts else ""), ""
         history = [f"{e.fm.get('status', '')} {_day(e) or 'date not sure'}" for e in evs]

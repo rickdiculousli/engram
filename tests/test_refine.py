@@ -164,7 +164,8 @@ def writer(html="<!DOCTYPE html><html>page</html>", cost=1.5):
     return run, calls
 
 
-def test_a_digest_brings_waiting_specs_and_each_change_once_then_nothing_when_nothing_waits(served):
+def test_a_digest_brings_waiting_specs_and_each_change_once_then_nothing_when_nothing_waits(served, monkeypatch):
+    monkeypatch.setattr(refine.sys, "platform", "darwin")  # a page that opens is marked shown
     med = served["med"]
     (med / ".engram/specs").mkdir()
     for f, status in (("a", "open"), ("b", "approved"), ("c", "deferred"), ("d", "approved\nblocked: it would rewrite the record")):
@@ -181,7 +182,7 @@ def test_a_digest_brings_waiting_specs_and_each_change_once_then_nothing_when_no
     assert "# Spec a" in prompt and "# Spec d" in prompt and "# Spec b" in prompt and "# Spec c" not in prompt  # approved and unbuilt shows, blocked or not
     day = git(med, "log", "-1", "--format=%as").strip()
     assert f"- {day}: the advisor's rules are shorter" in prompt and f"# In {med.name}" in prompt
-    assert calls[1:] == [(["open", str(page)], None)] or refine.sys.platform != "darwin"
+    assert calls[1:] == [(["open", str(page)], None)]
     refine.digest({"med": med}, 3.0, run)
     assert "# Spec a" in calls[-2][1] and "rules are shorter" not in calls[-2][1]  # a change shows once, a spec until answered
     for f in "abd":
@@ -292,7 +293,8 @@ def test_the_cli_takes_a_repo_by_name_and_never_runs_every_repo_for_a_positional
 
 
 
-def test_a_digest_carries_the_portrait_of_proposed_jobs_until_they_are_confirmed(served):
+def test_a_digest_carries_the_portrait_of_proposed_jobs_until_they_are_confirmed(served, monkeypatch):
+    monkeypatch.setattr(refine.sys, "platform", "darwin")  # a page that opens is marked shown
     med = served["med"]
     page = med / ".engram/README.md"
     portrait = 'You come here for two things: "keep what I tell you" and the plan. #weekly. Is that it?'

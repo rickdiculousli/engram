@@ -297,7 +297,8 @@ def test_under_a_pass_the_ledger_and_reviews_are_the_real_folders(repo, monkeypa
     assert not refine.reviews()
 
 
-def test_a_failure_with_no_page_this_week_reaches_the_next_page_once(repo):
+def test_a_failure_with_no_page_this_week_reaches_the_next_page_once(repo, monkeypatch):
+    monkeypatch.setattr(refine.sys, "platform", "darwin")  # a page that opens is marked shown
     wk = refine.week()
     rows = [{"week": "2026-01-03", "repo": "engram", "started": "t", "dry_run": False, "ok": False, "error": "it left a spec", "cost_usd": 0.1},
             {"week": wk, "repo": "engram", "started": "u", "dry_run": False, "ok": False, "error": "free", "cost_usd": 0.1}]

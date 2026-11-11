@@ -1,9 +1,8 @@
 """The daily copy to a second box (docs/operations.md, "The daily copy"): `engram daily run` refreshes the session
 index, copies what can't be fetched again to `[daily] box` (the session files, usage logs, summaries, where moved
-records lived, the instance notes and each `[daily] copy` folder), has that box archive its mirror at the release this
-box runs, and pulls the archive's backups back. It never deletes there; `engram health` reads how its last run went."""
+records lived, the instance notes and each `[daily] copy` folder), has that box archive its mirror with the release it
+runs, and pulls the archive's backups back. It never deletes there; `engram health` reads how its last run went."""
 import json
-import shlex
 import subprocess
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -19,9 +18,9 @@ STALE = timedelta(days=2)  # a copy older than this has stopped running
 
 
 def settings() -> dict:
-    """`[daily]` in the config: `box`, the ssh host that keeps the mirror and archive; `engram`, its checkout of engram
-    (`~/repos/engram` by default); `copy`, pairs of a local folder and where under its data folder it lands."""
-    return {"engram": "~/repos/engram", "copy": [], **config.raw().get("daily", {})}
+    """`[daily]` in the config: `box`, the ssh host that keeps the mirror and archive; `copy`, pairs of a local folder and
+    where under its data folder it lands."""
+    return {"copy": [], **config.raw().get("daily", {})}
 
 
 def box() -> str | None:
@@ -45,12 +44,8 @@ def steps(s: dict) -> list[tuple[str, list[str]]]:
             for d, what in (("summaries", "summaries"), ("moved", "moved records")) if data_path(d).is_dir()]
     if (own := refine.own()) and (own / "local").is_dir():
         out.append(("copy instance notes", ["rsync", "-a", f"{own / 'local'}/", f"{host}:{REMOTE}local-copy/"]))
-    tag = subprocess.run(["git", "-C", str(data_path("release")), "describe", "--tags", "--exact-match"],
-                         capture_output=True, text=True).stdout.strip()  # the box runs the release this one runs, never main
-    repo = s["engram"]
-    out += [("archive on the box", ["ssh", "-o", "BatchMode=yes", host,
-                                    f"export PATH=$HOME/.local/bin:$PATH; git -C {repo} fetch -q --tags && "
-                                    f"git -C {repo} checkout -q {shlex.quote(tag or 'NO-RELEASE-TAG')} && engram archive ingest --backup"]),
+    out += [("archive on the box", ["ssh", "-o", "BatchMode=yes", host,  # its own release, never this box's checkout
+                                    "export PATH=$HOME/.local/bin:$PATH; engram archive ingest --backup"]),
             ("pull backups", ["rsync", "-a", f"{host}:{REMOTE}backups/", f"{data_path('backups')}/"])]
     return out
 

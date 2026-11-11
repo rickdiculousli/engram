@@ -7,7 +7,7 @@
 | `engram` repo: code, schema, tests, benchmarks, docs; no personal data | a clone on each box that runs it |
 | each area's record and its pack (`.engram/`) | the area's own record repo |
 | indexes, usage logs, summaries, question sets and results | the data folder, `~/.local/share/engram/` (`ENGRAM_DATA`), one index file per domain; `paths.DATA` lists every entry engram writes there, and agents' notes go in its `work/` |
-| engram's config: the owner, the domains and the pack commit each runs, the archive's mirror, the second box | each box's `~/.config/engram/config.toml` (`ENGRAM_CONFIG` lays a file over it) |
+| engram's config: the owner and their time zone, the domains and the pack commit each runs, the archive's mirror, the second box | each box's `~/.config/engram/config.toml` (`ENGRAM_CONFIG` lays a file over it) |
 | packs as pinned, extracted read-only; each release's tag and pins | `~/.local/share/engram/packs/<domain>/<commit>/`, `releases.jsonl` |
 | the archive | the box `[archive] mirror` names, `~/.local/share/engram/archive.sqlite` |
 

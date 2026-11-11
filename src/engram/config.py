@@ -1,9 +1,12 @@
 """This box's instance of engram, from its config: whose record it is (`owner`), the domains (which repo each lives in
 and what to index from it) and the archive. The code names no instance: with no config there is no domain but the
 general pile, and every domain the config declares is served."""
+import os
+import time
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from engram.paths import config_files
 
@@ -60,3 +63,17 @@ def owner_id() -> str:
 def voice(text: str) -> str:
     """A template with the owner's name (`{owner}`) and id (`{owner_id}`) filled in."""
     return text.replace("{owner}", owner()).replace("{owner_id}", owner_id())
+
+
+def use_zone():
+    """The owner's time zone (`zone`, an IANA name such as "America/Los_Angeles") as this process's, so every date read
+    off a clock is the owner's day: a message's, the day "last night" counts back from, an entry's, a status's, "today".
+    Every command takes it first, and what engram starts inherits it. With none set, the box's own zone stands."""
+    if not (zone := raw().get("zone")):
+        return
+    try:
+        ZoneInfo(zone)
+    except (ZoneInfoNotFoundError, ValueError):  # the process would read an unknown zone as UTC, silently
+        raise SystemExit(f"engram: zone {zone!r} in the config isn't a time zone (one such as America/Los_Angeles)")
+    os.environ["TZ"] = zone
+    time.tzset()

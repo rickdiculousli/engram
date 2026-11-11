@@ -1077,6 +1077,7 @@ def main(argv=None):
     s.set_defaults(fn=cmd_summarize)
 
     a = p.parse_args(argv)
+    config.use_zone()
     a.fn(a)
 
 

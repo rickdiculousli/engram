@@ -66,11 +66,11 @@ skip_kinds = ["practice"]  # never sent to the linking job; the guide's suggesti
 hourly = true  # the linking job runs in the hourly job, whatever [refine] says
 [links.moment.rels.showed-up]
 label = "showed up"
-means = "the belief, loop or part was active in this moment, whatever set it off"
+means = "the belief, loop or part was active in this moment"
 to = ["belief", "part", "loop"]
 [links.moment.rels.set-off-by]
 label = "set off by"
-means = "this moment set it off, and it isn't itself active here: what happened before it showed up"
+means = "what triggered it: what happened that set it off, in a passage of that alone; the words in which it speaks (saying it, saying it's so, expecting what it expects) are it showing up, never what set it off"
 to = ["belief", "part", "loop"]
 [links.moment.rels.did-differently]
 label = "did differently"

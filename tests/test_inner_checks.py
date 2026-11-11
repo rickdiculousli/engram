@@ -73,3 +73,27 @@ def test_m9_is_wrong_unless_adopted_with_his_words_or_kept_as_the_question_and_y
     asked = {**M9, "expect": {"id": SUG["id"], "status": "proposed", "kept": "question and yeah", "in_chat": 1}}
     assert checks.judge_m9(asked, {}, KEPT)["wrong"] is True
     assert checks.judge_m9(asked, {}, {**KEPT, "on_it": [{"title": "t", "answering": "Does that fit?"}]})["wrong"] is False
+
+
+M1 = {"id": "M1-10", "chat": [{"line": 1, "who": "owner", "text": "I know you'll say I'm not a burden. You always say that. But I am."},
+                              {"line": 2, "who": "guide", "text": "I won't argue with it. What happened?"},
+                              {"line": 3, "who": "owner", "text": "Ana spent her whole Saturday helping me move. She looked exhausted."}],
+      "expect": {"target": "belief/burden", "only": ["showed-up"], "never": ["didnt-fit", "eased"]}}
+link = lambda rel, passage: {"line": 1, "to": "belief/burden", "rel": rel, "passage": passage}
+
+
+def test_m1_judges_the_statement_itself_and_lets_a_separate_trigger_line_be_what_set_it_off():
+    trigger = link("set-off-by", "Ana spent her whole Saturday helping me move.")
+    assert checks.judge_m1(M1, [link("showed-up", "But I am."), trigger], [trigger], [])["wrong"] is False
+    assert checks.judge_m1(M1, [link("set-off-by", "But I am.")], [], [])["wrong"] is True
+    assert checks.judge_m1(M1, [], [link("didnt-fit", "She looked exhausted.")], [])["wrong"] is True
+    assert checks.judge_m1(M1, [], [], [{"line": 3, "rel": "eased", "yes": True}])["wrong"] is True
+
+
+def test_m1_lets_what_triggered_it_be_set_off_by_on_the_statements_own_line():
+    case = {"id": "M1-02", "chat": [{"line": 1, "who": "owner", "text": "Had to ask Theo to drive me to the clinic again. I'm such a burden on everyone."}],
+            "expect": {"target": "belief/burden", "only": ["showed-up"], "never": ["didnt-fit", "eased"]}}
+    on = lambda rel, passage: {"line": 1, "to": "belief/burden", "rel": rel, "passage": passage}
+    assert checks.judge_m1(case, [on("set-off-by", "Had to ask Theo to drive me to the clinic again.")], [], [])["wrong"] is False
+    assert checks.judge_m1(case, [on("set-off-by", "Had to ask Theo to drive me to the clinic again. I'm such a burden on everyone.")], [], [])["wrong"] is True
+    assert checks.judge_m1(case, [on("set-off-by", "I'm such a burden")], [], [])["wrong"] is True

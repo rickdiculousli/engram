@@ -73,9 +73,8 @@ AUTOMATED = [(re.compile(p, re.S | re.M), label) for p, label in [
     (r"^Base directory for this skill: \S*?([\w-]+)\s", "Skill loaded"),
     (r"^Another Claude session sent a message:", "Another Claude session"),
     (r"^(=== QUEUED CONVERSATION SPANS|You generate concise git branch names|Review the change at this commit"
-     r"|(TODAY IS|Today is) \d{4}-\d{2}-\d{2}(\.(\s|$)| for this \w+\.)|# Scout packet|Build what's accepted in"
-     r"|Please analyze this codebase|You are executor \S+ in |YOUR PREVIOUS ANSWER WAS REJECTED)", "Prompt"),
-    (r"^You are the [^\n]*\n.*^#{1,6} ", "Prompt")]]  # a role a program hands out heads a brief with sections
+     r"|(TODAY IS|Today is) \d{4}-\d{2}-\d{2}(\. (Window:|The last read was)| for this \w+\.)|# Scout packet|Build what's accepted in"
+     r"|Please analyze this codebase|You are executor \S+ in |YOUR PREVIOUS ANSWER WAS REJECTED)", "Prompt")]]
 
 
 Unavailable = llm.Unavailable  # a call failed instead of answering: run() stops on it and keeps done sessions; tests raise it
@@ -111,6 +110,8 @@ def _launched() -> tuple[str, ...]:
 def speaker(s: sessions.Session, said: str, owner: str) -> tuple[str, str]:
     """Who wrote a user turn, and the words to show for it: the owner's (labelled `owner`) verbatim, a skill by name only."""
     if sessions.by_agent(s) or any(m in s.project for m in _launched()):
+        return "Prompt", said
+    if said.startswith("You are the ") and sessions.brief(said):  # a role a program hands out, in a brief with sections
         return "Prompt", said
     for pat, label in AUTOMATED:
         m = pat.match(said)

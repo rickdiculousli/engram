@@ -45,7 +45,9 @@ def test_a_message_sent_again_with_nothing_between_keeps_only_the_second(tmp_pat
 
 
 @pytest.mark.parametrize("words", ["You are the one who always says I'm lazy.",  # test 12
-                                   "Today is 2026-11-11 and I can't get up"])  # test 13
+                                   "You are the voice that says I fail.\nIt shows up\n# at work",
+                                   "Today is 2026-11-11 and I can't get up",  # test 13
+                                   "Today is 2026-11-11. Rough morning, stayed in bed."])
 def test_words_that_open_like_a_programs_prompt_mid_chat_are_his(tmp_path, words):
     s = read(tmp_path, [turn("user", "can we talk?"), reply("Of course."), turn("user", words), reply("I hear you.")])
     filed, shown = sams(s)

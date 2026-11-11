@@ -523,6 +523,9 @@ def test_a_page_a_box_with_no_screen_cant_open_is_not_marked_shown_and_health_sa
     from engram import cli
     cli.main(["health"])
     assert str(page) in capsys.readouterr().out
+    assert refine.digest({}, 3.0, run) == (0.0, "")  # nothing waits any more: health stops naming the page
+    cli.main(["health"])
+    assert str(page) not in capsys.readouterr().out
 
 
 def test_no_second_page_is_written_for_the_items_of_one_that_wasnt_shown(served, monkeypatch):  # test 91

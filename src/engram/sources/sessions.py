@@ -333,7 +333,7 @@ def ingest(doms: dict[str, Domain], root: Path | None = None) -> dict:
             rewritten = bool(prev) and (stt.st_size < prev[0] or (prev[0] >= HEAD and head != prev[2]))
             s = parse(p, root)
             domain = classify(s, doms)
-            if s.stem in excluded.get(domain, ()):  # skipped like a title generator: its summary goes (summarize.index_all)
+            if any(s.stem.startswith(x) for x in excluded.get(domain, ())):  # by the id or the prefix the record shows; skipped like a title generator: its summary goes (summarize.index_all)
                 domain = "skipped"
             counts["read"] += 1
             counts["rewritten"] += rewritten

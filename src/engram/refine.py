@@ -570,6 +570,7 @@ def digest(targets: dict[str, Path], budget: float, runner=subprocess.run, rows:
             items.append(f"# In {repo.name}\n\n" + "\n\n".join(part))
         changed |= {sha for sha, _, _ in new} | ({failed[name][0]} if name in failed else set())
     if not items:
+        _put("unshown.json", {})  # nothing waits, so no page is waiting to be seen
         return 0.0, ""
     held = _unshown()
     if held.get("items") == (key := hashlib.sha256("\n\n".join(items).encode()).hexdigest()):

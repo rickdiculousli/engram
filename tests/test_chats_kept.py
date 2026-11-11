@@ -73,9 +73,10 @@ def _summarized(world, monkeypatch):
     assert any(h["class"] == "summary" for h in search.search("shoulder stiff", ["medical"], limit=10))
 
 
-def test_an_excluded_chat_loses_its_stored_summary_and_later_runs_skip_it(world, monkeypatch):  # test 8
+@pytest.mark.parametrize("named", ["s1", "s"])  # its whole id, or the prefix the record shows
+def test_an_excluded_chat_loses_its_stored_summary_and_later_runs_skip_it(world, monkeypatch, named):  # test 8
     _summarized(world, monkeypatch)
-    keep(world, 'exclude = ["s1"]')
+    keep(world, f'exclude = ["{named}"]')
     monkeypatch.setattr(summarize, "_claude", lambda *a: pytest.fail("a call was made"))
     calls = []
     out = hourly.run(ask=fake([fact(3, AFTER)], calls), summaries=True, now=LATER)

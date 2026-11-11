@@ -301,7 +301,7 @@ REL = {("timeline", "out"): "led to", ("timeline", "in"): "led from", ("evidence
 LISTED = {"occurrence": ("occurrence", "on the timeline of"), "arc-step": ("arc step", "on the arc of")}
 # What the record says against itself: shown first at both ends (in, out), with the link's note.
 FIXED = {"supersedes": ("outdated by", "outdates"), "revises": ("revised by", "revises"),
-         "disagrees": ("disagrees with", "disagrees with")}
+         "disagrees": ("disagrees with", "disagrees with"), "corrects": ("corrected by", "corrects")}
 
 
 def _excluded(source: str, ref: str = "") -> bool:
@@ -378,7 +378,8 @@ def _surround(path, rows: list[dict], q: str = "", per_hit: int | None = None, w
             fixed.sort(key=lambda n: n["rel"] not in {x for v in FIXED.values() for x in v})
             listed = sorted(timeline, key=lambda x: x[0])
             pick = fixed + [n for _, n in listed] + [n for *_, n in scored[:per_hit]]
-            pick = [n for n in pick if (n["ref"] not in shown and norm(n["ref"]) not in shown) or n["rel"] in {v[0] for v in LISTED.values()}]
+            pick = [n for n in pick if (n["ref"] not in shown and norm(n["ref"]) not in shown)
+                    or n["rel"] in {v[0] for v in LISTED.values()} | {FIXED["corrects"][0]}]  # a note shows its corrections
             shown |= {n["ref"] for n in pick}
             if pick:
                 r["surroundings"] = pick

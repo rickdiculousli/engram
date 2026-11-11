@@ -40,6 +40,7 @@ as a journal page the advisor saves, never by the hourly job and never as a symp
 There is no keyword filter: a word list silently loses whatever isn't on it, and the volume makes it unnecessary.
 """
 import contextlib
+import dataclasses
 import json
 import re
 import sqlite3
@@ -47,7 +48,7 @@ from collections import Counter
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-from engram import commitmsg, config, dates, fix, llm, pack, periods, recsum, store, summarize, units, verbatim
+from engram import commitmsg, config, dates, fix, llm, notes, pack, periods, recsum, store, summarize, units, verbatim
 from engram import now as now_mod
 from engram import theory as theory_mod
 from engram.paths import data_path, record_conf, record_toml
@@ -62,6 +63,8 @@ CREATE TABLE IF NOT EXISTS filed (session TEXT PRIMARY KEY, domain TEXT, path TE
 CREATE TABLE IF NOT EXISTS run (at TEXT, ok INTEGER, sessions INTEGER, filed INTEGER, dropped INTEGER, usd REAL, error TEXT);
 CREATE TABLE IF NOT EXISTS repo (domain TEXT PRIMARY KEY, root TEXT NOT NULL, setup TEXT NOT NULL, at TEXT);
 CREATE TABLE IF NOT EXISTS narrow (domain TEXT PRIMARY KEY, mark TEXT NOT NULL, counts TEXT NOT NULL DEFAULT '{}');
+CREATE TABLE IF NOT EXISTS note (session TEXT, start TEXT, refused INTEGER NOT NULL DEFAULT 0, at TEXT,
+  PRIMARY KEY (session, start));
 """
 
 
@@ -890,6 +893,10 @@ def links_for(eid: str, fm: dict, where: dict, quote: str, source: str, st: stor
             except docreg.MoveError:  # a page without the section: filed as named, the rename check guards it
                 return lfm
         out = [(ided(lfm), note) for lfm, note in out]
+    if fixes := where.get("corrects"):  # a note it corrects: shown with the note, which stays as it was
+        out.append(({"title": f"{eid} corrects {fixes}", "date": fm.get("reported"), "kind": "link", "about": fm.get("about"),
+                     "from": eid, "to": fixes, "family": "evidence", "rel": "corrects", "by": "claude",
+                     "author": "engram-capture"}, quote[:120]))
     if old := fm.get("supersedes"):  # no source: it isn't something the session filed, and it's the same link `engram add` writes
         out.append(({"title": f"{eid} supersedes {old}", "date": fm.get("reported"), "kind": "link", "about": fm.get("about"),
                      "from": eid, "to": old, "family": "evidence", "rel": "supersedes", "by": "claude",
@@ -1142,11 +1149,12 @@ def file_session(domain: str, root: Path, path: Path, ask=None, dry_run: bool = 
                  ask_verify=None) -> dict:
     """Read one session whole and file what's new since it was last filed; returns counts, the session's new mark
     (`mark`), which the caller writes once all its steps on the session have succeeded, and, for a dry run, what it
-    would file. The domain's pack says what's worth writing down; with no `file` words in it, nothing is filed."""
+    would file. The domain's pack says what's worth writing down; with no `file` words in it, nothing is filed. In a
+    repo with notes, each session of the chat (`notes.parts`) is its own call, in order, and one whose note is refused
+    the first time holds the mark before it."""
     p = pack.load(domain)
     if not p.prompts.get("file"):
         raise RuntimeError(f"engram files only for an area whose pack says what to write down; {domain}'s has no `file` words")
-    cur = p.current
     ask_structure = ask_structure or (ask if ask else _ask_structure)
     ask_verify = ask_verify or (ask if ask else _ask_verify)
     ask = ask or _ask
@@ -1154,132 +1162,218 @@ def file_session(domain: str, root: Path, path: Path, ask=None, dry_run: bool = 
         upto = (c.execute("SELECT upto FROM filed WHERE session = ?", (path.stem,)).fetchone() or (0,))[0]
     size = path.stat().st_size
     s = sessions.from_start(_parse(path), root)
-    later = owners(s, upto)
-    res = {"session": path.stem[:8], "filed": 0, "dropped": [], "kept": [], "would_file": [], "usd": 0.0,
-           "mark": (domain, path, max([upto, *later]), size)}
-    if later:
-        st = store.Store(root)
-        kinds, abouts, home = shape(st, p.kinds)
-        th = theory_shape(st, p.prompts.get("theory", ""))
-        mine = filed_from(st, path.stem)
-        already = [f"{e.date} {e.fm.get('title', '')}: {' '.join(e.body.split())[:200]} (id {e.id})" for e in mine]
-        already += [r[:300] for x in s.exchanges for r in x.ran if r.startswith("Bash:") and FILED.search(r)]
-        when = {x.line: sessions._local_date(x.ts) or _now().date().isoformat() for x in s.exchanges}
-        stands, marks = standing(st), landmarks(st)
-        stories, complaints = placement_shape(st)
-        rels = list(st.config.get("links", {}).get("timeline", {}).get("rels") or [])
-        reply, res["usd"] = ask(config.voice(p.prompts["file"]).format(domain=domain, upto=upto, kinds=", ".join(kinds), abouts=", ".join(abouts),
-                                              stories=", ".join(stories) or "none",
-                                              complaints="; ".join(f"{k} ({v[0]})" for k, v in complaints.items()) or "none",
-                                              conversation=conversation(s, upto), window=WINDOW,
-                                              landmarks=", ".join(f"{k} ({v})" for k, v in marks.items()) or "none",
-                                              theory=th[3].replace("{upto}", str(upto)) if th else "", already="\n".join(already) or "nothing",
-                                              record=record_context(domain, st, later, when, stands, p.prompts.get("record", ""))))
-        parsed = reply_json(reply)
-        turns, recent, his = turn_before(s), turn_before(s, RECENT), "\n".join(owners(s).values())
-        entries, lines, places = [], [], []
-        for f in parsed.get("facts") or []:
-            try:
-                line = int(f.get("line"))
-            except (TypeError, ValueError):
-                line = -1
-            adopts = f.get("kind") in AGREED and f.get("kind") in kinds  # a plan or decision, where the record keeps them
-            if adopts and f.get("answering") and not verbatim.found(str(f["answering"]), turns.get(line, "")):
-                f = {k: v for k, v in f.items() if k != "answering"}  # a plan he adopts rests on no question: one not asked just before isn't kept
-            why = check(f, later, turns, when.get(line), his, recent if adopts else None)
-            thing = now_mod.chain_for(st, str(f.get("entity") or "")) if cur.entity_kind and f.get("kind") == cur.entity_kind else None
-            if not why and cur.entity_kind and f.get("kind") == cur.entity_kind:
-                why = entity_repeat(f, stands, cur, thing)
-            if why:
-                res["dropped"].append({"session": path.stem[:8], "line": f.get("line"), "why": why, "text": str(f.get("text", ""))[:120],
-                                       "quote": str(f.get("quote", ""))[:200]})
-            else:
-                fm, body = entry(f, when[int(f["line"])], path.stem, kinds, abouts, home,
-                                 "\n".join([later[line], str(f.get("answering", ""))]), cur,
-                                 p.kinds[0] if p.kinds else "observation", marks)
-                if thing and fm["kind"] == cur.entity_kind:  # an existing chain: "Pataday" joins "Pataday 0.7%"
-                    fm["thing"] = thing
-                if target := correction_target(f, st):
-                    fm["supersedes"] = target
-                where = place(f, fm, st, stories, complaints, rels, p.occurrence_kinds)
-                entries.append((placed(fm, where), body))
-                lines.append(line)
-                places.append((where, " ".join(str(f.get("quote", "")).split())))
-        repeats, kept, usd = verify(domain, st, entries, ask_verify, p, forms(s, root))
-        res["usd"] += usd
-        for i, ref in kept.items():
-            if i not in repeats:
-                res["kept"].append({"session": path.stem[:8], "line": lines[i],
-                                    "why": f"kept: a new occurrence of something the record has ({ref})",
-                                    "text": entries[i][0]["title"]})
-        for i, ref in repeats.items():
-            res["dropped"].append({"session": path.stem[:8], "line": lines[i], "why": f"already in {ref}",
-                                   "text": entries[i][0]["title"]})
-        for i, target, usd in confirm_corrections(st, entries, repeats, ask_verify, p, path.stem):
-            res["usd"] += usd
-            if target:
-                res["kept"].append({"session": path.stem[:8], "line": lines[i], "why": f"filed, not as a correction of {target}",
-                                    "text": entries[i][0]["title"]})
-        entries = [x for i, x in enumerate(entries) if i not in repeats]
-        places = [x for i, x in enumerate(places) if i not in repeats]
-        for t in parsed.get("theory") or []:
-            if not isinstance(t, dict):
-                continue
-            why = check_theory(t, later, turns, *th[:3]) if th else "the record has no theory graph"
-            if why:
-                res["dropped"].append({"session": path.stem[:8], "line": t.get("line"), "why": why, "text": str(t.get("quote", ""))[:120]})
-            else:
-                entries.append(theory_entry(t, when[int(t["line"])], path.stem, th[0]))
-        revision = None
-        try:
-            line = int(parsed.get("structural"))
-        except (TypeError, ValueError):
-            line = None
-        if th and line in later and p.prompts.get("structure"):
-            revision, why, usd = structure(domain, st, s, line, later, turns, th, ask_structure, p.prompts.get("structure", ""))
-            res["usd"] += usd
-            if why:
-                res["dropped"].append({"session": path.stem[:8], "line": line, "why": why, "text": "a structural theory change"})
-        places += [None] * (len(entries) - len(places))  # theory changes carry no placement
-        once = {}  # the same fact twice is filed once: in one second the two would share an id and the store refuse it
-        for x, w in zip(entries, places):
-            once.setdefault(json.dumps(x, sort_keys=True, default=str), (x, w))
-        entries, places = [x for x, _ in once.values()], [w for _, w in once.values()]
-        if dry_run:
-            res["would_file"] = [{"session": path.stem[:8], **fm, "body": body,
-                                  **({"placement": w[0]} if w and (w[0]["occurrence"] or w[0]["led_from"]) else {})}
-                                 for (fm, body), w in zip(entries, places)]
-            if revision:
-                res["would_file"].append({"session": path.stem[:8], "kind": "theory-change", "ops": revision["ops"]})
+    res = {"session": path.stem[:8], "filed": 0, "dropped": [], "kept": [], "would_file": [], "usd": 0.0}
+    cfg, gap = notes.settings(root, p.prompts.get("note", "")), notes.pause(root)
+    if not (cfg and gap):
+        later = owners(s, upto)
+        res["mark"] = (domain, path, max([upto, *later]), size)
+        if later:
+            _file(domain, root, path, p, s, s, upto, later, res, ask, ask_structure, ask_verify, dry_run)
+        return res
+    for part in notes.parts(s, gap):  # each session its own call, its note written once
+        later = {l: w for l, w in owners(s, upto).items() if part.first <= l <= part.last}
+        if not later or notes.noted(root, path.stem, part):  # a session saved once: a rewritten chat keeps its note
+            upto = max([upto, *later])
+            continue
+        one = dataclasses.replace(s, exchanges=part.exchanges)
+        if _file(domain, root, path, p, s, one, upto, later, res, ask, ask_structure, ask_verify, dry_run, part, cfg):
+            res["mark"] = (domain, path, upto, 0)  # its note is asked for again next run, and nothing after it before then
             return res
-        if revision:
-            from engram import theorychange
-            said = (f"{revision['quote']} (agreeing to “{' '.join(str(revision['answering']).split())}”)"
-                    if revision.get("answering") else str(revision["quote"]))
-            r = theorychange.apply(root, revision["ops"], by=config.owner_id() if not revision.get("answering") else "with-claude",
-                                   why=str(revision.get("why", "")), said=said, date=when.get(line),
-                                   source=f"agreed in session {path.stem[:8]} on {when.get(line)}")
-            res["filed"] += len(r.written)
-        left = []
-        for x, w in zip(entries, places):  # before the transaction, which holds the lock the fix takes
-            old = x[0].pop("edits", None)
-            if old and rewrite(st, old, *x):
-                res["filed"] += 1
-                res["kept"].append({"session": path.stem[:8], "line": None, "why": f"rewrote {old}, the same session's slip", "text": x[0]["title"]})
-                continue
-            if old:
-                x[0]["supersedes"] = old
-            left.append((x, w))
-        entries, places = [x for x, _ in left], [w for _, w in left]
-        if entries:
-            with st.transaction(message=commitmsg.message("facts", n=len(entries), session=path.stem[:8])) as tx:
-                dom = st.config.get("domain", {}).get("name", "")
-                for (fm, body), w in zip(entries, places):
-                    eid = tx.add({**fm, "domain": dom}, body).id
-                    for lfm, note in links_for(eid, fm, w[0], w[1], fm.get("source", ""), st) if w else []:
-                        tx.add({**lfm, "domain": dom}, note)
-        res["filed"] += len(entries)
+        upto = max(later)
+    res["mark"] = (domain, path, upto, size)
     return res
+
+
+def _file(domain: str, root: Path, path: Path, p: pack.Pack, s: sessions.Session, shown: sessions.Session, upto: int,
+          later: dict[int, str], res: dict, ask, ask_structure, ask_verify, dry_run: bool,
+          part: "notes.Part | None" = None, cfg: "notes.Settings | None" = None) -> bool:
+    """One call over `shown` (the chat, or one session of it), filing what the owner said past `upto` (`later`) into
+    `res`; for a session in a repo with notes, its note too. True when its note was refused for the first time: then
+    nothing is filed and the session waits to be asked again."""
+    cur = p.current
+    st = store.Store(root)
+    kinds, abouts, home = shape(st, p.kinds)
+    th = theory_shape(st, p.prompts.get("theory", ""))
+    mine = filed_from(st, path.stem)
+    already = [f"{e.date} {e.fm.get('title', '')}: {' '.join(e.body.split())[:200]} (id {e.id})" for e in mine]
+    already += [r[:300] for x in s.exchanges for r in x.ran if r.startswith("Bash:") and FILED.search(r)]
+    when = {x.line: sessions._local_date(x.ts) or _now().date().isoformat() for x in s.exchanges}
+    stands, marks = standing(st), landmarks(st)
+    stories, complaints = placement_shape(st)
+    rels = list(st.config.get("links", {}).get("timeline", {}).get("rels") or [])
+    reply, usd = ask(config.voice(p.prompts["file"]).format(domain=domain, upto=upto, kinds=", ".join(kinds), abouts=", ".join(abouts),
+                                          stories=", ".join(stories) or "none",
+                                          complaints="; ".join(f"{k} ({v[0]})" for k, v in complaints.items()) or "none",
+                                          conversation=conversation(shown, upto), window=WINDOW,
+                                          landmarks=", ".join(f"{k} ({v})" for k, v in marks.items()) or "none",
+                                          theory=th[3].replace("{upto}", str(upto)) if th else "", already="\n".join(already) or "nothing",
+                                          record=record_context(domain, st, later, when, stands, p.prompts.get("record", "")))
+                         + (f"\n\n{notes.prompt(cfg, part, notes.recent(root))}" if part else ""))
+    res["usd"] += usd
+    parsed = reply_json(reply)
+    note, hold = _note(root, path, s, parsed, part, cfg, st, when, res, dry_run) if part else (None, False)
+    turns, recent, his = turn_before(s), turn_before(s, RECENT), "\n".join(owners(s).values())
+    entries, lines, places, fixable = [], [], [], notes.refs(root)
+    for f in parsed.get("facts") or []:
+        try:
+            line = int(f.get("line"))
+        except (TypeError, ValueError):
+            line = -1
+        adopts = f.get("kind") in AGREED and f.get("kind") in kinds  # a plan or decision, where the record keeps them
+        if adopts and f.get("answering") and not verbatim.found(str(f["answering"]), turns.get(line, "")):
+            f = {k: v for k, v in f.items() if k != "answering"}  # a plan he adopts rests on no question: one not asked just before isn't kept
+        why = check(f, later, turns, when.get(line), his, recent if adopts else None)
+        thing = now_mod.chain_for(st, str(f.get("entity") or "")) if cur.entity_kind and f.get("kind") == cur.entity_kind else None
+        if not why and cur.entity_kind and f.get("kind") == cur.entity_kind:
+            why = entity_repeat(f, stands, cur, thing)
+        if why:
+            res["dropped"].append({"session": path.stem[:8], "line": f.get("line"), "why": why, "text": str(f.get("text", ""))[:120],
+                                   "quote": str(f.get("quote", ""))[:200]})
+        else:
+            fm, body = entry(f, when[int(f["line"])], path.stem, kinds, abouts, home,
+                             "\n".join([later[line], str(f.get("answering", ""))]), cur,
+                             p.kinds[0] if p.kinds else "observation", marks)
+            if thing and fm["kind"] == cur.entity_kind:  # an existing chain: "Pataday" joins "Pataday 0.7%"
+                fm["thing"] = thing
+            if target := correction_target(f, st):
+                fm["supersedes"] = target
+            where = place(f, fm, st, stories, complaints, rels, p.occurrence_kinds)
+            if not target and (fixes := str(f.get("corrects") or "")) in fixable:
+                where["corrects"] = fixes  # a note isn't replaced by a correction of it: the correction shows with it
+            entries.append((placed(fm, where), body))
+            lines.append(line)
+            places.append((where, " ".join(str(f.get("quote", "")).split())))
+    if hold:
+        return True
+    if note:  # what the note states isn't filed again; what's filed beside it is shown under it
+        cited = {l.at for ls in note["sections"].values() for l in ls if l.who == "owner"}
+        for i in [i for i, (fm, _) in enumerate(entries) if fm["kind"] != cur.entity_kind and lines[i] in cited]:
+            res["dropped"].append({"session": path.stem[:8], "line": lines[i], "why": f"in the note {note['fm']['id']}",
+                                   "text": entries[i][0]["title"]})
+        keep = [i for i, (fm, _) in enumerate(entries) if not (fm["kind"] != cur.entity_kind and lines[i] in cited)]
+        entries, lines, places = [entries[i] for i in keep], [lines[i] for i in keep], [places[i] for i in keep]
+        for fm, _ in entries:
+            fm["note"] = note["fm"]["id"]
+    repeats, kept, usd = verify(domain, st, entries, ask_verify, p, forms(s, root))
+    res["usd"] += usd
+    for i, ref in kept.items():
+        if i not in repeats:
+            res["kept"].append({"session": path.stem[:8], "line": lines[i],
+                                "why": f"kept: a new occurrence of something the record has ({ref})",
+                                "text": entries[i][0]["title"]})
+    for i, ref in repeats.items():
+        res["dropped"].append({"session": path.stem[:8], "line": lines[i], "why": f"already in {ref}",
+                               "text": entries[i][0]["title"]})
+    for i, target, usd in confirm_corrections(st, entries, repeats, ask_verify, p, path.stem):
+        res["usd"] += usd
+        if target:
+            res["kept"].append({"session": path.stem[:8], "line": lines[i], "why": f"filed, not as a correction of {target}",
+                                "text": entries[i][0]["title"]})
+    entries = [x for i, x in enumerate(entries) if i not in repeats]
+    places = [x for i, x in enumerate(places) if i not in repeats]
+    for t in parsed.get("theory") or []:
+        if not isinstance(t, dict):
+            continue
+        why = check_theory(t, later, turns, *th[:3]) if th else "the record has no theory graph"
+        if why:
+            res["dropped"].append({"session": path.stem[:8], "line": t.get("line"), "why": why, "text": str(t.get("quote", ""))[:120]})
+        else:
+            entries.append(theory_entry(t, when[int(t["line"])], path.stem, th[0]))
+    revision = None
+    try:
+        line = int(parsed.get("structural"))
+    except (TypeError, ValueError):
+        line = None
+    if th and line in later and p.prompts.get("structure"):
+        revision, why, usd = structure(domain, st, s, line, later, turns, th, ask_structure, p.prompts.get("structure", ""))
+        res["usd"] += usd
+        if why:
+            res["dropped"].append({"session": path.stem[:8], "line": line, "why": why, "text": "a structural theory change"})
+    places += [None] * (len(entries) - len(places))  # theory changes carry no placement
+    once = {}  # the same fact twice is filed once: in one second the two would share an id and the store refuse it
+    for x, w in zip(entries, places):
+        once.setdefault(json.dumps(x, sort_keys=True, default=str), (x, w))
+    entries, places = [x for x, _ in once.values()], [w for _, w in once.values()]
+    if dry_run:
+        res["would_file"] = [{"session": path.stem[:8], **fm, "body": body,
+                              **({"placement": w[0]} if w and (w[0]["occurrence"] or w[0]["led_from"]) else {})}
+                             for (fm, body), w in zip(entries, places)]
+        if revision:
+            res["would_file"].append({"session": path.stem[:8], "kind": "theory-change", "ops": revision["ops"]})
+        if note:
+            res["would_file"].append({"session": path.stem[:8], **note["fm"], "body": note["text"]})
+        return False
+    if revision:
+        from engram import theorychange
+        said = (f"{revision['quote']} (agreeing to “{' '.join(str(revision['answering']).split())}”)"
+                if revision.get("answering") else str(revision["quote"]))
+        r = theorychange.apply(root, revision["ops"], by=config.owner_id() if not revision.get("answering") else "with-claude",
+                               why=str(revision.get("why", "")), said=said, date=when.get(line),
+                               source=f"agreed in session {path.stem[:8]} on {when.get(line)}")
+        res["filed"] += len(r.written)
+    left = []
+    for x, w in zip(entries, places):  # before the transaction, which holds the lock the fix takes
+        old = x[0].pop("edits", None)
+        if old and rewrite(st, old, *x):
+            res["filed"] += 1
+            res["kept"].append({"session": path.stem[:8], "line": None, "why": f"rewrote {old}, the same session's slip", "text": x[0]["title"]})
+            continue
+        if old:
+            x[0]["supersedes"] = old
+        left.append((x, w))
+    entries, places = [x for x, _ in left], [w for _, w in left]
+    if entries or note:
+        msg = commitmsg.message("note", n=len(entries), session=path.stem[:8]) if note else \
+            commitmsg.message("facts", n=len(entries), session=path.stem[:8])
+        with st.transaction(message=msg) as tx:
+            dom = st.config.get("domain", {}).get("name", "")
+            if note:  # never over an existing one: a note is written once
+                (root / note["path"]).parent.mkdir(parents=True, exist_ok=True)
+                with (root / note["path"]).open("x") as f:
+                    f.write(note["text"])
+                tx.extra.append(note["path"])
+            for (fm, body), w in zip(entries, places):
+                eid = tx.add({**fm, "domain": dom}, body).id
+                for lfm, why in links_for(eid, fm, w[0], w[1], fm.get("source", ""), st) if w else []:
+                    tx.add({**lfm, "domain": dom}, why)
+    res["filed"] += len(entries) + bool(note)
+    return False
+
+
+NOTE_TRIES = 2  # a refused note is asked for once more, the next run; then the session is summarized instead
+
+
+def _note(root: Path, path: Path, s: sessions.Session, parsed: dict, part: "notes.Part", cfg: "notes.Settings",
+          st: store.Store, when: dict, res: dict, dry_run: bool) -> tuple[dict | None, bool]:
+    """The session's note from the reply, checked (`notes.check`), and whether to hold the session for one more try:
+    (the note, False); (None, True) the first time a note is refused; else (None, False), as for a session that
+    wasn't a working one."""
+    if parsed.get("working") is not True:
+        return None, False
+    given = parsed.get("note") if isinstance(parsed.get("note"), dict) else {}
+    sections, left, refused = notes.check(given, part, cfg, owners(s), turn_before(s))
+    for at, why in left:
+        res["dropped"].append({"session": path.stem[:8], "line": at, "why": why, "text": "a line of the note"})
+    if refused:
+        with contextlib.closing(db()) as c, c:
+            tries = 1 + (c.execute("SELECT refused FROM note WHERE session = ? AND start = ?", (path.stem, part.start)).fetchone() or (0,))[0]
+            if not dry_run:
+                c.execute("INSERT OR REPLACE INTO note VALUES (?, ?, ?, ?)", (path.stem, part.start, tries, _now().isoformat(timespec="seconds")))
+        again = tries < NOTE_TRIES and not dry_run
+        res["dropped"].append({"session": path.stem[:8], "line": refused[0], "text": "the session's note",
+                               "why": f"note refused: {refused[1]}; " + ("asked for again next run" if again else "summarized instead")})
+        return None, again
+    same = [n for n in notes.read(root) if n["fm"].get("chat") == path.stem and notes.first_line(n) < part.first]
+    named = str(given.get("follows") or "")
+    follows = named if named in {n["fm"]["id"] for n in notes.recent(root)} else same[-1]["fm"]["id"] if same else ""
+    known = {a for e in st.events() for a in e.about}
+    nid, day = notes.note_id(path.stem, part), when.get(part.exchanges[0].line) or _now().date().isoformat()
+    fm = {"id": nid, "title": f"{config.owner()}'s session on {day}", "date": day, "kind": "note", "chat": path.stem,
+          "start": part.start, "lines": [part.first, part.last], "follows": follows,
+          "about": [a for a in given.get("about") or [] if isinstance(a, str) and a in known],
+          "source": f"said in session {path.stem[:8]} on {day}", "author": "engram-capture",
+          "recorded": _now().isoformat(timespec="seconds")}
+    return {"fm": fm, "sections": sections, "path": notes.note_path(cfg, nid), "text": notes.render(fm, sections, cfg)}, False
 
 
 def mark(domain: str, path: Path, upto: int, size: int):

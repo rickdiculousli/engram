@@ -8,6 +8,7 @@ from engram import config, figures
 TEMPLATES = {
     "write": "engram: {kind} {date}",  # the store's own; a record's [domain] commit_message replaces the format
     "facts": "engram: {n} facts {owner} said in session {session}",
+    "note": "engram: the note of {owner}'s session {session}, and {n} facts",
     "renewals": "engram: {owner} still on {n} things, said in session {session}",
     "narrow": "engram: {n} dates narrowed by dated documents",
     "theory": "engram: theory revision {day}",
@@ -24,7 +25,7 @@ TEMPLATES = {
     "wiki_merge": "engram: the wiki's health check merged concepts ({n}), their links repointed",
     "wiki_moved": "engram: links repointed to moved posts ({n})",
 }
-HOURLY = {"write", "facts", "renewals", "narrow", "theory", "relink", "wiki", "wiki_index", "wiki_merge", "wiki_moved"}  # what `engram capture run` commits, directly or through a theory change
+HOURLY = {"write", "facts", "note", "renewals", "narrow", "theory", "relink", "wiki", "wiki_index", "wiki_merge", "wiki_moved"}  # what `engram capture run` commits, directly or through a theory change
 
 
 class AmountInMessage(ValueError):

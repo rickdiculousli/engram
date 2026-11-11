@@ -4,7 +4,7 @@ import re
 import subprocess
 from pathlib import Path
 
-from engram import commitmsg, dates
+from engram import commitmsg, dates, notes
 from engram.config import Domain
 from engram.index import Doc
 from engram.labels import nid
@@ -148,6 +148,7 @@ def docs_for(d: Domain) -> list[Doc]:
     out: list[Doc] = []
     attrs = nodes(d.repo)
     folders = _own(d).get("spines", [])
+    whole = f"{notes.folder(d.repo)}/" if notes.folder(d.repo) else ""  # a note is one record, read whole
     for rel in files(d):
         text = (d.repo / rel).read_text(errors="replace")
         kind = rel.parts[0] if len(rel.parts) > 1 else rel.stem
@@ -169,7 +170,7 @@ def docs_for(d: Domain) -> list[Doc]:
                                author=a.get("by") or "repo", node=a.get("node", ""), milestone=a.get("milestone", 0),
                                stories=a.get("stories", "")))
             continue
-        secs = md_sections(text) if rel.suffix == ".md" else [([], text)]
+        secs = md_sections(text) if rel.suffix == ".md" and not (whole and r.startswith(whole)) else [([], text)]
         used: dict[str, int] = {}
         page = next((v for k, v in PAGES.items() if r.startswith(k)), "")
         for path, body in secs:

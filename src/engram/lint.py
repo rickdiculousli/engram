@@ -13,12 +13,14 @@ OBSIDIAN = ("[[", "> [!")  # wiki syntax, refused in the owner's commits to the 
 
 
 def staged_event_violations(repo: Path, events_dir: str = "events") -> list[str]:
-    """Staged changes that modify, delete, rename or retype an existing event file, change any line of the links
-    file or the document registry other than by appending, or change the node list other than by dropping rows. An
-    `engram fix` commit (engram.fix) names the paths it may edit or delete in ENGRAM_FIX, and only those pass."""
+    """Staged changes that modify, delete, rename or retype an existing event file or note, change any line of the
+    links file or the document registry other than by appending, or change the node list other than by dropping rows.
+    An `engram fix` commit (engram.fix) names the paths it may edit or delete in ENGRAM_FIX, and only those pass."""
+    from engram import notes
     fixing = set(json.loads(os.environ.get("ENGRAM_FIX") or "[]"))
+    kept = [events_dir, *filter(None, [notes.folder(repo)])]  # a note, once committed, is never rewritten
     out = subprocess.run(["git", "-C", str(repo), "diff", "--cached", "--name-status", "-M", "--diff-filter=MDRT",
-                          "--", events_dir], capture_output=True, text=True, check=True).stdout
+                          "--", *kept], capture_output=True, text=True, check=True).stdout
     bad = []
     for line in out.splitlines():
         if not line.strip():

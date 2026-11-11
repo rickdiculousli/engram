@@ -10,7 +10,6 @@ from engram import ingest, search, summarize
 from inner_work import (D, LATER, SAMPLE, SECTIONS, Model, answering, chat1_note, chat1_second_note, fact, guide,
                         inner, line_of, made, note, rows, said, text_of, zone)  # noqa: F401  (fixtures)
 
-NOT_YET = "change 4: no working session is saved as a note yet"
 EXERCISE = text_of(rows(1)[3])
 
 
@@ -25,7 +24,6 @@ def rejected(out, line):
     return [d for d in out["dropped"] if "note" in d["why"] and d.get("line") == line]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 def test_17_a_forty_message_exercise_is_one_note_with_its_five_sections(inner):
     w = inner()
     w.chat(1, upto=40)
@@ -36,8 +34,6 @@ def test_17_a_forty_message_exercise_is_one_note_with_its_five_sections(inner):
     assert answering(1, "chest. tight.") in line  # beside the question it answered
 
 
-@pytest.mark.xfail(strict=True, reason="change 4: a line under the owner's name is matched as a substring, so "
-                                       "\"no\" is found in \"I know\", and no note is checked at all")
 def test_18_no_is_not_found_in_i_know(inner):
     w = inner()
     w.chat(1, upto=40)
@@ -50,7 +46,6 @@ def test_18_no_is_not_found_in_i_know(inner):
     assert [d["why"] for d in out["dropped"] if d.get("quote") == "no"] == ["quote not in Sam's words"]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 def test_19_one_line_he_never_typed_rejects_the_whole_note_and_the_run_says_so(inner):
     w = inner()
     w.chat(1, upto=40)
@@ -62,7 +57,6 @@ def test_19_one_line_he_never_typed_rejects_the_whole_note_and_the_run_says_so(i
     assert rejected(out, at)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 @pytest.mark.parametrize("credited", ["owner", "guide"])
 def test_20_the_guides_words_under_what_changed_are_dropped_and_the_section_reads_not_said(inner, credited):
     w = inner()
@@ -75,7 +69,6 @@ def test_20_the_guides_words_under_what_changed_are_dropped_and_the_section_read
     assert "lighter" not in changed and "not said" in changed
 
 
-@pytest.mark.xfail(strict=True, reason="change 4: a rejected note is never retried, since nothing writes notes yet")
 def test_21_a_rejected_note_still_files_the_facts_gets_a_summary_and_is_retried_once(inner):
     w = inner()
     path = w.chat(1, upto=40)
@@ -93,7 +86,6 @@ def test_21_a_rejected_note_still_files_the_facts_gets_a_summary_and_is_retried_
     assert len(model.of("file")) == 2  # the note tried, then retried once, not every hour
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 def test_22_a_return_two_days_later_is_a_second_note_linked_to_the_first_which_never_changes(inner):
     w = inner()
     w.chat(1, upto=40)
@@ -107,7 +99,6 @@ def test_22_a_return_two_days_later_is_a_second_note_linked_to_the_first_which_n
     assert first["path"].read_bytes() == was
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 def test_23_a_forty_minute_silence_mid_exercise_makes_two_linked_notes_holding_every_message_once(inner):
     w = inner(2)
     before = note(what_you_brought=[said(2, "can we do the breathing exercise from last time?")],
@@ -120,11 +111,10 @@ def test_23_a_forty_minute_silence_mid_exercise_makes_two_linked_notes_holding_e
     w.run(Model(by={"the report was late": before, "had to step away": after}))
     notes = w.notes_of(2)
     assert len(notes) == 2 and notes[1]["fm"].get("follows") == notes[0]["fm"]["id"]
-    held = [line for n in notes for line in range(n["fm"]["lines"][0], n["fm"]["lines"][1] + 1)]
+    held = [line for n in notes for line in range(int(n["fm"]["lines"][0]), int(n["fm"]["lines"][1]) + 1)]  # front matter reads as text
     assert sorted(held) == list(range(1, len(rows(2)) + 1))  # every message in exactly one of them
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 def test_24_a_chat_rewritten_after_its_note_gets_no_second_note(inner):
     w = inner()
     path = w.chat(1, upto=40)
@@ -148,7 +138,6 @@ def test_25_a_check_in_gets_no_note_and_its_one_fact_is_an_entry(inner):
     assert [e.fm["title"] for e in w.mine()] == ["Did the breathing this morning."]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 def test_26_the_note_is_pushed_and_comes_back_from_a_fresh_clone_with_no_data(inner, monkeypatch):
     w = inner()
     w.chat(1, upto=40)
@@ -165,7 +154,8 @@ def test_26_the_note_is_pushed_and_comes_back_from_a_fresh_clone_with_no_data(in
     assert any(r["ref"].startswith("notes/") for r in search.search("chest tight", [D]))
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET + "; a theme's history also needs change 5")
+@pytest.mark.xfail(strict=True, reason="change 5: a theme's history (`timeline.chain` on a theme) is change 5's; "
+                                       "the note and the entry under it are written")
 def test_27_a_themes_history_shows_the_session_once_as_its_note_with_its_entries_under_it(inner):
     from engram import timeline
     w = inner()
@@ -190,7 +180,6 @@ def test_27_a_themes_history_shows_the_session_once_as_its_note_with_its_entries
     assert not [r for r in got if r is not shown[0] and practice.id in json.dumps(r)]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 def test_28_a_correction_to_what_only_a_note_holds_shows_with_it(inner):
     w = inner()
     w.chat(1, upto=40)
@@ -206,7 +195,6 @@ def test_28_a_correction_to_what_only_a_note_holds_shows_with_it(inner):
     assert hits and "uncle" in json.dumps(hits[0])
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 def test_29_the_note_is_dated_the_sessions_first_day_in_the_owners_zone(inner):
     w = inner()
     w.chat(1, upto=40)  # it starts at 03:00 UTC on the 4th: 7 pm on the 3rd in US Pacific
@@ -214,7 +202,6 @@ def test_29_the_note_is_dated_the_sessions_first_day_in_the_owners_zone(inner):
     assert str(one_note(w)["fm"]["date"]) == "2026-11-03"
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 def test_30_an_exercise_longer_than_a_line_is_kept_by_its_opening_words_as_the_guides(inner):
     w = inner()
     w.chat(1, upto=40)
@@ -234,3 +221,15 @@ def test_31_a_pack_with_no_note_settings_writes_nothing_and_leaves_the_summaries
     w.run(Model(chat1_note()))
     assert not (w.repo / "notes").exists()
     assert (sorted((p.name, p.read_bytes()) for p in summaries.glob("*.json")) if summaries.exists() else []) == before
+
+
+def test_a_committed_note_is_never_rewritten(inner):
+    """The record's pre-commit refuses an edit to a note, as to an entry."""
+    from engram import lint
+    w = inner()
+    w.chat(1, upto=40)
+    w.run(Model(chat1_note()))
+    n = one_note(w)
+    n["path"].write_text(n["text"].replace("chest. tight.", "chest. loose."))
+    subprocess.run(["git", "-C", str(w.repo), "add", "-A"], check=True)
+    assert [b.split("\t")[0] for b in lint.staged_event_violations(w.repo)] == ["M"]

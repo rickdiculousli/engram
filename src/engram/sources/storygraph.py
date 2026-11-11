@@ -7,6 +7,7 @@ them, so search can pick the section that fits the query."""
 from fnmatch import fnmatchcase
 from pathlib import Path
 
+from engram import notes
 from engram.config import Domain
 from engram.paths import record_toml
 from engram.store import Store
@@ -51,6 +52,7 @@ def links(d: Domain, refs: list[str] = (), first: dict[str, str] | None = None) 
     reg = Registry(Path(d.repo), events_dir=st.events_dir)
     patterns = st.config.get("nodes", {})
     by_id = {e.id: e for e in st.events()}
+    noted = notes.refs(d.repo)
     have = set(refs)
     first = first or {}
 
@@ -60,6 +62,8 @@ def links(d: Domain, refs: list[str] = (), first: dict[str, str] | None = None) 
         if x in by_id:
             r = ref_of(by_id[x], st)
             return [r] if r else []
+        if x in noted:
+            return [noted[x]]
         if x.startswith(("session:", "link/")):
             return [x]
         if reg and (reg.is_end(x) or "#" in x or "." in x.rsplit("/", 1)[-1]) and (w := reg.resolve(x)):

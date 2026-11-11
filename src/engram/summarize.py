@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from engram import config, daily, dates, llm, pack, verbatim
+from engram import config, daily, dates, llm, notes, pack, verbatim
 from engram.index import Doc, now, open_index
 from engram.paths import data_path, index_path
 from engram.sources import sessions
@@ -864,7 +864,10 @@ def plan(path: Path, domain: str) -> dict | None:
     s = _load_session(path)
     if s is None:
         return None
-    turns = clean(sessions.from_start(s, (d := config.load().get(domain)) and d.repo))
+    s = sessions.from_start(s, repo := (d := config.load().get(domain)) and d.repo)
+    if held := notes.held(repo, s.stem):  # a working session's note stands for it: no summary beside it
+        s.exchanges = [x for x in s.exchanges if x.line not in held]
+    turns = clean(s)
     if not turns:
         return {"path": path, "domain": domain, "empty": True}
     segs = segments(turns)

@@ -19,7 +19,7 @@ rels = ["led-to", "joined-into", "split-into", "ended"]
 [links.theory]
 rels = ["feeds", "under"]  # a loop's steps; a belief under a broader one
 [links.evidence]
-rels = ["revises", "supersedes"]
+rels = ["revises", "supersedes", "corrects"]  # an entry correcting a note corrects it
 
 [ways.treatment]
 entities = "practice"  # a practice is a way in by its name
@@ -30,8 +30,6 @@ paused = true  # the weekly pass waits for its own spec here
 [rewire]
 at = "51c05745a8ffb6c6452d7e4c1260a9039174408b"
 homes = {"events/" = "what was said, one entry each", "notes/" = "each working session, one note each", "theory/" = "beliefs, parts, insights and the loop"}
-
-# ---- Not yet read by engram: the inner-work settings ----
 
 [sessions]
 pause = 20  # minutes: a silence this long ends a session, and a session is saved once it has been over this long
@@ -47,6 +45,8 @@ sections = [
     {name = "what changed", by = ["owner"]},
     {name = "where you stopped", by = ["owner", "guide unanswered"]},
 ]
+
+# ---- Not yet read by engram: the inner-work settings ----
 
 [threads]  # change 5: what the filer may create, named only with the owner's words
 create = ["theme", "person", "event"]

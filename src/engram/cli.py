@@ -352,7 +352,7 @@ def cmd_lint(a):
     from engram import docreg
     bad = lint.staged_event_violations(Path(a.repo))
     if bad:
-        print("engram lint: event files are append-only; these staged changes edit, delete or rename one:", file=sys.stderr)
+        print("engram lint: event files and notes are append-only; these staged changes edit, delete or rename one:", file=sys.stderr)
         for b in bad:
             print("  " + b, file=sys.stderr)
         sys.exit(1)

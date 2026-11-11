@@ -23,7 +23,7 @@ import subprocess
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from engram import capture, config, daily, ingest, narrow, pack, recsum, refine, review, setup, store, summarize
+from engram import capture, config, daily, ingest, narrow, notes, pack, recsum, refine, review, setup, store, summarize
 from engram import now as now_mod
 from engram.paths import data_path, record_conf
 from engram.sources import sessions
@@ -35,16 +35,17 @@ STALE = timedelta(hours=3)  # the job runs hourly; three missed runs is a dead j
 FAILED = (Exception, SystemExit)
 
 
-def due(domain: str, now: datetime | None = None) -> list[Path]:
-    """The domain's main sessions that grew since they were last filed and have been idle an hour."""
-    now = now or capture._now()
+def due(domain: str, now: datetime | None = None, root: Path | None = None) -> list[Path]:
+    """The domain's main sessions that grew since they were last filed and have been idle an hour, or for a repo that
+    splits chats into sessions, its pause (`[sessions] pause`): a session is saved once it has ended."""
+    now, wait = now or capture._now(), notes.pause(root) or IDLE
     with contextlib.closing(sqlite3.connect(data_path("sessions-state.sqlite"), timeout=30)) as st:
         has = st.execute("SELECT 1 FROM sqlite_master WHERE name = 'file'").fetchone()
         paths = [Path(p) for (p,) in st.execute("SELECT path FROM file WHERE domain = ? AND gone IS NULL "
                                                 "AND path NOT LIKE '%/subagents/%'", (domain,))] if has else []
     with contextlib.closing(capture.db()) as c:
         done = dict(c.execute("SELECT session, bytes FROM filed WHERE domain = ?", (domain,)).fetchall())
-    return [p for p in paths if p.exists() and p.stat().st_size > done.get(p.stem, 0) and now - capture.last_message(p) >= IDLE]
+    return [p for p in paths if p.exists() and p.stat().st_size > done.get(p.stem, 0) and now - capture.last_message(p) >= wait]
 
 
 @contextlib.contextmanager
@@ -86,7 +87,7 @@ def run(ask=None, dry_run: bool = False, summaries: bool = True, now: datetime |
         except FAILED as e:
             _error(out, f"indexing: {type(e).__name__}: {e}")
         for d, root in repos.items():
-            idle = due(d, now)
+            idle = due(d, now, root)
             for p in idle:
                 with contextlib.closing(capture.db()) as c:
                     upto = (c.execute("SELECT upto FROM filed WHERE session = ?", (p.stem,)).fetchone() or (0,))[0]

@@ -15,6 +15,7 @@ The layout every record takes in engram, and the lessons learned getting real re
 | **Way in** | an index that lights records directly: a person, a tracked thing, a recurring thing in the owner's words, a role word | lights rows without depending on matching words |
 | **Lens** | a named category on an axis the owner asks by: a kind, a sector, a part of the body | picks which rows show; chosen from the question |
 | **Session summary** | what a session said, checked against its quotes | the only form a session takes in an index |
+| **Session note** | a working session, kept whole in the repo: a section each for what the pack names (what was brought, done, found, changed, where it stopped), every line its speaker's own words | in a repo that keeps notes, it stands for its session: no summary beside it, and the next chat starts from where it stopped |
 | **Wiki** | what's handed over, compiled: a page per concept, the concepts linking into each other, the sources that bear on each summarised under it, the owner's own writing linked whole | Claude's to keep, by edits code checks and splices in; every quote verbatim from what it cites; committed, changed only by the compiler; read in Obsidian |
 
 ## Which pattern each kind of knowledge takes
@@ -53,7 +54,7 @@ A kind of knowledge takes its pattern from who writes it. Decide it per kind: an
 
 - **One call returns the part of the record a question bears on, as a time-ordered graph:** the history with branches, the theory it touches (only the loops it touches, paths drawn), corrections inline. Cheaper than grep.
 - **A single fact is in what the advisor has after one move:** the "current" picture it starts with, plus one search's top 5. Any record stating the fact counts.
-- **A session starts with:** today's date, the advisor's guidance, and the current picture.
+- **A session starts with:** today's date, the advisor's guidance, and the current picture; in a repo that keeps notes, first where the last session stopped and what was saved since, or that it isn't saved yet.
 - **Each repo searches only itself;** across repos only when asked.
 - **The whole theory graph is one call** when asked for, as text or a diagram.
 

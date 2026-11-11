@@ -54,6 +54,8 @@ class Exchange:
     queued: list[tuple[int, str]] = field(default_factory=list)  # (replies before it, words): sent while Claude worked
     narration: set[int] = field(default_factory=set)  # replies Claude wrote between commands, before its final reply
     meta: bool = False  # text Claude Code injected as a user turn, such as a skill's instructions
+    end: str | None = None  # when its last row was written: where a pause after it starts
+    reply_lines: list[int] = field(default_factory=list)  # the chat file's line of each reply
 
 
 @dataclass
@@ -66,6 +68,7 @@ class Session:
     cwds: set = field(default_factory=set)
     cwd: str = ""  # the first working folder
     exchanges: list[Exchange] = field(default_factory=list)
+    lines: int = 0  # the chat file's lines
 
 
 def _text_of(content) -> tuple[list[str], list[str]]:
@@ -157,6 +160,7 @@ def parse(path: Path, root: Path | None = None) -> Session:
                 continue
             if isinstance(e, dict):
                 lines.append((n, e))
+        s.lines = n if lines else 0
         rewound = _rewound(lines)
         for n, e in lines:
             if n in rewound:
@@ -183,11 +187,13 @@ def parse(path: Path, root: Path | None = None) -> Session:
                 asked, meta = _said(e)
                 if asked and not asked.startswith(NOT_A_TURN):
                     cur = Exchange(n, e.get("timestamp"), asked, str(e.get("uuid") or ""), summary=asked.startswith(SUMMARY),
-                                   meta=meta)
+                                   meta=meta, end=e.get("timestamp"))
                     s.exchanges.append(cur)
                 if cur and results:
                     cur.results += results
+                    cur.end = e.get("timestamp") or cur.end
             elif t == "assistant" and cur is not None:
+                cur.end = e.get("timestamp") or cur.end
                 for b in msg.get("content") if isinstance(msg.get("content"), list) else []:
                     if not isinstance(b, dict):
                         continue
@@ -195,6 +201,7 @@ def parse(path: Path, root: Path | None = None) -> Session:
                         if msg.get("stop_reason") == "tool_use":
                             cur.narration.add(len(cur.replies))
                         cur.replies.append(b["text"].strip())
+                        cur.reply_lines.append(n)
                     elif b.get("type") == "tool_use":
                         cur.ran.append(_tool_line(b))
     return s

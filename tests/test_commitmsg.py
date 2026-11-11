@@ -60,7 +60,8 @@ WIKI = [("wiki", dict(item="doc-k7f2qa", n=3), "engram: the wiki from doc-k7f2qa
         ("wiki_merge", dict(n=1), "engram: the wiki's health check merged concepts (1), their links repointed"),
         ("wiki_moved", dict(n=1), "engram: links repointed to moved posts (1)")]
 RENEWALS = [("renewals", dict(n=2, session="ab12cd34"), "engram: Sam still on 2 things, said in session ab12cd34"),
-            ("narrow", dict(n=2), "engram: 2 dates narrowed by dated documents")]
+            ("narrow", dict(n=2), "engram: 2 dates narrowed by dated documents"),
+            ("note", dict(n=1, session="ab12cd34"), "engram: the note of Sam's session ab12cd34, and 1 facts")]
 
 
 def test_each_template_writes_medicals_message_byte_for_byte():

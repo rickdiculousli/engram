@@ -1376,6 +1376,9 @@ def _file(domain: str, root: Path, path: Path, p: pack.Pack, s: sessions.Session
             res["dropped"].append({"session": path.stem[:8], "line": lines[i], "why": f"in the note {note['fm']['id']}",
                                    "text": entries[i][0]["title"]})
         keep = [i for i, (fm, _) in enumerate(entries) if not (fm["kind"] != cur.entity_kind and lines[i] in cited)]
+        stated = [a for i, (fm, _) in enumerate(entries) if i not in keep for a in fm["about"]]
+        note["fm"]["about"] = list(dict.fromkeys(note["fm"]["about"] + stated))  # on the threads of what it states
+        note["text"] = notes.render(note["fm"], note["sections"], cfg)
         entries, lines, places = [entries[i] for i in keep], [lines[i] for i in keep], [places[i] for i in keep]
         for fm, _ in entries:
             fm["note"] = note["fm"]["id"]
@@ -1500,7 +1503,7 @@ def _note(root: Path, path: Path, s: sessions.Session, parsed: dict, part: "note
           "about": [a for a in given.get("about") or [] if isinstance(a, str) and a in known],
           "source": f"said in session {path.stem[:8]} on {day}", "author": "engram-capture",
           "recorded": _now().isoformat(timespec="seconds")}
-    return {"fm": fm, "sections": sections, "path": notes.note_path(cfg, nid), "text": notes.render(fm, sections, cfg)}, False
+    return {"fm": fm, "sections": sections, "path": notes.note_path(cfg, nid)}, False
 
 
 def mark(domain: str, path: Path, upto: int, size: int):

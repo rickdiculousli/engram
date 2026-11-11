@@ -178,8 +178,7 @@ def test_27_a_themes_history_shows_the_session_once_as_its_note_with_its_entries
     from engram import timeline
     w = inner()
     path = w.chat(1, upto=40)
-    reply = chat1_note()
-    reply["note"]["about"] = ["theme/going-quiet"]
+    reply = chat1_note()  # the note names no theme: it's on those of what it states
     reply["facts"] = [
         fact(1, "chest. tight.", "Sam's chest went tight.", answering=answering(1, "chest. tight."), about=["theme/going-quiet"]),
         fact(1, "yes, once a day.", "Sam will practise saying the sentence once a day.", kind="practice",
@@ -197,6 +196,20 @@ def test_27_a_themes_history_shows_the_session_once_as_its_note_with_its_entries
     shown = [r for r in got if n["fm"]["id"] in json.dumps(r)]
     assert len(shown) == 1 and practice.id in json.dumps(shown[0])
     assert not [r for r in got if r is not shown[0] and practice.id in json.dumps(r)]
+
+
+def test_a_note_is_on_the_threads_the_facts_it_states_started(inner):
+    from engram import timeline
+    w = inner(record=False)
+    w.chat(1, upto=40)
+    reply = chat1_note()
+    reply["facts"] = [fact(1, "young. maybe ten. it's the kitchen in the old house", "The feeling goes back to the old kitchen.",
+                           create=[{"kind": "event", "name": "the kitchen in the old house"}])]
+    w.run(Model(reply))
+    n, event = one_note(w), "event/the-kitchen-in-the-old-house"
+    assert event in (n["fm"].get("about") or [])
+    ingest.refresh_if_stale([D])
+    assert n["fm"]["id"] in json.dumps(timeline.chain(D, "the kitchen in the old house")[1])
 
 
 def test_a_practice_filed_beside_a_note_keeps_its_own_detail(inner):

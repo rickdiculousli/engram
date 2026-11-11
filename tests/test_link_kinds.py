@@ -302,3 +302,13 @@ def test_a_run_that_stops_at_its_cap_waits_a_day_before_the_hourly_job_links_aga
     assert relink.hourly(w.repo, dear, now=LATER + timedelta(hours=23)) is None and len(calls) == 1
     assert relink.hourly(w.repo, dear, now=LATER + timedelta(hours=25)) is not None and len(calls) == 2
 
+
+
+def test_an_entry_of_his_links_only_on_his_own_lines_never_on_the_question_he_answers(inner):
+    """Not only inside a note or for "eased": in an entry of his, the guide's question his reply answers is the guide's."""
+    w = inner()
+    asked = "Did anyone at the climbing group want you there?"
+    e = add(w, {"title": "yeah, to whether anyone wanted him there", "date": "2026-11-08", "kind": "observation", "about": [],
+                "by": "sam"}, f"- Sam, answering “{asked}”: “yeah, I guess”\n")
+    out, _ = sweep(w, [{"record": e, "to": "belief/unlikable", "rel": "didnt-fit", "passage": asked}], dry_run=True)
+    assert not out["links"] and [d for d in out["dropped"] if "Sam" in d["why"]]

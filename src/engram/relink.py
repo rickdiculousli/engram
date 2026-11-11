@@ -123,8 +123,8 @@ def records(repo: Path, skip: tuple[str, ...] = (), kinds_: Kinds = EVIDENCE) ->
 
 def his_lines(repo: Path, kinds_: Kinds = EVIDENCE) -> tuple[dict[str, list[str]], set[str]]:
     """The owner's own words in each record, line by line, as the lines that name their speaker say (`notes.spoken`:
-    a note's lines, an entry's quote of his), for an entry of his and a note; and the notes, where only his lines can
-    be a link's passage. Empty where the link kinds need none of his words and the record keeps no notes."""
+    a note's lines, an entry's quote of his), for an entry of his and a note: where a record has them, only they can be
+    a link's passage; and the notes. Empty where the link kinds need none of his words and the record keeps no notes."""
     folder = notes.folder(repo)
     if not folder and not any(r.owner_words for r in kinds_.rels.values()):
         return {}, set()
@@ -260,7 +260,8 @@ def _check(reply: str, ids: dict[str, str], allowed: set[str], have: set, out: d
     """The code's guards on one batch's reply, into out["links"] and out["dropped"]: the record is in the batch, the
     target is allowed, the rel is one of the record's kinds (`kinds_`) and may point at the target's theory kind
     (`kind_of`), a move is off a retired step, given the records' `texts` its passage is the record's own words, and the
-    owner's own (`his`: each record's lines of his, and the notes) inside a note or for a kind that needs his words, a
+    owner's own (`his`: each record's lines of his, and the notes) in a record that has lines of his, inside a note
+    and for a kind that needs his words, a
     document's passage that restates one entry is that entry's evidence (`owner_of`; out["moved"]), it wasn't dropped on
     re-reading against the target as it stands (`refused`), and it isn't held already (`have`, (record, target, rel),
     grows with each one kept)."""
@@ -284,10 +285,10 @@ def _check(reply: str, ids: dict[str, str], allowed: set[str], have: set, out: d
         if kinds_.rels[rel].to is not None and (kind_of or {}).get(to) not in kinds_.rels[rel].to:
             drop(f"{rel} doesn't point at a {(kind_of or {}).get(to)}")
             continue
-        if texts is not None and (rec in inside or kinds_.rels[rel].owner_words):
+        if texts is not None and (rec in inside or lines.get(rec) or kinds_.rels[rel].owner_words):
             if not (_norm(why_) and any(_norm(why_) in _norm(l) for l in lines.get(rec, []))):
-                drop(f"the passage isn't {config.owner()}'s own words" + (": inside a note only his lines are a moment"
-                     if rec in inside else f", which {kinds_.rels[rel].label} needs"))
+                drop(f"the passage isn't {config.owner()}'s own words" + (f", which {kinds_.rels[rel].label} needs"
+                     if kinds_.rels[rel].owner_words else ": only his lines are a moment"))
                 continue
         elif texts is not None and not (_norm(why_) and _norm(why_) in _norm(texts[rec])):
             drop("passage not in the record")

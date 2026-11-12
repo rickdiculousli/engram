@@ -254,6 +254,14 @@ def render(fm: dict, sections: dict[str, list[Line]], cfg: Settings) -> str:
 SPOKEN = re.compile(r"^- (?P<who>[^“(:\n]+?)(?: \(line \d+\))?(?:, answering “.*?”)?: “(?P<quote>.*)”\s*$", re.M)
 
 
+CITED = re.compile(r"^- (?P<who>[^“(:\n]+?) \(line (?P<at>\d+)\)(?:, answering “.*?”)?: “(?P<quote>.*)”\s*$", re.M)
+
+
+def cited(n: dict) -> list[Line]:
+    """The lines a stored note cites, read back as `render` wrote them."""
+    return [Line(int(m["at"]), "owner" if m["who"] == config.owner() else "guide", m["quote"]) for m in CITED.finditer(n["body"])]
+
+
 def spoken(body: str) -> list[tuple[str, str]]:
     """(speaker, words) for each line that names its speaker, as `render` writes a note's and the filer an entry's
     quote (`- <who>[ (line N)][, answering “<question>”]: “<words>”`): the question a reply answers is the guide's, never

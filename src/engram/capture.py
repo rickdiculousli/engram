@@ -762,13 +762,13 @@ def theory_shape(st: store.Store, words: str, suggest: str = ""):
     """The theory graph, its link kinds and strengths, and the graph as the model reads it in the pack's `theory`
     words: each thing's id, kind, status and name (and a stage, and whose it is, where its kind or a suggestion has
     them), each loop's path, and the joins already held; then, where the pack keeps the guide's suggestions, its
-    `suggest` words. None when the record has no theory graph, or its pack no words for one. Its last item says
+    `suggest` words. None when its pack has no words for one, or the record has no theory graph and keeps no suggestions. Its last item says
     whether suggestions are kept."""
     from engram import theory
     if not words:
         return None
     g = theory.load(st.root)
-    if not g.things:
+    if not g.things and not (suggest and g.kinds):  # an empty theory still takes the guide's first suggestions
         return None
     conf = st.config.get("links", {}).get("theory", {})
     rels, strengths = list(conf.get("rels") or []), list(conf.get("weights") or STRENGTHS)
@@ -1470,13 +1470,15 @@ def file_session(domain: str, root: Path, path: Path, ask=None, dry_run: bool = 
         if later:
             _file(domain, root, path, p, s, s, upto, later, res, ask, ask_structure, ask_verify, dry_run)
         return res
+    again = not upto  # a refile cleared the mark: a session with a note is read again beside it, for what was missed
     for part in notes.parts(s, gap):  # each session its own call, its note written once
         later = {l: w for l, w in owners(s, upto).items() if part.first <= l <= part.last}
-        if not later or notes.noted(root, path.stem, part):  # a session saved once: a rewritten chat keeps its note
+        have = notes.noted(root, path.stem, part)
+        if not later or (have and not again):  # a session saved once: a rewritten chat keeps its note
             upto = max([upto, *later])
             continue
         one = dataclasses.replace(s, exchanges=part.exchanges)
-        if _file(domain, root, path, p, s, one, upto, later, res, ask, ask_structure, ask_verify, dry_run, part, cfg):
+        if _file(domain, root, path, p, s, one, upto, later, res, ask, ask_structure, ask_verify, dry_run, part, cfg, have):
             res["mark"] = (domain, path, upto, 0)  # its note is asked for again next run, and nothing after it before then
             return res
         upto = max(later)
@@ -1486,7 +1488,7 @@ def file_session(domain: str, root: Path, path: Path, ask=None, dry_run: bool = 
 
 def _file(domain: str, root: Path, path: Path, p: pack.Pack, s: sessions.Session, shown: sessions.Session, upto: int,
           later: dict[int, str], res: dict, ask, ask_structure, ask_verify, dry_run: bool,
-          part: "notes.Part | None" = None, cfg: "notes.Settings | None" = None) -> bool:
+          part: "notes.Part | None" = None, cfg: "notes.Settings | None" = None, have: dict | None = None) -> bool:
     """One call over `shown` (the chat, or one session of it), filing what the owner said past `upto` (`later`) into
     `res`; for a session in a repo with notes, its note too. True when its note was refused for the first time: then
     nothing is filed and the session waits to be asked again."""
@@ -1588,19 +1590,27 @@ def _file(domain: str, root: Path, path: Path, p: pack.Pack, s: sessions.Session
             entries.append((placed(fm, where), body))
             lines.append(line)
             places.append((where, " ".join(str(f.get("quote", "")).split())))
-    note, hold = _note(root, path, s, parsed, part, cfg, st, when, res, dry_run, set(made)) if part else (None, False)
+    if have:  # read again beside the note it has, which is never rewritten
+        note, hold = {"fm": have["fm"], "sections": {"": notes.cited(have)}, "path": have["path"]}, False
+    else:
+        note, hold = _note(root, path, s, parsed, part, cfg, st, when, res, dry_run, set(made)) if part else (None, False)
     if hold:
         return True
     if note:  # what the note states isn't filed again; what's filed beside it is shown under it
-        cited = {l.at for ls in note["sections"].values() for l in ls if l.who == "owner"}
+        cited = [(l.at, " ".join(l.quote.lower().split())) for ls in note["sections"].values() for l in ls if l.who == "owner"]
         own = {cur.entity_kind, bel.kind if bel else None} - {None, ""}  # a practice's change, a stated belief: kept beside it
-        for i in [i for i, (fm, _) in enumerate(entries) if fm["kind"] not in own and lines[i] in cited]:
+
+        def stated(i: int) -> bool:  # its words are the note's: a long message holds more than the sentence a note quotes
+            q = places[i][1].lower()
+            return entries[i][0]["kind"] not in own and any(at == lines[i] and (q in c or c in q) for at, c in cited)
+        keep = [i for i in range(len(entries)) if not stated(i)]
+        for i in [i for i in range(len(entries)) if i not in keep]:
             res["dropped"].append({"session": path.stem[:8], "line": lines[i], "why": f"in the note {note['fm']['id']}",
                                    "text": entries[i][0]["title"]})
-        keep = [i for i, (fm, _) in enumerate(entries) if not (fm["kind"] not in own and lines[i] in cited)]
-        stated = [a for i, (fm, _) in enumerate(entries) if i not in keep for a in fm["about"]]
-        note["fm"]["about"] = list(dict.fromkeys(note["fm"]["about"] + stated))  # on the threads of what it states
-        note["text"] = notes.render(note["fm"], note["sections"], cfg)
+        if not have:
+            on = [a for i, (fm, _) in enumerate(entries) if i not in keep for a in fm["about"]]
+            note["fm"]["about"] = list(dict.fromkeys(note["fm"]["about"] + on))  # on the threads of what it states
+            note["text"] = notes.render(note["fm"], note["sections"], cfg)
         entries, lines, places = [entries[i] for i in keep], [lines[i] for i in keep], [places[i] for i in keep]
         for fm, _ in entries:
             fm["note"] = note["fm"]["id"]
@@ -1689,7 +1699,7 @@ def _file(domain: str, root: Path, path: Path, p: pack.Pack, s: sessions.Session
                              for (fm, body), w in zip(entries, places)]
         if revision:
             res["would_file"].append({"session": path.stem[:8], "kind": "theory-change", "ops": revision["ops"]})
-        if note:
+        if note and not have:
             res["would_file"].append({"session": path.stem[:8], **note["fm"], "body": note["text"]})
         res["would_file"] += [{"session": path.stem[:8], "file": f, "body": text} for f, text in files]
         return False
@@ -1712,6 +1722,7 @@ def _file(domain: str, root: Path, path: Path, p: pack.Pack, s: sessions.Session
             x[0]["supersedes"] = old
         left.append((x, w))
     entries, places = [x for x, _ in left], [w for _, w in left]
+    note = None if have else note  # from here, the note to write
     if entries or note or files:
         msg = commitmsg.message("note", n=len(entries), session=path.stem[:8]) if note else \
             commitmsg.message("facts", n=len(entries), session=path.stem[:8])
@@ -1904,7 +1915,8 @@ def app_rows(domain: str, root: Path) -> int:
 
 def refile(prefixes: list[str]) -> dict[str, list[str]]:
     """Clear the filed mark of the sessions whose ids start with each prefix, so the next run reads them whole again.
-    Nothing is deleted: the entries already filed from them are shown to the model as already filed."""
+    Nothing is deleted: the entries already filed from them are shown to the model as already filed, and a session
+    with a note keeps it as written, what's new being filed beside it."""
     out = {}
     with contextlib.closing(db()) as c, c:
         for pre in prefixes:

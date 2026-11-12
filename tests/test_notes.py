@@ -151,6 +151,26 @@ def test_24_a_chat_rewritten_after_its_note_gets_no_second_note(inner):
     one_note(w)
 
 
+def test_a_refiled_session_is_read_again_beside_its_note_which_never_changes(inner):
+    from engram import capture
+    w = inner(record=False)
+    w.chat(1, upto=40)
+    w.run(Model(chat1_note()))
+    path = w.repo / one_note(w)["path"]
+    before = path.read_bytes()
+    capture.refile(["5e110000"])
+    reply = chat1_note()
+    reply["facts"] = [fact(1, "it's the kitchen in the old house", "The feeling goes back to the old kitchen."),
+                      fact(1, "chest. tight.", "His chest is tight.")]
+    out = w.run(Model(reply), now=LATER + timedelta(hours=1))
+    assert path.read_bytes() == before and one_note(w)
+    [kept] = w.mine()
+    assert "kitchen" in kept.body and kept.fm.get("note") == one_note(w)["fm"]["id"]
+    assert [d for d in out["dropped"] if "in the note" in d["why"]]
+    w.run(Model(reply), now=LATER + timedelta(hours=2))  # the mark is back: nothing is read a third time
+    assert len(w.mine()) == 1
+
+
 def test_25_a_check_in_gets_no_note_and_its_one_fact_is_an_entry(inner):
     """True today in full: nothing writes a note yet, and the fact is filed as it always was."""
     w = inner(3)
@@ -211,6 +231,19 @@ def test_a_note_is_on_the_threads_the_facts_it_states_started(inner):
     assert event in (n["fm"].get("about") or [])
     ingest.refresh_if_stale([D])
     assert n["fm"]["id"] in json.dumps(timeline.chain(D, "the kitchen in the old house")[1])
+
+
+def test_a_fact_from_another_sentence_of_a_line_the_note_cites_is_filed_beside_it(inner):
+    """The note quotes one sentence of a long message; what he said in its other sentences isn't lost."""
+    w = inner(record=False)
+    w.chat(1, upto=40)
+    reply = chat1_note()  # it cites "young. maybe ten." from this line
+    reply["facts"] = [fact(1, "it's the kitchen in the old house", "The feeling goes back to the old kitchen."),
+                      fact(1, "maybe ten.", "It feels about ten years old.")]
+    out = w.run(Model(reply))
+    [kept] = w.mine()
+    assert "kitchen" in kept.body and kept.fm.get("note") == one_note(w)["fm"]["id"]
+    assert [d["text"] for d in out["dropped"] if "in the note" in d["why"]] == ["“maybe ten.”"]
 
 
 def test_a_practice_filed_beside_a_note_keeps_its_own_detail(inner):

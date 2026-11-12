@@ -46,6 +46,16 @@ def test_43_a_hunch_he_answered_past_is_a_proposed_part_labelled_as_the_guides_a
     assert not [t for t in g.things.values() if t.by == "sam" and "keeps score" in t.title]
 
 
+def test_a_hunch_in_the_first_session_of_an_empty_record_is_kept(inner):
+    w = inner(record=False)
+    filer = Model({"suggestions": [KEEPS]})
+    w.chat(1, upto=40)
+    w.run(filer)
+    g = theory.load(w.repo)
+    assert g.things["part/keeps-score"].by == "claude-suggestion" and g.status["part/keeps-score"][0] == "proposed"
+    assert '"suggestions"' in filer.of("file")[0]  # the filer was asked for them
+
+
 def test_44_of_two_suggestions_a_word_apart_only_the_guides_exact_words_are_kept(inner):
     w = inner()
     off = {**KEEPS, "id": "part/keeps-scores", "quote": "there's a part of you that keeps scores"}

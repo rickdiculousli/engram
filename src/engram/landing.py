@@ -2,6 +2,7 @@
 read it, up to twice a branch, and `land` takes only a diff a review passed."""
 import hashlib
 import json
+import os
 import subprocess
 import sys
 from datetime import datetime
@@ -111,10 +112,10 @@ def review(worktree: Path, spec: Path | None = None, runner=subprocess.run) -> t
     if spec and not (spec.resolve().is_relative_to((ch["repo"] / SPECS).resolve()) and spec.exists()
                      and (frontmatter.split(spec.read_text())[0] or {}).get("status") == "approved"):
         sys.exit(f"engram refine: {spec} isn't a spec the owner approved, in {ch['repo'] / SPECS}")
-    s = refine.settings()
+    s, weekly = refine.settings(), bool(os.environ.get("ENGRAM_REFINE"))  # set only in the weekly pass's env
     # a running pass's row holds its whole cap, which may be all the week has left: its real spend is known when it ends
     settled = [r for r in refine.ledger() if not r.get("running")]
-    if s["weekly_cap"] - refine.spent(settled, refine.week()) < CAP:
+    if weekly and s["weekly_cap"] - refine.spent(settled, refine.week()) < CAP:
         sys.exit("engram refine: the week's money can't pay for a review; write it as a spec")
     line = " / ".join(ch["told"]) or "(nothing: it carries no Refinement line, which is itself a fault)"
     objected = [f for r in past if r["verdict"] == "object" for f in r["findings"]]
@@ -140,7 +141,7 @@ def review(worktree: Path, spec: Path | None = None, runner=subprocess.run) -> t
     except (OSError, ValueError, TypeError, AttributeError, subprocess.SubprocessError):
         pass  # no verdict: its cost unknown, so its whole cap
     _record({"repo": str(ch["repo"]), "branch": ch["branch"], "patch": ch["patch"], "verdict": verdict, "findings": findings,
-             "cost_usd": round(cost, 4)})
+             "cost_usd": round(cost, 4)} | ({} if weekly else {"session": True}))
     left = ROUNDS - len(past) - 1
     if verdict == "pass":
         return True, f"The review passed {ch['branch']}. Land it with: engram refine land {worktree}"

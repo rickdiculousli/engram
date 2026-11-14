@@ -1,6 +1,7 @@
 """A pass's change lands only through a fresh review, and a pass that stopped short reads as failed."""
 import json
 import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -109,17 +110,25 @@ def test_a_reviewer_that_fails_or_times_out_doesnt_pass_and_costs_its_cap(repo):
     def hung(cmd, **kw):
         raise subprocess.TimeoutExpired(cmd, 1)
     assert not landing.review(w, runner=hung)[0]
-    assert refine.reviews()[-1]["verdict"] == "none" and refine.spent([], refine.week()) == landing.CAP
+    assert refine.reviews()[-1]["verdict"] == "none" and refine.reviews()[-1]["cost_usd"] == landing.CAP
 
 
-def test_reviews_count_toward_the_week_and_one_it_cant_pay_for_is_refused(repo):
-    run, _ = reviewer(PASS)
-    landing.review(change(repo), runner=run)
+def test_the_passs_reviews_count_toward_the_week_and_one_it_cant_pay_for_is_refused(repo, monkeypatch):
+    monkeypatch.setenv("ENGRAM_REFINE", str(refine._dir()))
+    landing.review(change(repo), runner=reviewer(PASS)[0])
     assert refine.spent([], refine.week()) == 1.25
     (refine._dir() / "ledger.jsonl").write_text(json.dumps({"week": refine.week(), "repo": "x", "dry_run": False, "ok": True,
                                                             "started": "t", "cost_usd": 47.0}) + "\n")
     with pytest.raises(SystemExit, match="can't pay"):
         landing.review(change(repo, "next", {"d.txt": "d\n"}), runner=reviewer(PASS)[0])
+
+
+def test_a_review_from_the_owners_session_isnt_stopped_by_the_weeks_cap_nor_spends_it(repo):
+    (refine._dir() / "ledger.jsonl").write_text(json.dumps({"week": refine.week(), "repo": "x", "dry_run": False, "ok": True,
+                                                            "started": "t", "cost_usd": 50.0}) + "\n")
+    w = change(repo)
+    assert landing.review(w, runner=reviewer(PASS)[0])[0] and "landed" in landing.land(w)
+    assert refine.spent([], refine.week()) == 0
 
 
 def test_a_branch_of_only_specs_lands_with_no_review(repo):
@@ -340,61 +349,11 @@ def test_a_diff_that_isnt_utf8_is_reviewed_and_lands(repo):
     assert "landed" in landing.land(w)
 
 
-def test_a_build_on_request_builds_only_whats_approved_and_leaves_the_weeks_pass_to_run(repo):
-    spec(repo)
-    asked = []
-
-    def run(cmd, **kw):
-        asked.append(cmd)
-        p = repo / ".engram/specs/2026-01-01-idea.md"
-        p.write_text(p.read_text().replace("status: approved", "status: built"))
-        return type("P", (), {"returncode": 0, "stdout": json.dumps({"total_cost_usd": 2.0, "result": "built"}), "stderr": ""})()
-    lines = refine.run("engram", runner=run, attached=True, approved=True)
-    assert len(asked) == 1 and "mode=approved" in asked[0][2] and "ok" in lines[0]  # no page
-    row = refine.ledger()[-1]
-    assert row["job"] == refine.BUILD and row["ok"]
-    assert (refine._dir() / f"runs/{refine.week()}/engram-build.md").exists()
-    assert refine.status() == ["build on request on engram: ok, $2.00", "weekly pass on engram: not run this week"]
-    assert "mode=land" in refine.run(show=True)[0]  # the week's pass still runs
-    assert refine.spent(refine.ledger(), refine.week()) == 2.0
-
-
-def test_a_build_on_request_that_stops_short_fails_and_reaches_the_next_page(repo):
-    spec(repo)
-    refine.run("engram", runner=passing("Running: the review."), attached=True, approved=True)
-    row = refine.ledger()[-1]
-    assert not row["ok"] and "approved and not built" in row["error"]
-    assert "The idea in plain words" in next(iter(refine._failures(refine.ledger(), set()).values()))[1]
-
-
-def test_a_build_on_request_with_nothing_approved_starts_nothing(repo):
-    with pytest.raises(SystemExit, match="no approved spec"):
-        refine.start("engram", approved=True)
-
-
-def test_a_build_on_request_isnt_failed_by_work_it_was_told_to_leave(repo):
-    w = change(repo)
-    head = refine._head(repo)
-    assert refine._unfinished(repo, [], head, refine._branches(repo)) == []
-    new = change(repo, "new", {"z.txt": "z\n"})
-    assert refine._unfinished(repo, [], head, ["refinement/2026-01-01-tidy"]) == ["work left unlanded on refinement/2026-01-01-new"]
-    assert w.exists() and new.exists()
-
-
-def test_a_killed_build_reads_as_stopped_not_running(repo):
-    (refine._dir() / "ledger.jsonl").write_text(json.dumps({"week": refine.week(), "repo": "engram", "job": refine.BUILD, "dry_run": False,
-                                                            "ok": False, "running": True, "started": "t", "cost_usd": 40.0}) + "\n")
-    assert refine.status()[0] == "build on request on engram: stopped mid-run, $40.00"
-
-
-def test_a_build_on_request_wont_start_on_a_status_not_yet_committed(repo):
-    p = spec(repo, "open")
-    p.write_text(p.read_text().replace("status: open", "status: approved"))
-    with pytest.raises(SystemExit, match="uncommitted"):
-        refine.start("engram", approved=True)
-
-
-def test_a_blocked_spec_is_named_as_why_nothing_starts(repo):
-    spec(repo, "approved", "blocked: >-\n  it needs something\n")
-    with pytest.raises(SystemExit, match="One marked `blocked:` says why"):
-        refine.start("engram", approved=True)
+def test_apply_has_one_route_the_reviewed_build_and_the_weeks_pass_still_builds_approved_first(repo):
+    from engram import cli
+    with pytest.raises(SystemExit, match="builds the spec in this session"):
+        cli.main(["refine", "run", "--repo", "engram", "--approved"])
+    assert not refine.ledger()  # nothing started
+    assert "mode=approved" not in (Path(__file__).parents[1] / refine.SKILL).read_text()
+    spec(repo)  # the pass builds it in its usual mode, and fails if it leaves it unbuilt (the test above)
+    assert "mode=land" in refine.run(show=True)[0]

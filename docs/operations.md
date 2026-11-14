@@ -40,17 +40,17 @@ A versioned copy of untracked data an area can't fetch again, kept on a second b
 
 `~/.local/bin/engram` is installed from `~/.local/share/engram/release`, a clone of engram checked out at a tag, so merges to `main` don't reach the hourly job. What runs is that tag plus the pack commit each domain's config pins (`[domains.<name>] pack`); the two move together, and only after the frozen gate ([evaluation](evaluation.md#the-frozen-gate)) says "same" on both. Development runs `uv run engram` inside a worktree, never in the release clone or the main checkout, and on a scratch copy of the data folder ([technical](technical.md#scratch-copies)): its searches refresh the index they read.
 
-To release:
-1. A pack change is committed in its record repo first and pushed; it's inert until pinned.
-2. From the engram commit to release: `uv run python bench/gate.py run <out.json> --pack <record repo>@<pack commit>`, then `compare <baseline.json> <out.json>` says "same".
-3. Tag the commit `release-<date>` and push the tag.
-4. Set `pack = "<pack commit>"` in the config, then `uv run engram review --release <tag> --gate <out.json>` from that commit: it refuses unless the pin's pack tree ([technical](technical.md#packs)) is the one the gate measured, moves the release clone to the tag, and logs the tag with its pins.
-5. Check `engram health` and capture after the next hourly run.
-6. When the release changes what setup writes into a record repo's tracked `.claude/settings.json`, the next repair writes it there: check the diff is only that, and commit it on its own in each set-up repo, so one revert undoes it. Where setup widened the Bash window, a Bash result over 30,000 characters in that repo's next sessions arrives inline, not as a preview and a file; if it still comes back as a preview, Claude Code is overriding the setting.
+To release: `engram release`, from a checkout of engram (a pack change is committed and pushed in its record repo first, and pinned in the config: it's inert until then). It takes `main`'s head, which must be on `origin/main`, and:
+1. runs the frozen gate on that commit, in a throwaway checkout of it, with the pack the box pins for the gated area, and compares the run with the baseline; unless that says "same" it stops and prints what moved, with no tag made and the clone, the pins and the baseline as they were;
+2. tags the commit `release-<date>`, with a letter after the day's first (`b`, `c`, ...), and pushes the tag;
+3. refuses unless the pin's pack tree ([technical](technical.md#packs)) is the one the gate measured, moves the release clone to the tag, and logs the tag with its pins;
+4. makes the run the new baseline.
 
-A box whose config names no `[review] gate` has no frozen gate of its own: it runs a tag the box with the gate released, and `engram review --release <tag>`, run from its release clone or a checkout holding the tag, moves the clone and logs the tag with its pins, checking no pin against a gate.
+Each step reads what's there first, so a rerun after a stop (a failed push, a refused pin) runs the gate again and finishes under the tag the commit already has; until it does, the hourly job stays on the last release. After it: check `engram health` and capture after the next hourly run. When the release changes what setup writes into a record repo's tracked `.claude/settings.json`, the next repair writes it there: check the diff is only that, and commit it on its own in each set-up repo, so one revert undoes it. Where setup widened the Bash window, a Bash result over 30,000 characters in that repo's next sessions arrives inline, not as a preview and a file; if it still comes back as a preview, Claude Code is overriding the setting.
 
-To roll back, take the previous line of `releases.jsonl`: set its pins in the config and run `engram review --release <its tag>`.
+A box whose config names no `[review] gate` has no frozen gate of its own: it runs a tag the box with the gate released, with `engram release <tag>` from its release clone or a checkout of engram, which fetches the tag from `origin` when it's missing, moves the clone and logs the tag with its pins.
+
+To roll back, take the previous line of `releases.jsonl`: set its pins in the config and run `engram release <its tag>`; on the gated box, only a tag it released before moves this way.
 
 In engram's config, `[review]` sets `gate` (the domain whose frozen gate a release passes), `gate_sets` (its question sets, read when it's frozen), `gate_base` (its baseline), and optionally `release` (the clone's folder).
 

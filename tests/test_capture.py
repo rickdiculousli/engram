@@ -246,7 +246,7 @@ def test_a_scratch_data_folder_leaves_the_real_install_alone(world, loaded, monk
     real.mkdir()
     shutil.copy(scratch / "capture.sqlite", real / "capture.sqlite")  # the scratch copy holds the real rows
     monkeypatch.setattr("engram.paths.default_data_dir", lambda: real)
-    monkeypatch.setattr("engram.review.release", lambda: world["tmp"] / "no-release")  # the release rule off
+    monkeypatch.setattr("engram.release.clone", lambda: world["tmp"] / "no-release")  # the release rule off
     assert setup.repair("medical") == [] and loaded["untouched"]()
     with pytest.raises(SystemExit, match="scratch data folder"):
         setup.setup(world["repo"], world["tmp"] / "LaunchAgents", load=True)
@@ -265,7 +265,7 @@ def test_only_the_release_repairs_a_loaded_install(world, loaded, monkeypatch):
     with pytest.raises(SystemExit, match="not the release clone"):
         setup.setup(world["repo"], world["tmp"] / "LaunchAgents", load=True)
     assert hourly.session_start(world["payload"]) == "" and loaded["untouched"]()
-    monkeypatch.setattr("engram.review.release", lambda: Path(setup.this_code()).parents[1])  # running from the release
+    monkeypatch.setattr("engram.release.clone", lambda: Path(setup.this_code()).parents[1])  # running from the release
     assert len([d for d in setup.repair("medical") if d["ok"]]) == 3 and loaded["plist"].exists()
     assert [a[1] for a in loaded["ran"] if a[1] in ("bootout", "bootstrap")] == ["bootout", "bootstrap"]
 
@@ -279,7 +279,7 @@ def test_the_daily_and_weekly_jobs_are_installed_only_where_a_repair_would_be(wo
         with pytest.raises(SystemExit, match="not the release clone"):
             install(agents, load=True)
     assert not {p.name for p in agents.iterdir()} & {f"{daily.LABEL}.plist", f"{refine.LABEL}.plist"} and loaded["untouched"]()
-    monkeypatch.setattr("engram.review.release", lambda: Path(setup.this_code()).parents[1])  # running from the release
+    monkeypatch.setattr("engram.release.clone", lambda: Path(setup.this_code()).parents[1])  # running from the release
     assert daily.install(agents, load=True).exists() and refine.install(agents, load=True).exists()
 
 

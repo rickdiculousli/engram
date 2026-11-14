@@ -100,11 +100,3 @@ def test_reading_calls_and_findings():
     assert review.engram_args("engram capture run") is None and review.engram_args("grep engram x") is None
     assert review.engram_args('engram timeline "back spasm" 2>&1 | head') == ["timeline", "back spasm"]
     assert [f["cause"] for f in review.parse({"findings": [finding("tools"), finding("bogus"), {"question": "data"}]})] == ["tools"]
-
-
-def test_a_gate_with_no_baseline_is_an_error_the_release_reports(world):
-    cfg = world["tmp"] / "config.toml"
-    cfg.write_text(cfg.read_text() + '[review]\ngate = "notes"\n')
-    with pytest.raises(Exception, match="no gate_base") as e:
-        review.gate()
-    assert not isinstance(e.value, SystemExit)

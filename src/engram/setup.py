@@ -343,8 +343,8 @@ def refused(root: Path | None = None) -> dict[str, str]:
     if paths.data_dir().resolve() != paths.default_data_dir().resolve():
         why = f"{paths.data_dir()} is a scratch data folder; the box's install is the release's"
         return {p: why for p in ("settings", "git", "job") if p == "job" or root and str(Path(root).resolve()) in real}
-    from engram import review
-    rel = review.release()
+    from engram import release
+    rel = release.clone()
     if rel.exists() and not Path(this_code()).is_relative_to(rel.resolve()):
         return dict.fromkeys(("settings", "git", "job"), f"this engram runs from {this_code()}, not the release clone {rel}")
     return {}

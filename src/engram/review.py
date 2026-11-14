@@ -4,16 +4,12 @@ value isn't there (`engram review <session>`), one model call reads what they as
 and what it returned, what it answered, and what the record held that day through engram's own first call. It asks
 three things (QUESTIONS), and each finding is recorded with its cause in the data folder (`review/`); the weekly pass
 on engram's own repo reads the `tools` ones beside the week's conversations (`tools`). The review lands no code.
-A repo turns it on with `[review] on = true` in its engram.toml.
-
-The release step lives here too: `engram review --release` moves the release clone to a tag (`advance`)."""
+A repo turns it on with `[review] on = true` in its engram.toml."""
 import contextlib
-import json
 import os
 import re
 import shlex
 import sqlite3
-import subprocess
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
@@ -79,54 +75,6 @@ def on(root: Path | None) -> bool:
 
 def _now() -> datetime:
     return datetime.now().astimezone()
-
-
-# --- the release --------------------------------------------------------------------------------------------------
-
-def config() -> dict:
-    """engram's own `[review]` settings the release reads: `release` (the clone the hourly job runs), `gate` (the domain
-    whose frozen gate, `bench/gate.py`, a release passes) and `gate_base` (its baseline)."""
-    return config_mod.raw().get("review", {})
-
-
-def gate() -> tuple[str, Path]:
-    """The gate's domain and its baseline."""
-    c = config()
-    name = str(c.get("gate") or "")
-    if name and not c.get("gate_base"):
-        raise RuntimeError("engram: [review] names a gate but no gate_base, the run it's compared against")
-    return name, Path(c.get("gate_base") or "").expanduser()
-
-
-def pins() -> dict[str, str]:
-    """The pack commit each domain's config pins."""
-    from engram import pack
-    return {n: d.pack for n, d in config_mod.load().items() if pack.SHA.match(d.pack)}
-
-
-def _git(repo: Path, *a: str) -> str:
-    return subprocess.run(["git", "-C", str(repo), *a], capture_output=True, text=True, check=True).stdout.strip()
-
-
-def release() -> Path:
-    return Path(config().get("release") or data_path("release")).expanduser()
-
-
-def advance(tag: str, source: Path, gated: dict | None = None) -> str:
-    """The release clone moved to `tag` (fetched from `source`) and the tag logged with the pins it runs with, so a
-    rollback moves both back. Refuses when the gate's run measured another pack than the one pinned."""
-    from engram import pack
-    dom, _ = gate()
-    if gated is not None and dom in pins():
-        have = pack.tree(config_mod.load()[dom].repo, pins()[dom])
-        if have != gated.get("pack_tree"):
-            raise SystemExit(f"engram: {dom}'s pin {pins()[dom][:12]} isn't the pack the gate measured; the release stays")
-    if source.resolve() != release().resolve():
-        _git(release(), "fetch", "-q", str(source), f"refs/tags/{tag}:refs/tags/{tag}")
-    _git(release(), "checkout", "-q", tag)
-    with (data_path("releases.jsonl")).open("a") as f:
-        f.write(json.dumps({"tag": tag, "pins": pins(), "at": _now().isoformat(timespec="seconds")}) + "\n")
-    return tag
 
 
 # --- what the review reads ----------------------------------------------------------------------------------------

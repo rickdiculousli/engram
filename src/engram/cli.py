@@ -628,19 +628,24 @@ def cmd_capture(a):
 
 
 def cmd_review(a):
-    """The value review (docs/technical.md, "The value review") of one session on demand, or the release step."""
+    """The value review (docs/technical.md, "The value review") of one session on demand."""
     from engram import review
-    if a.release:
-        gated = json.loads(Path(a.gate).expanduser().read_text()) if a.gate else None
-        try:
-            print(f"engram: the release runs {review.advance(a.release, Path.cwd(), gated)}, pins {review.pins()}")
-        except RuntimeError as e:
-            raise SystemExit(str(e))
-    elif a.session:
-        r = review.on_demand(a.session, a.dry_run)
-        print(review.summary(r) + (f"\nstate in {r['state']}" if a.dry_run else ""))
-    else:
-        sys.exit("engram review: name a session, or --release <tag>")
+    r = review.on_demand(a.session, a.dry_run)
+    print(review.summary(r) + (f"\nstate in {r['state']}" if a.dry_run else ""))
+
+
+def cmd_release(a):
+    """The release (docs/operations.md, "The release"), from the engram checkout it's run in."""
+    from engram import release
+    r = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True)
+    if r.returncode:
+        sys.exit("engram release: run it from a checkout of engram")
+    source = Path(r.stdout.strip())
+    try:
+        tag = release.to_tag(source, a.tag) if a.tag else release.release(source)
+    except (RuntimeError, subprocess.CalledProcessError) as e:
+        raise SystemExit(f"engram release: {e}" + (f"\n{e.stderr.strip()}" if getattr(e, "stderr", None) else ""))
+    print(f"engram: the release runs {tag}, pins {release.pins()}")
 
 
 def cmd_setup(a):
@@ -1022,11 +1027,14 @@ def main(argv=None):
 
     s = sub.add_parser("review", help="engram's value review of one session (when the value wasn't there): findings by "
                                       "count and the cost, recorded for the weekly pass")
-    s.add_argument("session", nargs="?", help="a session id prefix")
+    s.add_argument("session", help="a session id prefix")
     s.add_argument("--dry-run", action="store_true", help="keep the findings in scratch, out of the weekly pass's evidence")
-    s.add_argument("--release", help="move the release clone to this tag, fetched from here, and log it with the pins")
-    s.add_argument("--gate", help="with --release: the gate's run; refused unless it measured the pinned pack")
     s.set_defaults(fn=cmd_review)
+
+    s = sub.add_parser("release", help="gate main's head, tag it, push the tag and move the hourly job to it; with a "
+                                       "tag: move to that tag (the second box's release, or a rollback)")
+    s.add_argument("tag", nargs="?", help="a tag already made: on a box with no gate of its own, the gated box's release")
+    s.set_defaults(fn=cmd_release)
 
     s = sub.add_parser("setup", help="set a repo up for capture: the session-start check, git pre-commit, the hourly job")
     s.add_argument("repo")

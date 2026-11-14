@@ -79,25 +79,6 @@ def test_a_pin_the_repo_lacks_stops_only_filing_and_shows_at_session_start(env, 
     assert "its pack didn't load" in hourly.session_start({"cwd": str(repo)})
 
 
-def test_a_release_moves_the_tag_and_logs_the_pins_and_refuses_a_pack_the_gate_didnt_measure(env, tmp_path):
-    import json
-    import pytest
-    from engram import review
-    repo, sha = notes_repo(tmp_path / "notes")
-    env["set_repo"]("notes", repo, pack=sha)
-    code = make_repo(tmp_path / "engram", {"README.md": "x\n"})
-    git(code, "tag", "release-x")
-    rel = tmp_path / "release"
-    git(tmp_path, "clone", "-q", str(code), str(rel))
-    cfg = env["tmp"] / "config.toml"
-    cfg.write_text(cfg.read_text() + f'[review]\nrelease = "{rel}"\ngate = "notes"\ngate_base = "{tmp_path / "base.json"}"\n')
-    with pytest.raises(SystemExit):
-        review.advance("release-x", code, {"pack_tree": "0" * 40})
-    assert review.advance("release-x", code, {"pack_tree": pack.tree(repo, sha)}) == "release-x"
-    [logged] = [json.loads(l) for l in (env["data"] / "releases.jsonl").read_text().splitlines()]
-    assert logged["tag"] == "release-x" and logged["pins"] == {"notes": sha}
-
-
 ROWS_PACK = '''from engram.pack import Doc, Link, Pack, Source, Way
 
 

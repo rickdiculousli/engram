@@ -106,3 +106,47 @@ def test_a_quote_of_his_words_is_whole_words(quote, words, found):
     """The one quote check the filer and the summaries' lint share."""
     assert capture.verbatim.found(quote, words) is found
     assert summarize._within(quote, words) is found
+
+
+def ask(qid, *questions):
+    e = json.loads(turn("assistant", [{"type": "text", "text": "Two things first."},
+                                      {"type": "tool_use", "id": qid, "name": "AskUserQuestion",
+                                       "input": {"questions": [{"question": q, "header": "Pick", "multiSelect": False,
+                                                                "options": [{"label": "Yes"}, {"label": "No"}]} for q in questions]}}]))
+    e["message"]["stop_reason"] = "tool_use"
+    return json.dumps(e)
+
+
+def answered(qid, answers, error=False):
+    e = json.loads(turn("user", [{"type": "tool_result", "tool_use_id": qid, "is_error": error,
+                                  "content": "User has answered your questions: " + str(answers)}]))
+    e["toolUseResult"] = "User declined to answer questions" if error else {"questions": [], "answers": answers}
+    return json.dumps(e)
+
+
+def test_an_answer_to_claudes_question_prompt_is_his_turn_after_the_question(tmp_path):
+    picked, typed = "Should the new knee brace go on the list?", "How many km did you walk on 3 days ago?"
+    s = read(tmp_path, [turn("user", "plan the week"), ask("q1", picked, typed),
+                        answered("q1", {picked: "Yes", typed: "about 4, and the brace pinched"}), reply("Noted, both.")])
+    filed, shown = sams(s)
+    assert filed == ["plan the week", "Yes\n\nabout 4, and the brace pinched"]
+    assert shown[1] == "Sam: Yes\n\nabout 4, and the brace pinched\n\nClaude: Noted, both."
+    assert shown[0] == f"Sam: plan the week\n\nClaude: {picked}\n\n{typed}"  # the questions, in order, as what Claude asked
+    turns, later = capture.turn_before(s), capture.owners(s)
+    assert turns[3] == f"Two things first.\n{picked}\n\n{typed}"
+    # filed as his typed words would be: a quote from his answer, a number from it or the question; never the question's words
+    fact = lambda text, quote: {"line": 3, "text": text, "quote": quote, "answering": typed}
+    assert capture.check(fact("Sam walked 4 km and the brace pinched.", "about 4, and the brace pinched"), later, turns) is None
+    assert capture.check(fact("Sam wants the new knee brace on the list.", "the new knee brace go on the list"), later, turns)
+    assert capture.check(fact("Sam walked 6 km.", "about 4"), later, turns) == "number 6 not in the record"
+
+
+def test_a_prompt_left_unanswered_and_other_tools_results_are_never_his(tmp_path):
+    q = "Book the physio for Friday?"
+    other = json.loads(answered("r1", {q: "Yes"}))  # a result shaped like an answer, from a tool that isn't a question prompt
+    s = read(tmp_path, [turn("user", "plan the week"),
+                        turn("assistant", [{"type": "tool_use", "id": "r1", "name": "Read", "input": {"file_path": "/x"}}]),
+                        json.dumps(other), ask("q1", q), answered("q1", {}, error=True), reply("Left it.")])
+    filed, shown = sams(s)
+    assert filed == ["plan the week"] and len(shown) == 1 and q not in shown[0] and "Yes" not in shown[0]
+    assert [x.asked for x in s.exchanges] == ["plan the week"]

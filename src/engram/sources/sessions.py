@@ -119,6 +119,19 @@ def _typed(e: dict) -> bool:
     return bool(asked) and not meta and not asked.startswith(NOT_A_TURN)
 
 
+def _answered(e: dict, asks: set) -> dict[str, str]:
+    """Question -> the answer the owner gave, where a user line is the result of one of Claude's question prompts
+    (`AskUserQuestion`): the option he picked or the words he typed instead. A prompt he declined has none, and no
+    other tool's result is ever his."""
+    blocks = (e.get("message") or {}).get("content")
+    answers = (e.get("toolUseResult") or {}).get("answers") if isinstance(e.get("toolUseResult"), dict) else None
+    if not isinstance(answers, dict) or not isinstance(blocks, list) or not any(
+            isinstance(b, dict) and b.get("type") == "tool_result" and b.get("tool_use_id") in asks and not b.get("is_error")
+            for b in blocks):
+        return {}
+    return {str(q).strip(): str(a).strip() for q, a in answers.items() if str(a).strip()}
+
+
 def _rewound(lines: list[tuple[int, dict]]) -> set[int]:
     """The lines a rewind left behind. A rewind keeps the old messages in the file, so where the owner went back and
     typed again, two typed messages follow the same one: the one off the branch the session ended on goes, with all
@@ -151,6 +164,7 @@ def parse(path: Path, root: Path | None = None) -> Session:
     root = root or ROOT
     s = Session(path, path.stem, path.relative_to(root).parts[0])
     cur: Exchange | None = None
+    asks: set = set()  # the ids of Claude's question prompts
     with path.open(errors="replace") as f:
         lines = []
         for n, line in enumerate(f, 1):
@@ -185,6 +199,11 @@ def parse(path: Path, root: Path | None = None) -> Session:
                 s.entrypoint = s.entrypoint or str(e.get("entrypoint") or "")
                 results = _text_of(msg.get("content"))[1]
                 asked, meta = _said(e)
+                if cur and (answered := _answered(e, asks)):  # Claude asked, he answered: his turn after Claude's question
+                    cur.results += results
+                    cur.replies.append("\n\n".join(answered))
+                    cur.reply_lines.append(n)
+                    asked, results = "\n\n".join(answered.values()), []
                 if asked and not asked.startswith(NOT_A_TURN):
                     cur = Exchange(n, e.get("timestamp"), asked, str(e.get("uuid") or ""), summary=asked.startswith(SUMMARY),
                                    meta=meta, end=e.get("timestamp"))
@@ -204,6 +223,8 @@ def parse(path: Path, root: Path | None = None) -> Session:
                         cur.reply_lines.append(n)
                     elif b.get("type") == "tool_use":
                         cur.ran.append(_tool_line(b))
+                        if b.get("name") == "AskUserQuestion":
+                            asks.add(b.get("id"))
     return s
 
 

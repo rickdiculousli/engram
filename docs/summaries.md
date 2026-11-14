@@ -30,7 +30,7 @@ They make what was said findable even when the owner's wording, the advisor's an
 - **The read:** a whole session at once, up to 200,000 characters of cleaned conversation; only a longer session is cut into parts that overlap by 2 exchanges. Opus at low effort (`claude -p`, the owner's subscription), one call per part, strict JSON, no tools and its own system prompt. Code fills in the segment number, its lines and its timestamps. Why Opus low on whole sessions: in a blind review against smaller models on segments with stitching, it had the fewest unfaithful items, at low cost.
 - **Cleaning,** before any model sees the text:
   - **Dropped:** tool calls, tool output, system reminders, hook output, a retry (the same message sent again with nothing said between; the same answer to two questions is two answers), and Claude's narration between commands when a final reply follows.
-  - **Kept:** the owner's words verbatim, including messages sent while Claude worked, in their place; and Claude's final replies.
+  - **Kept:** the owner's words verbatim, including messages sent while Claude worked and his answers to Claude's question prompts (the questions shown as Claude's), in their place; and Claude's final replies.
   - **Labelled:** each turn by who wrote it: the owner, a program's prompt, a loaded skill (by name only), or another Claude session. A claim by the owner must cite a turn the owner wrote. A program's prompt is known by the whole form its program writes (`summarize.AUTOMATED`: a date stamp as a sentence, a role brief with sections), never by its first words alone, since the owner's words open alike ("You are the one who…", "Today is <date> and…").
   - Either side of a turn over 6,000 characters keeps its head and tail.
 

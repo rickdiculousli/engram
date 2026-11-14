@@ -350,6 +350,14 @@ def cmd_health(a):
             why = vault.load_map(d)[1]
             print(f"{d}: a vault, read by " + (f"the default rule; its reading map isn't used: {' '.join(why.split())}" if why
                                                else "its reading map" if vault_map(d).exists() else "the default rule"))
+            if dom.summaries:  # its sessions remembered, and shown where it says
+                from engram import vaultpages
+                r = vaultpages.last_runs().get(d)
+                print(f"{d}: its sessions are summarized; last hourly run " + (
+                    "never" if not r else f"{r['at']} " + ("ok" if r["ok"] else f"failed: {r['error']}")
+                    + (f"; its pages aren't written: {r['refused']}" if r["refused"] else
+                       f"; {r['pages']} pages in {dom.show_in}" if dom.show_in else "")
+                    + (f"; left alone, not at their own name: {', '.join(r['others'][:5])}" if r["others"] else "")))
         elif dom.repo:  # the general pile has no record repo, so no rewiring
             print(f"{d}: rewiring " + ("; ".join(rewire.drift(dom.repo)) or "current, no drift"))
     from engram import setup
@@ -580,9 +588,9 @@ def _payload(a) -> dict:
 
 def cmd_capture(a):
     from engram import capture, hourly
-    if a.action == "install":
+    if a.action in ("install", "uninstall"):
         from engram import setup
-        print(setup.install_hourly())
+        print("\n".join(setup.install() if a.action == "install" else setup.uninstall()))
     elif a.action == "status":
         from engram import setup
         print("\n".join(setup.status(Path(a.repo).expanduser() if a.repo else None)))
@@ -597,7 +605,7 @@ def cmd_capture(a):
         if missing:
             sys.exit(f"no filed session starts with: {', '.join(missing)}")
     elif a.action == "check":
-        line = hourly.session_start(_payload(a))
+        line = (hourly.vault_start if a.vault else hourly.session_start)(_payload(a))
         if line:
             print(line)
     else:
@@ -999,10 +1007,12 @@ def main(argv=None):
 
     s = sub.add_parser("capture", help="file what the owner says in a repo's sessions: run (the hourly job), check (the "
                                        "session-start health check and repair), status (whether it's running), install (the "
-                                       "hourly job, on a box where no repo is set up), "
+                                       "hourly job on its own, with a session-start check in your own Claude Code settings that "
+                                       "keeps it running from a vault whose summaries are on), uninstall (undoes install), "
                                        "refile <session-prefix>... (clear sessions' filed mark so the next run reads them "
                                        "again; deletes nothing)")
-    s.add_argument("action", choices=["run", "check", "status", "install", "refile"])
+    s.add_argument("action", choices=["run", "check", "status", "install", "uninstall", "refile"])
+    s.add_argument("--vault", action="store_true", help="check: the one install puts in your own settings, for a vault")
     s.add_argument("sessions", nargs="*", help="refile: session id prefixes")
     s.add_argument("--payload", help="check: the hook's JSON payload (default: stdin)")
     s.add_argument("--repo", help="status: just this repo")

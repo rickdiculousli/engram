@@ -44,6 +44,18 @@ def is_vault(repo: Path | None) -> bool:
     return bool(repo) and (Path(repo) / MARK).is_dir() and not record_toml(repo).exists()
 
 
+def unasked(d) -> bool:
+    """A vault whose domain doesn't ask for its sessions to be summarized (`summaries = true`): none of them is."""
+    return is_vault(d.repo) and not d.summaries
+
+
+def is_page(text: str) -> bool:
+    """One of engram's session pages (engram.vaultpages), or a copy of one: never read as a note, wherever it sits. Only
+    frontmatter naming `engram` is parsed."""
+    head = text[:text.find("\n---", 3)] if text.startswith("---") else ""
+    return "engram" in head.lower() and str(_note(text)[0].get("engram", "")).strip().lower() == "session"
+
+
 def _problems(m: dict) -> list[str]:
     """Why a reading map can't be used: only `jobs`, `[read]` and `[lenses]`, weights left unset, and each reading one
     the reader knows."""

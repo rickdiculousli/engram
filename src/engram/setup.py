@@ -10,6 +10,10 @@ Setup installs three pieces, each idempotent and each repairable on its own:
 - job: one timed job for every repo set up (`engram.jobs`: launchd on macOS, systemd on Linux), running
   `engram capture run` every hour.
 
+`engram capture install` installs the job on its own, for domains whose summaries are on where no repo is set up, and a
+session-start check in the owner's own Claude Code settings that keeps it running from a vault (`install`, `heal`);
+`uninstall` undoes it.
+
 What setup found before it changed anything is kept in the data folder, so teardown restores it exactly. Every hourly
 run and every session start checks the pieces and re-installs a missing or stale one; each repair is recorded."""
 import contextlib
@@ -32,6 +36,7 @@ LABEL = "engram.capture"
 ALLOW = "Bash(engram:*)"
 WINDOW_KEY, BASH_BUDGET = "bashOutputMaxChars", 100_000  # Claude Code's Bash window: 30,000 unless set, 4,000 to 128,000
 HOOKS = {"SessionStart": "capture check"}
+VAULT_CHECK = "capture check --vault"  # the one hook `engram capture install` puts in the owner's own settings
 PRE_COMMIT = ("lint --staged", "rewire check --drift")  # what every commit in a record repo passes
 REPAIR = "CREATE TABLE IF NOT EXISTS repair (at TEXT, domain TEXT, what TEXT, ok INTEGER, error TEXT)"
 
@@ -125,17 +130,38 @@ def _norm(conf: dict, man: dict) -> dict:
 
 # ---- the three pieces --------------------------------------------------------------------------------------------
 
+def _with_hook(conf: dict, event: str, sub: str):
+    """engram's hook for the event in settings: ours stays where it was among the others; a new one goes last."""
+    entries = (conf.get("hooks") or {}).get(event, [])
+    at = next((i for i, e in enumerate(entries) if _ours(e)), len(entries))
+    entries = [e for i, e in enumerate(entries) if i == at or not _ours(e)]
+    at = min(at, len(entries))
+    entries[at:at + 1] = [{"hooks": [{"type": "command", "command": _hook_cmd(sub)}]}]
+    conf.setdefault("hooks", {})[event] = entries
+
+
+def _restore(sp: Path, man: dict):
+    """Settings as setup found them: byte for byte when only engram has changed them since, else with engram's taken out."""
+    if not sp.exists():
+        return
+    conf = _norm(json.loads(sp.read_text()), man)
+    before = man.get("settings_before")
+    if before is not None and _norm(json.loads(before), man) == conf:
+        sp.write_text(before)  # byte for byte what was there
+    elif before is None and not conf:
+        sp.unlink()
+        if not man.get("claude_dir_existed"):
+            with contextlib.suppress(OSError):
+                sp.parent.rmdir()
+    else:
+        sp.write_text(json.dumps(conf, indent=2) + "\n")
+
+
 def install_settings(root: Path, man: dict):
     p = _settings_path(root)
     conf = json.loads(p.read_text()) if p.exists() else {}
-    for event, sub in HOOKS.items():  # ours stays where it was among the repo's own hooks; a new one goes last
-        entries = (conf.get("hooks") or {}).get(event, [])
-        at = next((i for i, e in enumerate(entries) if _ours(e)), len(entries))
-        entries = [e for i, e in enumerate(entries) if i == at or not _ours(e)]
-        at = min(at, len(entries))
-        mine = {"hooks": [{"type": "command", "command": _hook_cmd(sub)}]}
-        entries[at:at + 1] = [mine]
-        conf.setdefault("hooks", {})[event] = entries
+    for event, sub in HOOKS.items():
+        _with_hook(conf, event, sub)
     allow = conf.setdefault("permissions", {}).setdefault("allow", [])
     if ALLOW not in allow:
         allow.append(ALLOW)
@@ -165,14 +191,74 @@ def install_git(root: Path, man: dict):
     _git(root, "config", "core.hooksPath", HOOKS_DIR)
 
 
-def install_job(man: dict):
-    jobs.install(Path(man["launch_agents_dir"]), LABEL, [*engram_cmd(), "capture", "run"], data_path("capture.log"),
-                 bool(man.get("load")), every=3600)
+def install_job(man: dict) -> Path:
+    return jobs.install(Path(man["launch_agents_dir"]), LABEL, [*engram_cmd(), "capture", "run"], data_path("capture.log"),
+                        bool(man.get("load")), every=3600)
 
 
-def install_hourly() -> Path:
-    """The hourly job on a box with no repo set up, for the domains that only want their summaries kept current."""
-    return timed_job(None, LABEL, [*engram_cmd(), "capture", "run"], data_path("capture.log"), True, every=3600)
+def user_settings() -> Path:
+    """The owner's own Claude Code settings, read in every folder."""
+    return Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude") / "settings.json"
+
+
+def _installed() -> dict | None:
+    """What `engram capture install` installed and found before it, or None."""
+    p = data_path("capture-install.json")
+    return json.loads(p.read_text()) if p.exists() else None
+
+
+def install(agents: Path | None = None, load: bool = True) -> list[str]:
+    """`engram capture install`: the hourly job on its own, for the domains whose summaries are on (a remembering vault,
+    on a box with no repo set up too), and in the owner's own Claude Code settings a session-start check
+    (`engram capture check --vault`) that keeps the job running from any session in such a vault. What it found before
+    is kept, so `uninstall` puts the settings back byte for byte."""
+    if why := refused().get("job"):
+        raise SystemExit(f"engram: the hourly job isn't installed from here: {why}")
+    sp = user_settings()
+    try:
+        conf = json.loads(sp.read_text()) if sp.exists() else {}
+    except json.JSONDecodeError as e:
+        raise SystemExit(f"engram: {sp} doesn't parse ({e}); nothing installed")
+    man = _installed() or {"launch_agents_dir": str(agents or jobs.default_dir()), "load": load, "settings": str(sp),
+                           "settings_before": sp.read_text() if sp.exists() else None, "claude_dir_existed": sp.parent.exists()}
+    job = install_job(man)
+    _with_hook(conf, "SessionStart", VAULT_CHECK)
+    sp.parent.mkdir(parents=True, exist_ok=True)
+    sp.write_text(json.dumps(conf, indent=2) + "\n")
+    data_path("capture-install.json").write_text(json.dumps(man))
+    return [f"hourly job: {job}", f"session-start check: {sp}"]
+
+
+def uninstall() -> list[str]:
+    """Undo `install`: the owner's settings put back, and the hourly job removed once no repo set up runs on it."""
+    from engram import capture
+    if (man := _installed()) is None:
+        return ["engram capture install wasn't run here; nothing to undo"]
+    _restore(Path(man["settings"]), man)
+    out = [f"session-start check removed from {man['settings']}"]
+    with contextlib.closing(capture.db()) as c:
+        repos = c.execute("SELECT count(*) FROM repo").fetchone()[0]
+    if repos:
+        out.append("hourly job kept: a repo set up runs on it")
+    else:
+        jobs.remove(Path(man["launch_agents_dir"]), LABEL, bool(man["load"]))
+        out.append("hourly job removed")
+    data_path("capture-install.json").unlink()
+    return out
+
+
+def heal() -> str | None:
+    """Put the hourly job `install` installed back when it's missing or stale; why it still isn't right, or None."""
+    if (man := _installed()) is None or "job" in refused():
+        return None
+    agents, load = Path(man["launch_agents_dir"]), bool(man["load"])
+    if not (why := job_problem(agents, load)):
+        return None
+    try:
+        install_job(man)
+    except Exception as e:
+        return f"{why}, and putting it back failed: {type(e).__name__}: {e}"[:300]
+    return f"{why}, and putting it back didn't take: {still}" if (still := job_problem(agents, load)) else None
 
 
 def timed_job(agents: Path | None, label: str, args: list[str], log: Path, load: bool, **when) -> Path:
@@ -184,7 +270,10 @@ def timed_job(agents: Path | None, label: str, args: list[str], log: Path, load:
 
 def settings(root: Path) -> dict:
     """The repo's .claude/settings.json; empty when it's missing or won't parse."""
-    p = _settings_path(root)
+    return _read(_settings_path(root))
+
+
+def _read(p: Path) -> dict:
     try:
         return json.loads(p.read_text()) if p.exists() else {}
     except json.JSONDecodeError:
@@ -211,16 +300,22 @@ def missing(root: Path, man: dict) -> dict[str, str]:
             any(rest.startswith(check) and runs_this_engram(prog) for prog, rest in
                 (_launcher(l.removeprefix("exec ")) for l in hook.read_text().splitlines()[2:])) for check in PRE_COMMIT):
         out["git"] = "the pre-commit hook is missing, lacks one of its checks or runs an old engram"
-    args = jobs.command(Path(man["launch_agents_dir"]), LABEL)
-    if args is None:
-        out["job"] = "the hourly job is missing"
-    else:
-        rest = args[3:] if args[1:3] == ["-m", "engram.cli"] else args[1:]
-        if not args or rest != ["capture", "run"] or not runs_this_engram(args[0]):
-            out["job"] = "the hourly job runs an old engram"
-        elif man.get("load") and not jobs.loaded(LABEL):
-            out["job"] = "the hourly job isn't loaded"
+    if why := job_problem(Path(man["launch_agents_dir"]), bool(man.get("load"))):
+        out["job"] = why
     return out
+
+
+def job_problem(agents: Path, load: bool) -> str | None:
+    """What's wrong with the hourly job, or None."""
+    args = jobs.command(agents, LABEL)
+    if args is None:
+        return "the hourly job is missing"
+    rest = args[3:] if args[1:3] == ["-m", "engram.cli"] else args[1:]
+    if not args or rest != ["capture", "run"] or not runs_this_engram(args[0]):
+        return "the hourly job runs an old engram"
+    if load and not jobs.loaded(LABEL):
+        return "the hourly job isn't loaded"
+    return None
 
 
 def real_install() -> dict[str, dict]:
@@ -315,19 +410,7 @@ def _teardown(root: Path) -> list[str]:
         c.close()
         return [f"engram: {root} isn't set up"]
     domain, man = row[0], json.loads(row[1])
-    sp = _settings_path(root)
-    if sp.exists():
-        conf = _norm(json.loads(sp.read_text()), man)
-        before = man.get("settings_before")
-        if before is not None and _norm(json.loads(before), man) == conf:
-            sp.write_text(before)  # byte for byte what was there
-        elif before is None and not conf:
-            sp.unlink()
-            if not man.get("claude_dir_existed"):
-                with contextlib.suppress(OSError):
-                    sp.parent.rmdir()
-        else:
-            sp.write_text(json.dumps(conf, indent=2) + "\n")
+    _restore(_settings_path(root), man)
     hook = root / HOOKS_DIR / "pre-commit"
     if hook.exists() and TAG in hook.read_text():
         hook.unlink()
@@ -413,6 +496,10 @@ def status(root: Path | None = None) -> list[str]:
             out.append(f"    {sess[:8]}  last filed {at}  {n[sess]} entries")
         for mark, counts in c.execute("SELECT mark, counts FROM narrow WHERE domain = ?", (domain,)):
             out.append(f"  narrowing: marked at {mark[:8]}; so far " + (", ".join(f"{v} {k}" for k, v in json.loads(counts).items()) or "nothing"))
+    if man := _installed():
+        hooked = any(_ours(e) for e in (_read(Path(man["settings"])).get("hooks") or {}).get("SessionStart", []))
+        out.append(f"capture install: hourly job {job_problem(Path(man['launch_agents_dir']), bool(man['load'])) or 'in place'}; "
+                   f"session-start check {'in place' if hooked else 'missing'} in {man['settings']}")
     if last:
         out.append(f"last hourly run: {last[0]} {'ok' if last[1] else 'failed'}; {last[2]} sessions read, {last[3]} filed, "
                    f"{last[4]} dropped, ${last[5]:.2f}" + (f"; error: {last[6]}" if last[6] else ""))

@@ -140,6 +140,8 @@ Onboarding is the first rewiring. The `engram-rewire` skill (`skills/engram-rewi
 
 A folder with `.obsidian/` and no `.engram/engram.toml`, pointed at from the config, is read and never written: tags are threads and lenses, daily notes and date properties date its sections, a note's name lights its sections and backlinks, and a property named after a link rel is that link ([search](search.md#a-vaults-reader)). Nothing files for it, and neither setup, the weekly pass nor health asks it for a rewiring. A record repo with `.obsidian/` stays a record.
 
+What the owner says in a session held in the vault is kept only when its domain says `summaries = true`: it comes back beside the notes, and with `show_in` engram writes one page per session into a folder of its own whose pages link to the notes they bear on, the level below a rewiring that writes something into the vault ([summaries](summaries.md#a-vaults-sessions)). Filed entries need a rewiring.
+
 ### A vault read your way
 
 Rewiring's interview with no migration behind it, the `engram-rewire` skill's read-only mode: the owner's jobs and kinds of ask, from their words in that session and confirmed by talking, each kind becoming a reading and nothing else kept.

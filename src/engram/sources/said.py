@@ -10,6 +10,7 @@ from engram.index import Doc, open_index
 from engram.paths import data_path, index_path
 
 SOURCE = "said"
+TITLE = "said in a session › "  # a row's title, before what was said
 KINDS = {"complaints": ("symptom", "{owner_id}"), "reported": ("report", "{owner_id}"), "decisions": ("decision", "{owner_id}"),
          "updates": ("change of mind", "with-claude"), "chronology": ("", "")}
 ACTS = {"report": "report", "analysis": "interpretation", "plan": "plan", "finding": "finding", "advice": "plan"}
@@ -100,7 +101,7 @@ def docs_for(domain: str) -> list[Doc]:
                 stories = _stories(db.db, domain, kind, item, f"{text} {quote}")
                 date = _date(data, line)
                 out.append(Doc(ref=f"session:{p.stem}:{line}@said-{kind}-{at[line]}", source=SOURCE, cls="said", kind=node,
-                               title=f"said in a session › {text}", body=f"{text}\n\n“{quote}”" if quote else text,
+                               title=f"{TITLE}{text}", body=f"{text}\n\n“{quote}”" if quote else text,
                                pointer=f"session:{p.stem}:{line}", author=config.voice(by), date=date,
                                date_key=dates.key(date), node=node, stories=",".join(stories)))
     db.close()

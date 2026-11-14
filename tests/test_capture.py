@@ -1586,8 +1586,9 @@ def test_the_hourly_job_stays_while_a_domain_only_wants_its_summaries(world, env
 
 def test_the_hourly_job_installs_on_a_box_with_no_repo_set_up(env, monkeypatch):
     got = {}
-    monkeypatch.setattr(setup, "timed_job", lambda agents, label, args, log, load, **when: got.update(label=label, args=args, load=load, **when))
-    setup.install_hourly()
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(env["tmp"] / "claude"))
+    monkeypatch.setattr(setup.jobs, "install", lambda agents, label, args, log, load, **when: got.update(label=label, args=args, load=load, **when))
+    setup.install()
     assert got["label"] == setup.LABEL and got["args"][-2:] == ["capture", "run"] and got["load"] and got["every"] == 3600
 
 

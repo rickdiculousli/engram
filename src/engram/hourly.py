@@ -7,7 +7,7 @@ STORE GARBAGE" that means their checked summaries, kept current for the repos se
 documents (`narrow.run`), compiles onto the map, summarizes long records and runs the value review; re-checks theory
 changes whose re-check never ran, syncs each repo's document ids, repairs the install, retries a failed push, and
 re-reads every domain's record into its index, what's built by searching it included (`ingest.record`), so no question
-waits for that.
+waits for that; then writes the session pages of each vault that asks for them (`vaultpages`).
 
 The install's health: the SessionStart hook checks the install and repairs it (it's the only thing that notices a dead
 job), printing one line if a repair fails; then, where setup widened Claude's Bash window, that engram's output is read
@@ -24,10 +24,10 @@ import subprocess
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from engram import capture, config, daily, ingest, narrow, notes, pack, recsum, refine, relink, review, setup, store, summarize
+from engram import capture, config, daily, ingest, narrow, notes, pack, recsum, refine, relink, review, setup, store, summarize, vaultpages
 from engram import now as now_mod
 from engram.paths import data_path, record_conf
-from engram.sources import sessions
+from engram.sources import sessions, vault
 
 IDLE = timedelta(hours=1)  # a session is filed once its last message is this old
 STALE = timedelta(hours=3)  # the job runs hourly; three missed runs is a dead job
@@ -77,6 +77,7 @@ def run(ask=None, dry_run: bool = False, summaries: bool = True, now: datetime |
             return out
         with contextlib.closing(capture.db()) as c:
             repos = {d: Path(r) for d, r in c.execute("SELECT domain, root FROM repo")}
+        summed = set()  # the domains whose summaries went through this run
         try:
             sessions.ingest(config.load())
             if summaries and not dry_run:
@@ -84,8 +85,11 @@ def run(ask=None, dry_run: bool = False, summaries: bool = True, now: datetime |
                 for d in [*repos, *(n for n, v in config.load().items() if v.summaries and n not in repos)]:
                     if stopped := summarize.run(d)["stopped"]:
                         _error(out, f"summaries {d} stopped: {stopped}")
+                    else:
+                        summed.add(d)
             summarize.index_all()
         except FAILED as e:
+            summed.clear()
             _error(out, f"indexing: {type(e).__name__}: {e}")
         for d, root in repos.items():
             idle = due(d, now, root)
@@ -160,9 +164,12 @@ def run(ask=None, dry_run: bool = False, summaries: bool = True, now: datetime |
                 out["repairs"] += setup.repair(d)
                 retry_push(root, out)
             for d, dom in config.load().items():  # the index takes in what this run filed and summarized, and what's
-                if dom.repo and dom.repo.exists():  # built by searching it; a read that fails is the index's to say
-                    with contextlib.suppress(*FAILED):  # (`engram health`, every search header), never this run's
-                        ingest.record(d)
+                read = None  # built by searching it; a read that fails is the index's to say
+                if dom.repo and dom.repo.exists():  # (`engram health`, every search header), never this run's
+                    with contextlib.suppress(*FAILED):
+                        read = ingest.record(d)
+                if dom.summaries and vault.is_vault(dom.repo):  # a vault's pages, from what was just read
+                    vaultpages.run(d, ok=d in summed and bool(read) and " failed" not in read)
             with contextlib.closing(capture.db()) as c, c:
                 c.execute("INSERT INTO run VALUES (?, ?, ?, ?, ?, ?, ?)", (capture._now().isoformat(timespec="seconds"),
                           int(out["error"] is None), out["sessions"], out["filed"], len(out["dropped"]), out["usd"], out["error"]))
@@ -289,6 +296,19 @@ def last_session(root: Path, current: str) -> list[str]:
             out.append(f"The last session ({p.stem}, last message {at:%Y-%m-%d %H:%M}) isn't saved yet: "
                        f"`engram session {p.stem}` prints it.")
     return out
+
+
+def vault_start(payload: dict) -> str:
+    """The session-start check `engram capture install` puts in the owner's own settings, run in every folder: silent
+    unless the session starts in a vault whose summaries are on, where a missing or stale hourly job is put back, with
+    one line only when that fails."""
+    cwd = payload.get("cwd") or os.environ.get("CLAUDE_PROJECT_DIR")
+    if not cwd or not any(d.summaries and vault.is_vault(d.repo) and Path(cwd).resolve().is_relative_to(d.repo.resolve())
+                          for d in config.load().values()):
+        return ""
+    why = setup.heal()
+    return (f"engram's hourly job isn't running, so this vault's sessions aren't remembered ({why}): run "
+            f"`engram capture status` and tell {config.owner()} in one line.") if why else ""
 
 
 def session_start(payload: dict) -> str:

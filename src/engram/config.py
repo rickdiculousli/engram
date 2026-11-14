@@ -22,6 +22,7 @@ class Domain:
     sessions_from: list[str] = field(default_factory=list)  # other folders its sessions start in, by part of their name
     pack: str = ""  # where its pack is (engram.pack)
     summaries: bool = False  # the hourly job keeps its session summaries current, though engram doesn't file for it
+    show_in: str = ""  # a vault's folder for its session pages (engram.vaultpages)
 
 
 def _merge(a: dict, b: dict) -> dict:
@@ -46,7 +47,7 @@ def load() -> dict[str, Domain]:
         r = doms.get(name, {})
         out[name] = Domain(name, Path(r["repo"]).expanduser() if r.get("repo") else None, list(r.get("remotes", [])),
                            list(r.get("exclude", [])), list(r.get("sessions_from", [])), str(r.get("pack") or ""),
-                           r.get("summaries") is True)
+                           r.get("summaries") is True, str(r.get("show_in") or ""))
     return out
 
 

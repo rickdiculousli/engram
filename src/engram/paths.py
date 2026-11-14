@@ -18,6 +18,8 @@ DATA = {
     "capture.sqlite": "what the hourly filer read and filed, per session",
     "capture.lock": "held while the hourly filer runs",
     "capture.log": "the hourly filer's output",
+    "capture-install.json": "what `engram capture install` installed, and the owner's Claude Code settings before it",
+    "vaults.json": "each remembering vault's last hourly run and its pages",
     "sessions-state.sqlite": "each session file read, and its summary's state",
     "sessions-last.txt": "when sessions were last read",
     "theory.sqlite": "theory changes proposed and applied",

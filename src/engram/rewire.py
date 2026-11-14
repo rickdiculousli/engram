@@ -507,7 +507,9 @@ def vault_facts(domain: str) -> dict:
         raise ValueError(f"{domain} isn't a vault: a folder with .obsidian/ and no {RECORD_TOML}")
     tags, folders, props = Counter(), Counter(), defaultdict(Counter)
     for rel in (r for r in sections.files(replace(d, name="")) if r.suffix == ".md"):  # no name, so no map's left-out folders
-        fm, body = vault._note((d.repo / rel).read_text(errors="replace"))
+        if vault.is_page(text := (d.repo / rel).read_text(errors="replace")):
+            continue
+        fm, body = vault._note(text)
         folders[rel.parts[0] if len(rel.parts) > 1 else "(top)"] += 1
         tags.update({t.strip("/") for t in [*vault._list(fm.get("tags") or fm.get("tag") or []), *vault.inline_tags(body)]})
         for k, v in fm.items():

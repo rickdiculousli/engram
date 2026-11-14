@@ -19,7 +19,7 @@ from pathlib import Path
 from engram import config, daily, dates, llm, notes, pack, verbatim
 from engram.index import Doc, now, open_index
 from engram.paths import data_path, index_path
-from engram.sources import sessions
+from engram.sources import sessions, vault
 from engram.sources.sections import chunks
 
 SEGMENT_VERSION, STITCH_VERSION = "16", "17"  # a new version re-summarizes only after QA shows it does better
@@ -970,8 +970,10 @@ def run(domain: str | None = None, stems: list[str] | None = None, limit: int | 
     """Summarize every session whose stored summary is missing or out of date. A failed call stops the run;
     the sessions finished before it are kept, and the next run picks up the rest."""
     vocab = vocabulary()
-    broken = {d for d in config.load() if pack.problem(d)}  # without its pack a domain's rules are missing: its sessions wait
-    todo = [x for x in known_sessions(domain, stems) if x[1] not in broken]
+    doms = config.load()
+    broken = {d for d in doms if pack.problem(d)}  # without its pack a domain's rules are missing: its sessions wait
+    unasked = {n for n, d in doms.items() if vault.unasked(d)}  # a vault's owner turns summaries on; until then none is made
+    todo = [x for x in known_sessions(domain, stems) if x[1] not in broken | unasked]
     if sample:
         todo = sorted(todo, key=lambda x: _sha(seed + x[0].stem))
     counts = {"summarized": 0, "current": 0, "flagged": 0, "usage": {}, "stopped": None}

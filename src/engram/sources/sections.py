@@ -165,8 +165,11 @@ def docs_for(d: Domain) -> list[Doc]:
     folders = _own(d).get("spines", [])
     whole = f"{notes.folder(d.repo)}/" if notes.folder(d.repo) else ""  # a note is one record, read whole
     held = _noted(d) if whole else {}
+    bare = vault.is_vault(d.repo)
     for rel in files(d):
         text = (d.repo / rel).read_text(errors="replace")
+        if bare and rel.suffix == ".md" and vault.is_page(text):  # engram's own session page is never a note
+            continue
         kind = rel.parts[0] if len(rel.parts) > 1 else rel.stem
         r = rel.as_posix()
         if rel.suffix == ".jsonl":

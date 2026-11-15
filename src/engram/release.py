@@ -1,7 +1,7 @@
 """The release (docs/operations.md, "The release"): `engram release` gates a commit of engram's `main`, tags it, pushes
 the tag, moves the release clone the hourly job runs to it and logs the tag with the pins, then makes the gate's run
 the new baseline. `engram release <tag>` moves the clone to a tag already made: the second box's release, or a
-rollback. Every step reads what's there first, so a rerun after a stop finishes the same release under the same tag."""
+rollback. On the gated box, either ends by moving the second box (`[daily] box`) to the same tag. Every step reads what's there first, so a rerun after a stop finishes the same release under the same tag."""
 import json
 import shutil
 import subprocess
@@ -129,6 +129,23 @@ def release(source: Path) -> str:
         base.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(out, base.with_name(base.name + ".new"))
         base.with_name(base.name + ".new").replace(base)
+    return follow(tag)
+
+
+def _ssh(host: str, command: str) -> subprocess.CompletedProcess:
+    return subprocess.run(["ssh", "-o", "BatchMode=yes", host, command], capture_output=True, text=True)
+
+
+def follow(tag: str) -> str:
+    """The second box moved to the tag the gated box runs, through its own `engram release <tag>` in its release clone.
+    If it can't be reached, this box's release stands and the same command here finishes the second's."""
+    from engram import daily
+    if not (host := daily.box()):
+        return tag
+    r = _ssh(host, f"export PATH=$HOME/.local/bin:$PATH; cd {daily.REMOTE}release && engram release {tag}")
+    if r.returncode:
+        raise SystemExit(f"engram release: {tag} runs here, but {host} stays on its last release; `engram release {tag}` "
+                         f"finishes it\n{(r.stderr or r.stdout).strip()}")
     return tag
 
 
@@ -145,4 +162,5 @@ def to_tag(source: Path, tag: str) -> str:
         raise SystemExit(f"engram release: {tag} was never released here; `engram release` gates a new one")
     if subprocess.run(["git", "-C", str(source), "rev-parse", "-q", "--verify", f"refs/tags/{tag}"], capture_output=True).returncode:
         _git(source, "fetch", "-q", "origin", f"refs/tags/{tag}:refs/tags/{tag}")
-    return advance(tag, source)
+    advance(tag, source)
+    return follow(tag) if dom else tag

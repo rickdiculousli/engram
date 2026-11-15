@@ -44,13 +44,14 @@ To release: `engram release`, from a checkout of engram (a pack change is commit
 1. runs the frozen gate on that commit, in a throwaway checkout of it, with the pack the box pins for the gated area, and compares the run with the baseline; unless that says "same" it stops and prints what moved, with no tag made and the clone, the pins and the baseline as they were;
 2. tags the commit `release-<date>`, with a letter after the day's first (`b`, `c`, ...), and pushes the tag;
 3. refuses unless the pin's pack tree ([technical](technical.md#packs)) is the one the gate measured, moves the release clone to the tag, and logs the tag with its pins;
-4. makes the run the new baseline.
+4. makes the run the new baseline;
+5. moves the second box (`[daily] box`) to the same tag, over ssh, with its own `engram release <tag>` in its release clone. If it can't be reached, this box's release stands, and `engram release <tag>` here finishes the second's.
 
 Each step reads what's there first, so a rerun after a stop (a failed push, a refused pin) runs the gate again and finishes under the tag the commit already has; until it does, the hourly job stays on the last release. After it: check `engram health` and capture after the next hourly run. When the release changes what setup writes into a record repo's tracked `.claude/settings.json`, the next repair writes it there: check the diff is only that, and commit it on its own in each set-up repo, so one revert undoes it. Where setup widened the Bash window, a Bash result over 30,000 characters in that repo's next sessions arrives inline, not as a preview and a file; if it still comes back as a preview, Claude Code is overriding the setting.
 
-A box whose config names no `[review] gate` has no frozen gate of its own: it runs a tag the box with the gate released, with `engram release <tag>` from its release clone or a checkout of engram, which fetches the tag from `origin` when it's missing, moves the clone and logs the tag with its pins.
+A box whose config names no `[review] gate` has no frozen gate of its own: it runs the tag the box with the gate released, moved there by that box's release, through `engram release <tag>` from its release clone, which fetches the tag from `origin` when it's missing, moves the clone and logs the tag with its pins.
 
-To roll back, take the previous line of `releases.jsonl`: set its pins in the config and run `engram release <its tag>`; on the gated box, only a tag it released before moves this way.
+To roll back, take the previous line of `releases.jsonl`: set its pins in the config and run `engram release <its tag>`; on the gated box, only a tag it released before moves this way, and the second box moves with it.
 
 In engram's config, `[review]` sets `gate` (the domain whose frozen gate a release passes), `gate_sets` (its question sets, read when it's frozen), `gate_base` (its baseline), and optionally `release` (the clone's folder).
 

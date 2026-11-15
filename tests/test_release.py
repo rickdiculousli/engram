@@ -171,3 +171,42 @@ def test_a_gate_with_no_baseline_is_an_error_the_release_reports(env):
     with pytest.raises(Exception, match="no gate_base") as e:
         release.gate()
     assert not isinstance(e.value, SystemExit)
+
+
+@pytest.fixture
+def second(box, monkeypatch):
+    """A second box named in `[daily] box`, reached by a faked ssh that records each command and fails while `down`."""
+    box["cfg"].write_text(box["cfg"].read_text() + '[daily]\nbox = "k"\n')
+    sent, state = [], {"down": False}
+
+    def ssh(host, command):
+        sent.append((host, command))
+        return subprocess.CompletedProcess([], 255 if state["down"] else 0, "", "unreachable" if state["down"] else "")
+
+    monkeypatch.setattr(release, "_ssh", ssh)
+    return {"sent": sent, "state": state}
+
+
+def test_a_release_on_the_gated_box_moves_the_second_box_to_the_same_tag(env, box, second):
+    land(box["code"], "two\n")
+    assert release.release(box["code"]) == TODAY
+    assert [h for h, _ in second["sent"]] == ["k"] and second["sent"][0][1].endswith(f"engram release {TODAY}")
+
+
+def test_an_unreachable_second_box_leaves_this_release_standing_and_the_tag_by_name_finishes_it(env, box, second):
+    sha = land(box["code"], "two\n")
+    second["state"]["down"] = True
+    with pytest.raises(SystemExit, match=f"stays on its last release; `engram release {TODAY}` finishes it"):
+        release.release(box["code"])
+    assert at(box["rel"]) == sha and [l["tag"] for l in log(env)] == [TODAY]  # this box's release stands
+    second["state"]["down"] = False
+    assert release.to_tag(box["code"], TODAY) == TODAY
+    assert second["sent"][-1][1].endswith(f"engram release {TODAY}") and [l["tag"] for l in log(env)] == [TODAY]
+
+
+def test_a_failed_gate_sends_nothing_to_the_second_box(env, box, second):
+    land(box["code"], "two\n")
+    box["measured"]["index"] = {"rows": 4}
+    with pytest.raises(SystemExit, match="isn't \"same\""):
+        release.release(box["code"])
+    assert second["sent"] == []

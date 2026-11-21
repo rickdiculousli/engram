@@ -389,7 +389,8 @@ def test_a_pass_cut_by_its_budget_says_so(served):
 def test_a_pass_on_request_starts_on_its_own_and_health_survives_a_hand_edited_ledger(served, monkeypatch):
     started = []
     monkeypatch.setattr(refine.subprocess, "Popen", lambda cmd, **kw: started.append((cmd, kw)))
-    assert "started on its own" in refine.start("med")
+    said = refine.start("med")  # what the advisor relays: where the owner sees it, never a command
+    assert "started on its own" in said and "weekly page" in said and "engram health" not in said
     cmd, kw = started[0]
     assert cmd[-3:] == ["--repo", "med", "--attached"] and kw["start_new_session"] is True
     (served["data"] / "refine").mkdir(parents=True, exist_ok=True)

@@ -245,7 +245,7 @@ def start(name: str) -> str:
     subprocess.Popen(jobs.awake([sys.executable, "-m", "engram.cli", "refine", "run", "--repo", name, "--attached"]),
                      pass_fds=(fh.fileno(),),
                      stdout=log.open("a"), stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, start_new_session=True)
-    return f"engram refine: the pass on {name} started on its own; its result shows in `engram health`"
+    return f"engram refine: the pass on {name} started on its own; what it changes comes on the next weekly page"
 
 
 def run(only: str | None = None, dry_run: Path | None = None, show: bool = False, runner=subprocess.run,
